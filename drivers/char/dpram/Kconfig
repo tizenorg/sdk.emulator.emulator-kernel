@@ -1,0 +1,17 @@
+config DPRAM
+	tristate "DPRAM support"
+	default y
+	help
+	  Please move to arch/arm/mach-pxa. It is mirage specific file
+
+config MULTIPDP
+	tristate "MULTIPDP support"
+	default m
+	help
+	  So what?
+
+config IPCMUX
+	tristate "IPCMUX support"
+	default m
+	help
+	  It is ipc mux driver for samsung ipc 3.0.

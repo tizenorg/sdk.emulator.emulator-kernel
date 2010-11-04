@@ -1,0 +1,29 @@
+dir /dev 0755 0 0
+nod /dev/console 0600 0 0 c 5 1
+nod /dev/tty1 0600 0 0 c 4 1
+nod /dev/zero 0600 0 0 c 1 5
+nod /dev/mem 0600 0 0 c 1 1
+nod /dev/vda 0600 0 0 b 254 0
+dir /root 0700 0 0
+dir /sbin 0755 0 0
+file /sbin/v86d ramfs/v86d 0755 0 0
+
+dir /bin 0755 0 0
+dir /new_root 0755 0 0
+dir /proc 0755 0 0
+
+
+file /bin/busybox ramfs/busybox 0755 0 0
+file /init ramfs/init 0755 0 0
+file /bin/nfsmount ramfs/nfsmount 0755 0 0
+slink /sbin/init /bin/busybox 0755 0 0
+slink /bin/sh /bin/busybox 0755 0 0
+slink /bin/mount /bin/busybox 0755 0 0
+slink /bin/insmod /bin/busybox 0755 0 0
+slink /bin/cat /bin/busybox 0755 0 0
+slink /bin/cp /bin/busybox 0755 0 0
+slink /bin/switch_root /bin/busybox 0755 0 0
+slink /bin/mknod /bin/busybox 0755 0 0
+slink /bin/mkdir /bin/busybox 0755 0 0
+slink /bin/ln /bin/busybox 0755 0 0
+

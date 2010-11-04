@@ -1,0 +1,177 @@
+#!/bin/sh
+
+#
+# Copyright (C) 2010 Samsung Electronics
+# Kyungmin Park <kyungmin.park@samsung.com>
+#
+NEW_ROOT=/new_root
+NEW_INIT="/sbin/init"
+CONSOLE="/dev/console"
+
+mount -t proc proc /proc
+cmdline=`/bin/cat /proc/cmdline`
+
+echo
+echo "Kernel command line is: $cmdline"
+echo
+
+for element in $cmdline
+do
+	case "$element" in
+	nfsroot=*)
+		nfsroot=${element#nfsroot=}
+		;;
+	ip=*)
+		ip=${element#ip=}
+		;;
+	root=*)
+		root=${element#root=}
+		;;
+	esac
+done
+
+# mount nfs root if necessary
+if test "x$nfsroot" != "x"
+then
+	nfsopt="${nfsroot#*,}"
+	nfsroot="${nfsroot%%,*}"
+	if test "x$nfsroot" != "x"; then
+		nfsopt="-o $nfsopt"
+	fi
+	echo "Mounting root $nfsroot port $nfsport"
+	echo /bin/nfsmount $nfsopt "$nfsroot" /new_root
+	/bin/nfsmount $nfsopt "$nfsroot" /new_root
+else
+	echo "Image mount"
+	mount -o rw /dev/vda /new_root
+fi
+
+echo "create device filesystem"
+
+# create device filesystem
+/bin/mkdir -p /new_root/dev
+/bin/mount -t ramfs ramfs /new_root/dev
+
+/bin/mknod /new_root/dev/ram0 c 1 0
+/bin/mknod /new_root/dev/mem c 1 1
+/bin/mknod /new_root/dev/kmem c 1 2
+/bin/mknod /new_root/dev/null c 1 3
+/bin/mknod /new_root/dev/zero c 1 5
+/bin/mknod /new_root/dev/random c 1 8
+/bin/mknod /new_root/dev/urandom c 1 9
+
+/bin/mknod /new_root/dev/hda b 3 0
+/bin/mknod /new_root/dev/hda1 b 3 1
+/bin/mknod /new_root/dev/hda2 b 3 2
+/bin/mknod /new_root/dev/hda3 b 3 3
+/bin/mknod /new_root/dev/hdb b 3 64
+
+#filesystem in userspace
+/bin/mknod /new_root/dev/fuse c 10 229
+(cd /new_root/dev && /bin/ln hda mmcblk0)
+(cd /new_root/dev && /bin/ln hdb mmcblk0p1)
+
+/bin/mknod /new_root/dev/tty0 c 4 0
+/bin/mknod /new_root/dev/tty1 c 4 1
+/bin/mknod /new_root/dev/tty2 c 4 2
+/bin/mknod /new_root/dev/tty3 c 4 3
+/bin/mknod /new_root/dev/tty4 c 4 4
+/bin/mknod /new_root/dev/tty5 c 4 5
+/bin/mknod /new_root/dev/tty6 c 4 6
+/bin/mknod /new_root/dev/tty7 c 4 7
+
+/bin/mknod /new_root/dev/ttyS0 c 4 64
+/bin/mknod /new_root/dev/ttyS1 c 4 65
+/bin/mknod /new_root/dev/ttyS2 c 4 66
+
+/bin/mknod /new_root/dev/tty c 5 0
+/bin/mknod /new_root/dev/console c 5 1
+/bin/mknod /new_root/dev/ptmx c 5 2
+
+/bin/mknod /new_root/dev/sda b 8 0
+/bin/mknod /new_root/dev/sda1 b 8 1
+
+/bin/mknod /new_root/dev/log_radio c 10 61
+/bin/mknod /new_root/dev/log_events c 10 62
+/bin/mknod /new_root/dev/log_main c 10 63
+
+/bin/mkdir -p /new_root/dev/input
+/bin/mknod /new_root/dev/input/mouse0 c 13 32
+/bin/mknod /new_root/dev/input/mouse1 c 13 33
+/bin/mknod /new_root/dev/input/event0 c 13 64
+/bin/mknod /new_root/dev/input/event1 c 13 65
+/bin/mknod /new_root/dev/input/event2 c 13 66
+/bin/mknod /new_root/dev/input/event3 c 13 67
+/bin/mknod /new_root/dev/input/event4 c 13 68
+(cd /new_root/dev/input && /bin/ln -s event1 touchscreen0)
+(cd /new_root/dev && /bin/ln -s input/event2 smotion)
+
+/bin/mknod /new_root/dev/mixer c 14 0
+/bin/mknod /new_root/dev/sequencer c 14 1
+/bin/mknod /new_root/dev/midi00 c 14 2
+/bin/mknod /new_root/dev/dsp c 14 3
+/bin/mknod /new_root/dev/sndstat c 14 6
+/bin/mknod /new_root/dev/mixer1 c 14 16
+/bin/mknod /new_root/dev/midi01 c 14 18
+/bin/mknod /new_root/dev/dsp1 c 14 19
+/bin/mknod /new_root/dev/mixer2 c 14 32
+/bin/mknod /new_root/dev/midi02 c 14 34
+/bin/mknod /new_root/dev/dsp2 c 14 35
+/bin/mknod /new_root/dev/mixer3 c 14 48
+/bin/mknod /new_root/dev/midi03 c 14 50
+/bin/mknod /new_root/dev/dsp3 c 14 51
+
+/bin/mknod /new_root/dev/hdc b 22 0
+/bin/mknod /new_root/dev/hdd b 22 64
+
+/bin/mknod /new_root/dev/fb0 c 29 0
+/bin/mknod /new_root/dev/fb1 c 29 1
+/bin/mknod /new_root/dev/fb2 c 29 2
+/bin/mknod /new_root/dev/fb3 c 29 3
+
+/bin/mknod /new_root/dev/mtdblock0 b 31 0
+/bin/mknod /new_root/dev/mtdblock1 b 31 1
+/bin/mknod /new_root/dev/mtdblock2 b 31 2
+/bin/mknod /new_root/dev/mtdblock3 b 31 3
+/bin/mknod /new_root/dev/mtdblock4 b 31 4
+
+/bin/mknod /new_root/dev/video0 c 81 0
+/bin/mknod /new_root/dev/video1 c 81 1
+
+/bin/mknod /new_root/dev/mtd0 b 90 0
+/bin/mknod /new_root/dev/mtd1 b 90 2
+/bin/mknod /new_root/dev/mtd2 b 90 4
+/bin/mknod /new_root/dev/mtd3 b 90 6
+/bin/mknod /new_root/dev/mtd4 b 90 8
+
+/bin/mknod /new_root/dev/ttygs c 127 0
+
+/bin/mkdir -p /new_root/dev/pts
+/bin/mknod /new_root/dev/pts/0 c 136 0
+/bin/mknod /new_root/dev/pts/1 c 136 1
+/bin/mknod /new_root/dev/pts/2 c 136 2
+/bin/mknod /new_root/dev/pts/3 c 136 3
+/bin/mknod /new_root/dev/pts/4 c 136 4
+
+/bin/mkdir -p /new_root/dev/dpram
+/bin/mknod /new_root/dev/dpram/0 c 249 0
+/bin/mknod /new_root/dev/vdpram1 c 249 1
+
+/bin/mkdir -p /new_root/dev/input
+
+/bin/mkdir -p /new_root/dev/snd 
+/bin/mknod -m 660 /new_root/dev/snd/controlC0 c 116 7 
+/bin/mknod -m 660 /new_root/dev/snd/pcmC0D0c c 116 6 
+/bin/mknod -m 660 /new_root/dev/snd/pcmC0D0p c 116 5 
+/bin/mknod -m 660 /new_root/dev/snd/pcmC0D1p c 116 4 
+/bin/mknod -m 660 /new_root/dev/snd/timer c 116 2
+#echo "Create sys"
+/bin/mkdir -p /new_root/sys
+
+/bin/mknod /new_root/dev/opengl c 240 0
+
+
+>${CONSOLE} <${CONSOLE} 2>&1
+
+echo "Switching root"
+exec switch_root -c ${CONSOLE} ${NEW_ROOT} ${NEW_INIT}
