@@ -1,0 +1,71 @@
+samsung-sdk-simulator-kernel (1.0-15) slp2-sdk-ubuntu8; urgency=low
+
+  * applied security patches 
+
+ -- DongHee, Yang <donghee.yang@samsung.com>  Tue, 08 Feb 2011 10:50:48 +0900
+
+samsung-sdk-simulator-kernel (1.0-14) slp2-sdk-ubuntu8; urgency=low
+
+  * Add sensor device
+
+ -- Sunghyun Kwon <sh0701.kwon@samsung.com>  Wed, 27 Oct 2010 11:43:15 +0900
+
+samsung-sdk-simulator-kernel (1.0-12) slp2-sdk-ubuntu8; urgency=low
+
+  * Add the virtio module
+
+ -- Sunghyun Kwon <sh0701.kwon@samsung.com>  Thu, 30 Sep 2010 11:54:04 +0900
+
+samsung-sdk-simulator-kernel (1.0-11) hardy; urgency=low
+
+  * dummy
+
+ -- shkwon <shkwon@shkwon-desktop>  Thu, 30 Sep 2010 11:53:32 +0900
+
+samsung-sdk-simulator-kernel (1.0-10) hardy; urgency=low
+
+  * dummy
+
+ -- shkwon <shkwon@shkwon-desktop>  Thu, 30 Sep 2010 11:52:48 +0900
+
+samsung-sdk-simulator-kernel (1.0-9) slp2-sdk-ubuntu8; urgency=low
+
+  * Add image mount function in initramfs
+
+ -- Sunghyun Kwon <sh0701.kwon@samsung.com>  Thu, 16 Sep 2010 08:54:58 +0900
+
+samsung-sdk-simulator-kernel (1.0-8) slp2-sdk-ubuntu8; urgency=low
+
+  * Patch SOCK_CLOEXEC option
+
+ -- Sunghyun Kwon <sh0701.kwon@samsung.com>  Wed, 08 Sep 2010 14:46:31 +0900
+
+samsung-sdk-simulator-kernel (1.0-5) slp2-sdk-ubuntu8; urgency=low
+
+  * Modified vdpram and dpram
+
+ -- Sunghyun Kwon <sh0701.kwon@samsung.com>  Thu, 10 Jun 2010 21:44:30 +0900
+
+samsung-sdk-simulator-kernel (1.0-4) slp2-sdk-ubuntu8; urgency=low
+
+  * Add log device (android logger)
+
+ -- Sunghyun Kwon <sh0701.kwon@samsung.com>  Fri, 08 Jan 2010 15:21:53 +0900
+
+samsung-sdk-simulator-kernel (1.0-3) slp2-sdk-ubuntu8; urgency=low
+
+  * Version up
+
+ -- Sunghyun Kwon <sh0701.kwon@samsung.com>  Fri, 07 May 2010 08:56:57 +0900
+
+samsung-sdk-simulator-kernel (1.0-2) slp2-sdk-ubuntu8; urgency=low
+
+  * Add arm kernel image
+
+ -- Sunghyun Kwon <sh0701.kwon@samsung.com>  Tue, 30 Mar 2010 22:18:10 +0900
+
+samsung-sdk-simulator-kernel (1.0-1) slp2-sdk-ubuntu8; urgency=low
+
+  * Initial debianization
+
+ -- Mike McCormack <mj.mccormack@samsung.com>  Sat, 21 Nov 2009 10:53:28 +0900
