@@ -1,3 +1,9 @@
+samsung-sdk-simulator-kernel (1.0-16) slp2-sdk-ubuntu8; urgency=low
+
+  * update logger(driver/stagging/android)
+
+ -- DongHee, Yang <donghee.yang@samsung.com>  Thu, 10 Feb 2011 14:24:59 +0900
+
 samsung-sdk-simulator-kernel (1.0-15) slp2-sdk-ubuntu8; urgency=low
 
   * applied security patches 

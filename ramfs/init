@@ -91,9 +91,10 @@ echo "create device filesystem"
 /bin/mknod /new_root/dev/sda b 8 0
 /bin/mknod /new_root/dev/sda1 b 8 1
 
-/bin/mknod /new_root/dev/log_radio c 10 61
-/bin/mknod /new_root/dev/log_events c 10 62
-/bin/mknod /new_root/dev/log_main c 10 63
+/bin/mknod /new_root/dev/log_radio c 10 60
+/bin/mknod /new_root/dev/log_events c 10 61
+/bin/mknod /new_root/dev/log_main c 10 62
+/bin/mknod /new_root/dev/log_system c 10 59
 
 /bin/mkdir -p /new_root/dev/input
 /bin/mknod /new_root/dev/input/mouse0 c 13 32
