@@ -2108,6 +2108,7 @@ CONFIG_EEEPC_LAPTOP=y
 # CONFIG_ACPI_WMI is not set
 # CONFIG_ACPI_ASUS is not set
 # CONFIG_ACPI_TOSHIBA is not set
+CONFIG_ANDROID_LOGGER=y
 
 #
 # Firmware Drivers
