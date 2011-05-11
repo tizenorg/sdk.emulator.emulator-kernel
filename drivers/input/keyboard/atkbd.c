@@ -79,6 +79,29 @@ static const unsigned short atkbd_set2_keycode[ATKBD_KEYMAP_SIZE] = {
 #include "hpps2atkbd.h"	/* include the keyboard scancodes */
 
 #else
+
+/* conversion skincode by cosmos in 20090627 */
+#ifndef SIM_SKINCODE 
+	  0, 67, 65, 63, 61, 59, 60, 88,  169, 68, 66, 64, 62, 15, 41,117,
+	  132, 56, 42, 93, 29, 16,  2,  0,  174,  0, 44, 31, 30, 17,  3,  0,
+	  212, 46, 45, 32, 18,  5,  4, 95,  217, 57, 47, 33, 20, 19,  6,183,
+	  356, 49, 48, 35, 34, 21,  7,184,  0,  114, 50, 36, 22,  8,  9,185,
+	  0, 51, 37, 23, 24, 11, 10,  0,  0, 52, 53, 38, 39, 25, 12,  0,
+	  0, 115, 40,  0, 26, 13,  0,  0, 58, 54, 28, 27,  0, 43,  0, 85,
+	  0, 86, 91, 90, 92,  0, 14, 94,  0, 79,124, 75, 71,121,  0,  0,
+	 82, 83, 80, 76, 77, 72,  1, 69, 87, 78, 81, 74, 55, 73, 70, 99,
+
+	  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	217,100,255,  0, 97,165,  0,  0,156,  0,  0,  0,  0,  0,  0,125,
+	173,114,  0,113,  0,  0,  0,126,128,  0,  0,140,  0,  0,  0,127,
+	159,  0,115,  0,164,  0,  0,116,158,  0,172,166,  0,  0,  0,142,
+	157,  0,  0,  0,  0,  0,  0,  0,155,  0, 98,  0,  0,163,  0,  0,
+	226,  0,  0,  0,  0,  0,  0,  0,  0,255, 96,  0,  0,  0,143,  0,
+	  0,  0,  0,  0,  0,  0,  0,  0,  0,107,  0,105,102,  0,  0,112,
+	110,111,108,112,106,103,  0,119,  0,118,109,  0, 99,104,119,  0,
+
+	  0,  0,  0, 65, 99,
+#else
 	  0, 67, 65, 63, 61, 59, 60, 88,  0, 68, 66, 64, 62, 15, 41,117,
 	  0, 56, 42, 93, 29, 16,  2,  0,  0,  0, 44, 31, 30, 17,  3,  0,
 	  0, 46, 45, 32, 18,  5,  4, 95,  0, 57, 47, 33, 20, 19,  6,183,
@@ -98,6 +121,9 @@ static const unsigned short atkbd_set2_keycode[ATKBD_KEYMAP_SIZE] = {
 	110,111,108,112,106,103,  0,119,  0,118,109,  0, 99,104,119,  0,
 
 	  0,  0,  0, 65, 99,
+
+#endif
+
 #endif
 };
 
@@ -443,6 +469,16 @@ static irqreturn_t atkbd_interrupt(struct serio *serio, unsigned char data,
 		goto out;
 
 	keycode = atkbd->keycode[code];
+	
+/* conversion skincode by cosmos in 20090627 */
+#ifndef SIM_SKINCODE
+	if (code == 100) code = 169;
+	else if (code == 101) code = 132;
+	else if (code == 102) code = 174;
+	else if (code == 103) code = 212;
+	else if (code == 104) code = 217;
+	else if (code == 105) code = 356;		
+#endif
 
 	if (keycode != ATKBD_KEY_NULL)
 		input_event(dev, EV_MSC, MSC_SCAN, code);
@@ -495,6 +531,10 @@ static irqreturn_t atkbd_interrupt(struct serio *serio, unsigned char data,
 				atkbd->time = jiffies + msecs_to_jiffies(dev->rep[REP_DELAY]) / 2;
 			}
 
+#ifndef SIM_SKINCODE
+			printk(KERN_DEBUG "atkbd.c: Conversion Received code = (%d)%03x, keycode = (%d)%03x\n", 
+					code, code, keycode, keycode);
+#endif
 			input_event(dev, EV_KEY, keycode, value);
 			input_sync(dev);
 
@@ -959,6 +999,10 @@ static void atkbd_set_keycode_table(struct atkbd *atkbd)
 		for (i = 0; i < 128; i++) {
 			scancode = atkbd_unxlate_table[i];
 			atkbd->keycode[i] = atkbd_set2_keycode[scancode];
+#ifndef SIM_SKINCODE			
+//			printk("i = %d, scancode = %d(%x), atkbd->keycode[i] = %d(%x)\n", 
+//				i, scancode, scancode, atkbd->keycode[i], atkbd->keycode[i]);
+#endif
 			atkbd->keycode[i | 0x80] = atkbd_set2_keycode[scancode | 0x80];
 			if (atkbd->scroll)
 				for (j = 0; j < ARRAY_SIZE(atkbd_scroll_keys); j++)
