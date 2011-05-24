@@ -1,6 +1,7 @@
 /*
  * Virtual Video driver - This code emulates a real video device with v4l2 api
  *
+ * Copyright (C) 2011 S-core
  * Copyright (c) 2006 by:
  *      Mauro Carvalho Chehab <mchehab--a.t--infradead.org>
  *      Ted Walther <ted--a.t--enumera.com>
@@ -1327,7 +1328,7 @@ static int vivi_release(void)
 	return 0;
 }
 
-static int __init vivi_create_instance(int inst)
+static int __init svvd_create_instance(int inst)
 {
 	struct vivi_dev *dev;
 	struct video_device *vfd;
@@ -1398,7 +1399,7 @@ free_dev:
    will succeed. This is limited to the maximum number of devices that
    videodev supports, which is equal to VIDEO_NUM_DEVICES.
  */
-static int __init vivi_init(void)
+static int __init svvd_init(void)
 {
 	int ret = 0, i;
 
@@ -1406,7 +1407,7 @@ static int __init vivi_init(void)
 		n_devs = 1;
 
 	for (i = 0; i < n_devs; i++) {
-		ret = vivi_create_instance(i);
+		ret = svvd_create_instance(i);
 		if (ret) {
 			/* If some instantiations succeeded, keep driver */
 			if (i)
@@ -1431,10 +1432,10 @@ static int __init vivi_init(void)
 	return ret;
 }
 
-static void __exit vivi_exit(void)
+static void __exit svvd_exit(void)
 {
 	vivi_release();
 }
 
-module_init(vivi_init);
-module_exit(vivi_exit);
+module_init(svvd_init);
+module_exit(svvd_exit);

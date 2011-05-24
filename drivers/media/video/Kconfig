@@ -547,13 +547,13 @@ config VIDEO_VIVI
 	  Say Y here if you want to test video apps or debug V4L devices.
 	  In doubt, say N.
 
-config VIDEO_SVC
-	tristate "Samsung Virtual Video Driver"
+config VIDEO_SVVD
+	tristate "S-core Virtual Video Driver"
 	depends on VIDEO_DEV && VIDEO_V4L2 && !SPARC32 && !SPARC64
 	select VIDEOBUF_VMALLOC
 	default n
 	---help---
-	  Enables a Samsung Virtual Camera driver. This device shows a test 
+	  Enables a S-core Virtual Video driver. This device shows a test 
 	  video(YUV420), as a real device would generate by using V4L2 api.
 	  And it supports overlay driver.
 	  Say Y here if you want to test video apps or debug V4L devices.
