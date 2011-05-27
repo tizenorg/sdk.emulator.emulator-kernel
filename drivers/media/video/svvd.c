@@ -137,34 +137,9 @@ struct svvd_fmt {
 
 static struct svvd_fmt formats[] = {
 	{
-		.name     = "4:2:2, packed, YUYV",
-		.fourcc   = V4L2_PIX_FMT_YUYV,
-		.depth    = 16,
-	},
-	{
-		.name     = "4:2:2, packed, UYVY",
-		.fourcc   = V4L2_PIX_FMT_UYVY,
-		.depth    = 16,
-	},
-	{
-		.name     = "RGB565 (LE)",
-		.fourcc   = V4L2_PIX_FMT_RGB565, /* gggbbbbb rrrrrggg */
-		.depth    = 16,
-	},
-	{
-		.name     = "RGB565 (BE)",
-		.fourcc   = V4L2_PIX_FMT_RGB565X, /* rrrrrggg gggbbbbb */
-		.depth    = 16,
-	},
-	{
-		.name     = "RGB555 (LE)",
-		.fourcc   = V4L2_PIX_FMT_RGB555, /* gggbbbbb arrrrrgg */
-		.depth    = 16,
-	},
-	{
-		.name     = "RGB555 (BE)",
-		.fourcc   = V4L2_PIX_FMT_RGB555X, /* arrrrrgg gggbbbbb */
-		.depth    = 16,
+		.name     = "RGB888 - 24bit",
+		.fourcc   = V4L2_PIX_FMT_RGB24,
+		.depth    = 24,
 	},
 };
 
@@ -856,7 +831,7 @@ static struct videobuf_queue_ops svvd_video_qops = {
 /* ------------------------------------------------------------------
 	IOCTL vidioc handling
    ------------------------------------------------------------------*/
-static int vidioc_querycap(struct file *file, void  *priv,
+static int svvd_querycap(struct file *file, void  *priv,
 					struct v4l2_capability *cap)
 {
 	struct svvd_fh  *fh  = priv;
@@ -873,7 +848,7 @@ static int vidioc_querycap(struct file *file, void  *priv,
 	return 0;
 }
 
-static int vidioc_enum_fmt_vid_cap(struct file *file, void  *priv,
+static int svvd_enum_fmt_vid(struct file *file, void  *priv,
 					struct v4l2_fmtdesc *f)
 {
 	struct svvd_fmt *fmt;
@@ -888,7 +863,7 @@ static int vidioc_enum_fmt_vid_cap(struct file *file, void  *priv,
 	return 0;
 }
 
-static int vidioc_g_fmt_vid_cap(struct file *file, void *priv,
+static int svvd_g_fmt_vid(struct file *file, void *priv,
 					struct v4l2_format *f)
 {
 	struct svvd_fh *fh = priv;
@@ -905,7 +880,7 @@ static int vidioc_g_fmt_vid_cap(struct file *file, void *priv,
 	return (0);
 }
 
-static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
+static int svvd_try_fmt_vid(struct file *file, void *priv,
 			struct v4l2_format *f)
 {
 	struct svvd_fh  *fh  = priv;
@@ -945,13 +920,13 @@ static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
 }
 
 /*FIXME: This seems to be generic enough to be at videodev2 */
-static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
+static int svvd_s_fmt_vid(struct file *file, void *priv,
 					struct v4l2_format *f)
 {
 	struct svvd_fh *fh = priv;
 	struct videobuf_queue *q = &fh->vb_vidq;
 
-	int ret = vidioc_try_fmt_vid_cap(file, fh, f);
+	int ret = svvd_try_fmt_vid(file, fh, f);
 	if (ret < 0)
 		return ret;
 
@@ -976,7 +951,7 @@ out:
 	return ret;
 }
 
-static int vidioc_reqbufs(struct file *file, void *priv,
+static int svvd_reqbufs(struct file *file, void *priv,
 			  struct v4l2_requestbuffers *p)
 {
 	struct svvd_fh  *fh = priv;
@@ -984,21 +959,21 @@ static int vidioc_reqbufs(struct file *file, void *priv,
 	return (videobuf_reqbufs(&fh->vb_vidq, p));
 }
 
-static int vidioc_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
+static int svvd_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
 	struct svvd_fh  *fh = priv;
 
 	return (videobuf_querybuf(&fh->vb_vidq, p));
 }
 
-static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *p)
+static int svvd_qbuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
 	struct svvd_fh *fh = priv;
 
 	return (videobuf_qbuf(&fh->vb_vidq, p));
 }
 
-static int vidioc_dqbuf(struct file *file, void *priv, struct v4l2_buffer *p)
+static int svvd_dqbuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
 	struct svvd_fh  *fh = priv;
 
@@ -1007,7 +982,7 @@ static int vidioc_dqbuf(struct file *file, void *priv, struct v4l2_buffer *p)
 }
 
 #ifdef CONFIG_VIDEO_V4L1_COMPAT
-static int vidiocgmbuf(struct file *file, void *priv, struct video_mbuf *mbuf)
+static int svvdgmbuf(struct file *file, void *priv, struct video_mbuf *mbuf)
 {
 	struct svvd_fh  *fh = priv;
 
@@ -1015,7 +990,7 @@ static int vidiocgmbuf(struct file *file, void *priv, struct video_mbuf *mbuf)
 }
 #endif
 
-static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
+static int svvd_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 {
 	struct svvd_fh  *fh = priv;
 
@@ -1027,7 +1002,7 @@ static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 	return videobuf_streamon(&fh->vb_vidq);
 }
 
-static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
+static int svvd_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 {
 	struct svvd_fh  *fh = priv;
 
@@ -1039,13 +1014,13 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 	return videobuf_streamoff(&fh->vb_vidq);
 }
 
-static int vidioc_s_std(struct file *file, void *priv, v4l2_std_id *i)
+static int svvd_s_std(struct file *file, void *priv, v4l2_std_id *i)
 {
 	return 0;
 }
 
 /* only one input in this sample driver */
-static int vidioc_enum_input(struct file *file, void *priv,
+static int svvd_enum_input(struct file *file, void *priv,
 				struct v4l2_input *inp)
 {
 	if (inp->index >= NUM_INPUTS)
@@ -1058,7 +1033,7 @@ static int vidioc_enum_input(struct file *file, void *priv,
 	return (0);
 }
 
-static int vidioc_g_input(struct file *file, void *priv, unsigned int *i)
+static int svvd_g_input(struct file *file, void *priv, unsigned int *i)
 {
 	struct svvd_fh *fh = priv;
 	struct svvd_dev *dev = fh->dev;
@@ -1067,7 +1042,7 @@ static int vidioc_g_input(struct file *file, void *priv, unsigned int *i)
 
 	return (0);
 }
-static int vidioc_s_input(struct file *file, void *priv, unsigned int i)
+static int svvd_s_input(struct file *file, void *priv, unsigned int i)
 {
 	struct svvd_fh *fh = priv;
 	struct svvd_dev *dev = fh->dev;
@@ -1082,7 +1057,7 @@ static int vidioc_s_input(struct file *file, void *priv, unsigned int i)
 }
 
 	/* --- controls ---------------------------------------------- */
-static int vidioc_queryctrl(struct file *file, void *priv,
+static int svvd_queryctrl(struct file *file, void *priv,
 			    struct v4l2_queryctrl *qc)
 {
 	int i;
@@ -1097,7 +1072,7 @@ static int vidioc_queryctrl(struct file *file, void *priv,
 	return -EINVAL;
 }
 
-static int vidioc_g_ctrl(struct file *file, void *priv,
+static int svvd_g_ctrl(struct file *file, void *priv,
 			 struct v4l2_control *ctrl)
 {
 	struct svvd_fh *fh = priv;
@@ -1112,7 +1087,7 @@ static int vidioc_g_ctrl(struct file *file, void *priv,
 
 	return -EINVAL;
 }
-static int vidioc_s_ctrl(struct file *file, void *priv,
+static int svvd_s_ctrl(struct file *file, void *priv,
 				struct v4l2_control *ctrl)
 {
 	struct svvd_fh *fh = priv;
@@ -1151,7 +1126,7 @@ static int svvd_open(struct file *file)
 	}
 
 	dprintk(dev, 1, "open /dev/video%d type=%s users=%d\n", dev->vfd->num,
-		v4l2_type_names[V4L2_BUF_TYPE_VIDEO_CAPTURE], dev->users);
+		v4l2_type_names[V4L2_BUF_TYPE_VIDEO_OUTPUT], dev->users);
 
 	/* allocate + initialize per filehandle data */
 	fh = kzalloc(sizeof(*fh), GFP_KERNEL);
@@ -1167,10 +1142,10 @@ static int svvd_open(struct file *file)
 	file->private_data = fh;
 	fh->dev      = dev;
 
-	fh->type     = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	fh->type     = V4L2_BUF_TYPE_VIDEO_OUTPUT;
 	fh->fmt      = &formats[0];
-	fh->width    = 640;
-	fh->height   = 480;
+	fh->width    = 480;
+	fh->height   = 800;
 
 	/* Resets frame counters */
 	dev->h = 0;
@@ -1271,26 +1246,29 @@ static const struct v4l2_file_operations svvd_fops = {
 };
 
 static const struct v4l2_ioctl_ops svvd_ioctl_ops = {
-	.vidioc_querycap      = vidioc_querycap,
-	.vidioc_enum_fmt_vid_cap  = vidioc_enum_fmt_vid_cap,
-	.vidioc_g_fmt_vid_cap     = vidioc_g_fmt_vid_cap,
-	.vidioc_try_fmt_vid_cap   = vidioc_try_fmt_vid_cap,
-	.vidioc_s_fmt_vid_cap     = vidioc_s_fmt_vid_cap,
-	.vidioc_reqbufs       = vidioc_reqbufs,
-	.vidioc_querybuf      = vidioc_querybuf,
-	.vidioc_qbuf          = vidioc_qbuf,
-	.vidioc_dqbuf         = vidioc_dqbuf,
-	.vidioc_s_std         = vidioc_s_std,
-	.vidioc_enum_input    = vidioc_enum_input,
-	.vidioc_g_input       = vidioc_g_input,
-	.vidioc_s_input       = vidioc_s_input,
-	.vidioc_queryctrl     = vidioc_queryctrl,
-	.vidioc_g_ctrl        = vidioc_g_ctrl,
-	.vidioc_s_ctrl        = vidioc_s_ctrl,
-	.vidioc_streamon      = vidioc_streamon,
-	.vidioc_streamoff     = vidioc_streamoff,
+	.vidioc_querycap      = svvd_querycap,
+	.vidioc_enum_fmt_vid_cap  = svvd_enum_fmt_vid,
+	.vidioc_enum_fmt_vid_out  = svvd_enum_fmt_vid,
+	.vidioc_g_fmt_vid_cap     = svvd_g_fmt_vid,
+	.vidioc_g_fmt_vid_out     = svvd_g_fmt_vid,
+	.vidioc_try_fmt_vid_cap   = svvd_try_fmt_vid,
+	.vidioc_s_fmt_vid_cap     = svvd_s_fmt_vid,
+	.vidioc_s_fmt_vid_out     = svvd_s_fmt_vid,
+	.vidioc_reqbufs       = svvd_reqbufs,
+	.vidioc_querybuf      = svvd_querybuf,
+	.vidioc_qbuf          = svvd_qbuf,
+	.vidioc_dqbuf         = svvd_dqbuf,
+	.vidioc_s_std         = svvd_s_std,
+	.vidioc_enum_input    = svvd_enum_input,
+	.vidioc_g_input       = svvd_g_input,
+	.vidioc_s_input       = svvd_s_input,
+	.vidioc_queryctrl     = svvd_queryctrl,
+	.vidioc_g_ctrl        = svvd_g_ctrl,
+	.vidioc_s_ctrl        = svvd_s_ctrl,
+	.vidioc_streamon      = svvd_streamon,
+	.vidioc_streamoff     = svvd_streamoff,
 #ifdef CONFIG_VIDEO_V4L1_COMPAT
-	.vidiocgmbuf          = vidiocgmbuf,
+	.vidiocgmbuf          = svvdgmbuf,
 #endif
 };
 
