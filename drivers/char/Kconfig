@@ -1097,6 +1097,8 @@ config UV_MMTIMER
 
 source "drivers/char/tpm/Kconfig"
 
+source "drivers/char/dpram/Kconfig"
+
 config TELCLOCK
 	tristate "Telecom clock driver for ATCA SBC"
 	depends on EXPERIMENTAL && X86
@@ -1109,6 +1111,11 @@ config TELCLOCK
 	  fabric.  Upon loading, the driver exports a sysfs directory,
 	  /sys/devices/platform/telco_clock, with a number of files for
 	  controlling the behavior of this hardware.
+
+config VDPRAM_DEVICE
+        tristate "vdpram kernel driver for Telephony simulation"
+	---help---
+	  vdpram is telephony simulator works with the event injector.
 
 config DEVPORT
 	bool
