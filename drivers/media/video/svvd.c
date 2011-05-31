@@ -13,30 +13,30 @@
  * as published by the Free Software Foundation; either version 2 of the
  * License, or (at your option) any later version
  */
-#include <linux/module.h>
-#include <linux/delay.h>
-#include <linux/errno.h>
-#include <linux/fs.h>
-#include <linux/kernel.h>
-#include <linux/slab.h>
-#include <linux/mm.h>
-#include <linux/ioport.h>
-#include <linux/init.h>
-#include <linux/sched.h>
-#include <linux/pci.h>
-#include <linux/random.h>
+//#include <linux/module.h>
+//#include <linux/delay.h>
+//#include <linux/errno.h>
+//#include <linux/fs.h>
+//#include <linux/kernel.h>
+//#include <linux/slab.h>
+//#include <linux/mm.h>
+//#include <linux/ioport.h>
+//#include <linux/init.h>
+//#include <linux/sched.h>
+//#include <linux/pci.h>
+//#include <linux/random.h>
 #include <linux/version.h>
-#include <linux/mutex.h>
+//#include <linux/mutex.h>
 #include <linux/videodev2.h>
 #include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
-#include <linux/kthread.h>
-#include <linux/highmem.h>
-#include <linux/freezer.h>
+//#include <linux/kthread.h>
+//#include <linux/highmem.h>
+//#include <linux/freezer.h>
 #include <media/videobuf-vmalloc.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
-#include "font.h"
+//#include "font.h"
 
 #define SVVD_MODULE_NAME "svvd"
 
@@ -51,7 +51,7 @@
 #define SVVD_VERSION \
 	KERNEL_VERSION(SVVD_MAJOR_VERSION, SVVD_MINOR_VERSION, SVVD_RELEASE)
 
-MODULE_DESCRIPTION("S-core Virtual Video Capture Board");
+MODULE_DESCRIPTION("S-core Virtual Video Overlay Board");
 MODULE_AUTHOR("Yuyeon Oh <yuyeon.oh@samsung.com>");
 MODULE_LICENSE("Dual BSD/GPL");
 
@@ -185,9 +185,6 @@ struct svvd_buffer {
 struct svvd_dmaqueue {
 	struct list_head       active;
 
-	/* thread for generating video stream*/
-	struct task_struct         *kthread;
-	wait_queue_head_t          wq;
 	/* Counters to control fps rate */
 	int                        frame;
 	int                        ini_jiffies;
@@ -222,6 +219,7 @@ struct svvd_dev {
 	/* Control 'registers' */
 	int 			   qctl_regs[ARRAY_SIZE(svvd_qctrl)];
 
+	// TODO: shared with qemu ?
 	struct v4l2_rect           crop_output;
 	struct v4l2_rect           crop_overlay;
 };
@@ -383,345 +381,8 @@ static void precalculate_bars(struct svvd_fh *fh)
 #define TSTAMP_INPUT_X	10
 #define TSTAMP_MIN_X	(54 + TSTAMP_INPUT_X)
 
-static void gen_twopix(struct svvd_fh *fh, unsigned char *buf, int colorpos)
-{
-	unsigned char r_y, g_u, b_v;
-	unsigned char *p;
-	int color;
-
-	r_y = fh->bars[colorpos][0]; /* R or precalculated Y */
-	g_u = fh->bars[colorpos][1]; /* G or precalculated U */
-	b_v = fh->bars[colorpos][2]; /* B or precalculated V */
-
-	for (color = 0; color < 4; color++) {
-		p = buf + color;
-
-		switch (fh->fmt->fourcc) {
-		case V4L2_PIX_FMT_YUYV:
-			switch (color) {
-			case 0:
-			case 2:
-				*p = r_y;
-				break;
-			case 1:
-				*p = g_u;
-				break;
-			case 3:
-				*p = b_v;
-				break;
-			}
-			break;
-		case V4L2_PIX_FMT_UYVY:
-			switch (color) {
-			case 1:
-			case 3:
-				*p = r_y;
-				break;
-			case 0:
-				*p = g_u;
-				break;
-			case 2:
-				*p = b_v;
-				break;
-			}
-			break;
-		case V4L2_PIX_FMT_RGB565:
-			switch (color) {
-			case 0:
-			case 2:
-				*p = (g_u << 5) | b_v;
-				break;
-			case 1:
-			case 3:
-				*p = (r_y << 3) | (g_u >> 3);
-				break;
-			}
-			break;
-		case V4L2_PIX_FMT_RGB565X:
-			switch (color) {
-			case 0:
-			case 2:
-				*p = (r_y << 3) | (g_u >> 3);
-				break;
-			case 1:
-			case 3:
-				*p = (g_u << 5) | b_v;
-				break;
-			}
-			break;
-		case V4L2_PIX_FMT_RGB555:
-			switch (color) {
-			case 0:
-			case 2:
-				*p = (g_u << 5) | b_v;
-				break;
-			case 1:
-			case 3:
-				*p = (r_y << 2) | (g_u >> 3);
-				break;
-			}
-			break;
-		case V4L2_PIX_FMT_RGB555X:
-			switch (color) {
-			case 0:
-			case 2:
-				*p = (r_y << 2) | (g_u >> 3);
-				break;
-			case 1:
-			case 3:
-				*p = (g_u << 5) | b_v;
-				break;
-			}
-			break;
-		}
-	}
-}
-
-static void gen_line(struct svvd_fh *fh, char *basep, int inipos, int wmax,
-		int hmax, int line, int count, char *timestr)
-{
-	int  w, i, j;
-	int pos = inipos;
-	char *s;
-	u8 chr;
-
-	/* We will just duplicate the second pixel at the packet */
-	wmax /= 2;
-
-	/* Generate a standard color bar pattern */
-	for (w = 0; w < wmax; w++) {
-		int colorpos = ((w + count) * 8/(wmax + 1)) % 8;
-
-		gen_twopix(fh, basep + pos, colorpos);
-		pos += 4; /* only 16 bpp supported for now */
-	}
-
-	/* Prints input entry number */
-
-	/* Checks if it is possible to input number */
-	if (TSTAMP_MAX_Y >= hmax)
-		goto end;
-
-	if (TSTAMP_INPUT_X + strlen(timestr) >= wmax)
-		goto end;
-
-	if (line >= TSTAMP_MIN_Y && line <= TSTAMP_MAX_Y) {
-		chr = rom8x16_bits[fh->input * 16 + line - TSTAMP_MIN_Y];
-		pos = TSTAMP_INPUT_X;
-		for (i = 0; i < 7; i++) {
-			/* Draw white font on black background */
-			if (chr & 1 << (7 - i))
-				gen_twopix(fh, basep + pos, WHITE);
-			else
-				gen_twopix(fh, basep + pos, BLACK);
-			pos += 2;
-		}
-	}
-
-	/* Checks if it is possible to show timestamp */
-	if (TSTAMP_MIN_X + strlen(timestr) >= wmax)
-		goto end;
-
-	/* Print stream time */
-	if (line >= TSTAMP_MIN_Y && line <= TSTAMP_MAX_Y) {
-		j = TSTAMP_MIN_X;
-		for (s = timestr; *s; s++) {
-			chr = rom8x16_bits[(*s-0x30)*16+line-TSTAMP_MIN_Y];
-			for (i = 0; i < 7; i++) {
-				pos = inipos + j * 2;
-				/* Draw white font on black background */
-				if (chr & 1 << (7 - i))
-					gen_twopix(fh, basep + pos, WHITE);
-				else
-					gen_twopix(fh, basep + pos, BLACK);
-				j++;
-			}
-		}
-	}
-
-end:
-	return;
-}
-
-static void svvd_fillbuff(struct svvd_fh *fh, struct svvd_buffer *buf)
-{
-	struct svvd_dev *dev = fh->dev;
-	int h , pos = 0;
-	int hmax  = buf->vb.height;
-	int wmax  = buf->vb.width;
-	struct timeval ts;
-	char *tmpbuf;
-	void *vbuf = videobuf_to_vmalloc(&buf->vb);
-
-	if (!vbuf)
-		return;
-
-	tmpbuf = kmalloc(wmax * 2, GFP_ATOMIC);
-	if (!tmpbuf)
-		return;
-
-	for (h = 0; h < hmax; h++) {
-		gen_line(fh, tmpbuf, 0, wmax, hmax, h, dev->mv_count,
-			 dev->timestr);
-		memcpy(vbuf + pos, tmpbuf, wmax * 2);
-		pos += wmax*2;
-	}
-
-	dev->mv_count++;
-
-	kfree(tmpbuf);
-
-	/* Updates stream time */
-
-	dev->ms += jiffies_to_msecs(jiffies-dev->jiffies);
-	dev->jiffies = jiffies;
-	if (dev->ms >= 1000) {
-		dev->ms -= 1000;
-		dev->s++;
-		if (dev->s >= 60) {
-			dev->s -= 60;
-			dev->m++;
-			if (dev->m > 60) {
-				dev->m -= 60;
-				dev->h++;
-				if (dev->h > 24)
-					dev->h -= 24;
-			}
-		}
-	}
-	sprintf(dev->timestr, "%02d:%02d:%02d:%03d",
-			dev->h, dev->m, dev->s, dev->ms);
-
-	dprintk(dev, 2, "svvdfill at %s: Buffer 0x%08lx size= %d\n",
-			dev->timestr, (unsigned long)tmpbuf, pos);
-
-	/* Advice that buffer was filled */
-	buf->vb.field_count++;
-	do_gettimeofday(&ts);
-	buf->vb.ts = ts;
-	buf->vb.state = VIDEOBUF_DONE;
-}
-
-static void svvd_thread_tick(struct svvd_fh *fh)
-{
-	struct svvd_buffer *buf;
-	struct svvd_dev *dev = fh->dev;
-	struct svvd_dmaqueue *dma_q = &dev->vidq;
-
-	unsigned long flags = 0;
-
-	dprintk(dev, 1, "Thread tick\n");
-
-	spin_lock_irqsave(&dev->slock, flags);
-	if (list_empty(&dma_q->active)) {
-		dprintk(dev, 1, "No active queue to serve\n");
-		goto unlock;
-	}
-
-	buf = list_entry(dma_q->active.next,
-			 struct svvd_buffer, vb.queue);
-
-	/* Nobody is waiting on this buffer, return */
-	if (!waitqueue_active(&buf->vb.done))
-		goto unlock;
-
-	list_del(&buf->vb.queue);
-
-	do_gettimeofday(&buf->vb.ts);
-
-	/* Fill buffer */
-	svvd_fillbuff(fh, buf);
-	dprintk(dev, 1, "filled buffer %p\n", buf);
-
-	wake_up(&buf->vb.done);
-	dprintk(dev, 2, "[%p/%d] wakeup\n", buf, buf->vb. i);
-unlock:
-	spin_unlock_irqrestore(&dev->slock, flags);
-	return;
-}
-
 #define frames_to_ms(frames)					\
 	((frames * WAKE_NUMERATOR * 1000) / WAKE_DENOMINATOR)
-
-static void svvd_sleep(struct svvd_fh *fh)
-{
-	struct svvd_dev *dev = fh->dev;
-	struct svvd_dmaqueue *dma_q = &dev->vidq;
-	int timeout;
-	DECLARE_WAITQUEUE(wait, current);
-
-	dprintk(dev, 1, "%s dma_q=0x%08lx\n", __func__,
-		(unsigned long)dma_q);
-
-	add_wait_queue(&dma_q->wq, &wait);
-	if (kthread_should_stop())
-		goto stop_task;
-
-	/* Calculate time to wake up */
-	timeout = msecs_to_jiffies(frames_to_ms(1));
-
-	svvd_thread_tick(fh);
-
-	schedule_timeout_interruptible(timeout);
-
-stop_task:
-	remove_wait_queue(&dma_q->wq, &wait);
-	try_to_freeze();
-}
-
-static int svvd_thread(void *data)
-{
-	struct svvd_fh  *fh = data;
-	struct svvd_dev *dev = fh->dev;
-
-	dprintk(dev, 1, "thread started\n");
-
-	set_freezable();
-
-	for (;;) {
-		svvd_sleep(fh);
-
-		if (kthread_should_stop())
-			break;
-	}
-	dprintk(dev, 1, "thread: exit\n");
-	return 0;
-}
-
-static int svvd_start_thread(struct svvd_fh *fh)
-{
-	struct svvd_dev *dev = fh->dev;
-	struct svvd_dmaqueue *dma_q = &dev->vidq;
-
-	dma_q->frame = 0;
-	dma_q->ini_jiffies = jiffies;
-
-	dprintk(dev, 1, "%s\n", __func__);
-
-	dma_q->kthread = kthread_run(svvd_thread, fh, "svvd");
-
-	if (IS_ERR(dma_q->kthread)) {
-		v4l2_err(&dev->v4l2_dev, "kernel_thread() failed\n");
-		return PTR_ERR(dma_q->kthread);
-	}
-	/* Wakes thread */
-	wake_up_interruptible(&dma_q->wq);
-
-	dprintk(dev, 1, "returning from %s\n", __func__);
-	return 0;
-}
-
-static void svvd_stop_thread(struct svvd_dmaqueue  *dma_q)
-{
-	struct svvd_dev *dev = container_of(dma_q, struct svvd_dev, vidq);
-
-	dprintk(dev, 1, "%s\n", __func__);
-	/* shutdown control thread */
-	if (dma_q->kthread) {
-		kthread_stop(dma_q->kthread);
-		dma_q->kthread = NULL;
-	}
-}
 
 /* ------------------------------------------------------------------
 	Videobuf operations
@@ -732,7 +393,7 @@ buffer_setup(struct videobuf_queue *vq, unsigned int *count, unsigned int *size)
 	struct svvd_fh  *fh = vq->priv_data;
 	struct svvd_dev *dev  = fh->dev;
 
-	*size = fh->width*fh->height*2;
+	*size = fh->width * fh->height * fh->fmt->depth / 8;	// RGB888
 
 	if (0 == *count)
 		*count = 32;
@@ -909,14 +570,6 @@ static int svvd_try_fmt_vid(struct file *file, void *priv,
 	}
 
 	field = f->fmt.pix.field;
-
-	// no field check ?
-	/*if (field == V4L2_FIELD_ANY) {
-		field = V4L2_FIELD_INTERLACED;
-	} else if (V4L2_FIELD_INTERLACED != field) {
-		dprintk(dev, 1, "Field type invalid.\n");
-		return -EINVAL;
-	}*/
 
 	maxw  = norm_maxw();
 	maxh  = norm_maxh();
@@ -1249,8 +902,6 @@ static int svvd_open(struct file *file)
 			NULL, &dev->slock, fh->type, V4L2_FIELD_INTERLACED,
 			sizeof(struct svvd_buffer), fh);
 
-	svvd_start_thread(fh);
-
 	return 0;
 }
 
@@ -1285,11 +936,9 @@ static int svvd_close(struct file *file)
 {
 	struct svvd_fh         *fh = file->private_data;
 	struct svvd_dev *dev       = fh->dev;
-	struct svvd_dmaqueue *vidq = &dev->vidq;
 
 	int minor = video_devdata(file)->minor;
 
-	svvd_stop_thread(vidq);
 	videobuf_stop(&fh->vb_vidq);
 	videobuf_mmap_free(&fh->vb_vidq);
 
@@ -1409,10 +1058,6 @@ static int __init svvd_create_instance(int inst)
 	ret = v4l2_device_register(NULL, &dev->v4l2_dev);
 	if (ret)
 		goto free_dev;
-
-	/* init video dma queues */
-	INIT_LIST_HEAD(&dev->vidq.active);
-	init_waitqueue_head(&dev->vidq.wq);
 
 	/* initialize locks */
 	spin_lock_init(&dev->slock);
