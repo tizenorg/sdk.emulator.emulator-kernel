@@ -119,6 +119,15 @@ static struct v4l2_queryctrl svvd_qctrl[] = {
 		.step          = 0x1,
 		.default_value = 0,
 		.flags         = V4L2_CTRL_FLAG_SLIDER,
+	}, {
+		.id	       = V4L2_CID_PRIVATE_BASE,
+		.type	       = V4L2_CTRL_TYPE_INTEGER,
+		.name	       = "Rotation",
+		.minimum       = 0,
+		.maximum       = 3,
+		.step	       = 0x1,
+		.default_value = 0,
+		.flags	       = V4L2_CTRL_FLAG_SLIDER,
 	}
 };
 
@@ -212,6 +221,9 @@ struct svvd_dev {
 
 	/* Control 'registers' */
 	int 			   qctl_regs[ARRAY_SIZE(svvd_qctrl)];
+
+	struct v4l2_rect           crop_output;
+	struct v4l2_rect           crop_overlay;
 };
 
 struct svvd_fh {
@@ -750,7 +762,7 @@ static void free_buffer(struct videobuf_queue *vq, struct svvd_buffer *buf)
 }
 
 #define norm_maxw() 1024
-#define norm_maxh() 768
+#define norm_maxh() 1024
 static int
 buffer_prepare(struct videobuf_queue *vq, struct videobuf_buffer *vb,
 						enum v4l2_field field)
@@ -848,7 +860,7 @@ static int svvd_querycap(struct file *file, void  *priv,
 	return 0;
 }
 
-static int svvd_enum_fmt_vid(struct file *file, void  *priv,
+static int svvd_enum_fmt_vid_out(struct file *file, void  *priv,
 					struct v4l2_fmtdesc *f)
 {
 	struct svvd_fmt *fmt;
@@ -863,7 +875,7 @@ static int svvd_enum_fmt_vid(struct file *file, void  *priv,
 	return 0;
 }
 
-static int svvd_g_fmt_vid(struct file *file, void *priv,
+static int svvd_g_fmt_vid_out(struct file *file, void *priv,
 					struct v4l2_format *f)
 {
 	struct svvd_fh *fh = priv;
@@ -898,12 +910,13 @@ static int svvd_try_fmt_vid(struct file *file, void *priv,
 
 	field = f->fmt.pix.field;
 
-	if (field == V4L2_FIELD_ANY) {
+	// no field check ?
+	/*if (field == V4L2_FIELD_ANY) {
 		field = V4L2_FIELD_INTERLACED;
 	} else if (V4L2_FIELD_INTERLACED != field) {
 		dprintk(dev, 1, "Field type invalid.\n");
 		return -EINVAL;
-	}
+	}*/
 
 	maxw  = norm_maxw();
 	maxh  = norm_maxh();
@@ -920,7 +933,7 @@ static int svvd_try_fmt_vid(struct file *file, void *priv,
 }
 
 /*FIXME: This seems to be generic enough to be at videodev2 */
-static int svvd_s_fmt_vid(struct file *file, void *priv,
+static int svvd_s_fmt_vid_out(struct file *file, void *priv,
 					struct v4l2_format *f)
 {
 	struct svvd_fh *fh = priv;
@@ -949,6 +962,34 @@ out:
 	mutex_unlock(&q->vb_lock);
 
 	return ret;
+}
+
+static int svvd_s_fmt_vid_overlay(struct file *file, void *priv,
+					struct v4l2_format *f)
+{
+	struct svvd_fh *fh = priv;
+	struct svvd_dev *dev = fh->dev;
+
+	if (f->type != V4L2_BUF_TYPE_VIDEO_CAPTURE &&
+			f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY &&
+			f->type != V4L2_BUF_TYPE_VIDEO_OUTPUT)
+	{
+		printk("Crop type is (%d)\n, We support video capture or video overlay or video output", f->type);
+		return -EINVAL;
+	}
+	if (f->fmt.win.w.height < 0)
+		return -EINVAL;
+	if (f->fmt.win.w.width < 0)
+		return -EINVAL;
+
+	mutex_lock(&dev->mutex);
+	dev->crop_overlay.top = f->fmt.win.w.top;
+	dev->crop_overlay.left = f->fmt.win.w.left;
+	dev->crop_overlay.height = f->fmt.win.w.height;
+	dev->crop_overlay.width = f->fmt.win.w.width;
+	mutex_unlock(&dev->mutex);
+
+	return 0;
 }
 
 static int svvd_reqbufs(struct file *file, void *priv,
@@ -1106,6 +1147,52 @@ static int svvd_s_ctrl(struct file *file, void *priv,
 	return -EINVAL;
 }
 
+static int svvd_cropcap(struct file *file, void *priv,
+					struct v4l2_cropcap *cap)
+{
+	/* nothing to do 
+	cap->bounds  = dev->crop_bounds;
+	cap->defrect = dev->crop_defrect;
+	*/
+	cap->pixelaspect.numerator   = 1; 
+	cap->pixelaspect.denominator = 1; 
+
+	return 0;
+}
+
+static int svvd_s_crop(struct file *file, void *priv,
+					struct v4l2_crop *crop)
+{
+	struct svvd_fh *fh = priv;
+	struct svvd_dev *dev = fh->dev;
+
+	if (crop->type != V4L2_BUF_TYPE_VIDEO_CAPTURE &&
+			crop->type != V4L2_BUF_TYPE_VIDEO_OVERLAY &&
+			crop->type != V4L2_BUF_TYPE_VIDEO_OUTPUT)
+	{
+		printk("Crop type is (%d)\n, We support video capture or video overlay or video output", crop->type);
+		return -EINVAL;
+	}
+	if (crop->c.height < 0)
+		return -EINVAL;
+	if (crop->c.width < 0)
+		return -EINVAL;
+
+	if (crop->c.width != fh->width)
+		return -EINVAL;
+	if (crop->c.height != fh->height)
+		return -EINVAL;		
+
+	mutex_lock(&dev->mutex);
+	dev->crop_output.top = crop->c.top;
+	dev->crop_output.left = crop->c.left;
+	dev->crop_output.height = crop->c.height;
+	dev->crop_output.width = crop->c.width;
+	mutex_unlock(&dev->mutex);
+
+	return 0;
+}
+
 /* ------------------------------------------------------------------
 	File operations for the device
    ------------------------------------------------------------------*/
@@ -1144,6 +1231,7 @@ static int svvd_open(struct file *file)
 
 	fh->type     = V4L2_BUF_TYPE_VIDEO_OUTPUT;
 	fh->fmt      = &formats[0];
+	// TODO: variable size support?
 	fh->width    = 480;
 	fh->height   = 800;
 
@@ -1247,13 +1335,10 @@ static const struct v4l2_file_operations svvd_fops = {
 
 static const struct v4l2_ioctl_ops svvd_ioctl_ops = {
 	.vidioc_querycap      = svvd_querycap,
-	.vidioc_enum_fmt_vid_cap  = svvd_enum_fmt_vid,
-	.vidioc_enum_fmt_vid_out  = svvd_enum_fmt_vid,
-	.vidioc_g_fmt_vid_cap     = svvd_g_fmt_vid,
-	.vidioc_g_fmt_vid_out     = svvd_g_fmt_vid,
-	.vidioc_try_fmt_vid_cap   = svvd_try_fmt_vid,
-	.vidioc_s_fmt_vid_cap     = svvd_s_fmt_vid,
-	.vidioc_s_fmt_vid_out     = svvd_s_fmt_vid,
+	.vidioc_enum_fmt_vid_out  = svvd_enum_fmt_vid_out,
+	.vidioc_g_fmt_vid_out     = svvd_g_fmt_vid_out,
+	.vidioc_s_fmt_vid_out     = svvd_s_fmt_vid_out,
+	.vidioc_s_fmt_vid_overlay = svvd_s_fmt_vid_overlay,
 	.vidioc_reqbufs       = svvd_reqbufs,
 	.vidioc_querybuf      = svvd_querybuf,
 	.vidioc_qbuf          = svvd_qbuf,
@@ -1267,6 +1352,8 @@ static const struct v4l2_ioctl_ops svvd_ioctl_ops = {
 	.vidioc_s_ctrl        = svvd_s_ctrl,
 	.vidioc_streamon      = svvd_streamon,
 	.vidioc_streamoff     = svvd_streamoff,
+	.vidioc_cropcap       = svvd_cropcap,
+	.vidioc_s_crop        = svvd_s_crop,
 #ifdef CONFIG_VIDEO_V4L1_COMPAT
 	.vidiocgmbuf          = svvdgmbuf,
 #endif
