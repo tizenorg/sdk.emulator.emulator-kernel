@@ -2132,6 +2132,11 @@ CONFIG_DMIID=y
 # CONFIG_ISCSI_IBFT_FIND is not set
 
 #
+# Virtual_3D_Accelerator
+#
+CONFIG_HW_ACCELERATOR=y
+
+#
 # File systems
 #
 # CONFIG_EXT2_FS is not set

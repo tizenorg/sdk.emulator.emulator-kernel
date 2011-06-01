@@ -1,0 +1,7 @@
+menu "Virtual_3D_Accelerator"
+
+config HW_ACCELERATOR
+	tristate "Samsung Virtual 3D Accelerator driver"
+	default n
+endmenu
+
