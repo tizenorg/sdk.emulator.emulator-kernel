@@ -67,65 +67,6 @@ module_param(vid_limit, uint, 0644);
 MODULE_PARM_DESC(vid_limit, "memory limit in megabytes");
 
 
-/* supported controls */
-static struct v4l2_queryctrl svvd_qctrl[] = {
-	{
-		.id            = V4L2_CID_AUDIO_VOLUME,
-		.name          = "Volume",
-		.minimum       = 0,
-		.maximum       = 65535,
-		.step          = 65535/100,
-		.default_value = 65535,
-		.flags         = V4L2_CTRL_FLAG_SLIDER,
-		.type          = V4L2_CTRL_TYPE_INTEGER,
-	}, {
-		.id            = V4L2_CID_BRIGHTNESS,
-		.type          = V4L2_CTRL_TYPE_INTEGER,
-		.name          = "Brightness",
-		.minimum       = 0,
-		.maximum       = 255,
-		.step          = 1,
-		.default_value = 127,
-		.flags         = V4L2_CTRL_FLAG_SLIDER,
-	}, {
-		.id            = V4L2_CID_CONTRAST,
-		.type          = V4L2_CTRL_TYPE_INTEGER,
-		.name          = "Contrast",
-		.minimum       = 0,
-		.maximum       = 255,
-		.step          = 0x1,
-		.default_value = 0x10,
-		.flags         = V4L2_CTRL_FLAG_SLIDER,
-	}, {
-		.id            = V4L2_CID_SATURATION,
-		.type          = V4L2_CTRL_TYPE_INTEGER,
-		.name          = "Saturation",
-		.minimum       = 0,
-		.maximum       = 255,
-		.step          = 0x1,
-		.default_value = 127,
-		.flags         = V4L2_CTRL_FLAG_SLIDER,
-	}, {
-		.id            = V4L2_CID_HUE,
-		.type          = V4L2_CTRL_TYPE_INTEGER,
-		.name          = "Hue",
-		.minimum       = -128,
-		.maximum       = 127,
-		.step          = 0x1,
-		.default_value = 0,
-		.flags         = V4L2_CTRL_FLAG_SLIDER,
-	}, {
-		.id	       = V4L2_CID_PRIVATE_BASE,
-		.type	       = V4L2_CTRL_TYPE_INTEGER,
-		.name	       = "Rotation",
-		.minimum       = 0,
-		.maximum       = 3,
-		.step	       = 0x1,
-		.default_value = 0,
-		.flags	       = V4L2_CTRL_FLAG_SLIDER,
-	}
-};
-
 #define dprintk(dev, level, fmt, arg...) \
 	v4l2_dbg(level, debug, &dev->v4l2_dev, fmt, ## arg)
 
@@ -193,9 +134,6 @@ struct svvd_dev {
 
 	/* Input Number */
 	int			   input;
-
-	/* Control 'registers' */
-	int 			   qctl_regs[ARRAY_SIZE(svvd_qctrl)];
 
 	// TODO: shared with qemu ?
 	struct v4l2_rect           crop_overlay;
@@ -557,56 +495,6 @@ static int svvd_s_std(struct file *file, void *priv, v4l2_std_id *i)
 	return 0;
 }
 
-/* --- controls ---------------------------------------------- */
-static int svvd_queryctrl(struct file *file, void *priv,
-			    struct v4l2_queryctrl *qc)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(svvd_qctrl); i++)
-		if (qc->id && qc->id == svvd_qctrl[i].id) {
-			memcpy(qc, &(svvd_qctrl[i]),
-				sizeof(*qc));
-			return (0);
-		}
-
-	return -EINVAL;
-}
-
-static int svvd_g_ctrl(struct file *file, void *priv,
-			 struct v4l2_control *ctrl)
-{
-	struct svvd_fh *fh = priv;
-	struct svvd_dev *dev = fh->dev;
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(svvd_qctrl); i++)
-		if (ctrl->id == svvd_qctrl[i].id) {
-			ctrl->value = dev->qctl_regs[i];
-			return 0;
-		}
-
-	return -EINVAL;
-}
-static int svvd_s_ctrl(struct file *file, void *priv,
-				struct v4l2_control *ctrl)
-{
-	struct svvd_fh *fh = priv;
-	struct svvd_dev *dev = fh->dev;
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(svvd_qctrl); i++)
-		if (ctrl->id == svvd_qctrl[i].id) {
-			if (ctrl->value < svvd_qctrl[i].minimum ||
-			    ctrl->value > svvd_qctrl[i].maximum) {
-				return -ERANGE;
-			}
-			dev->qctl_regs[i] = ctrl->value;
-			return 0;
-		}
-	return -EINVAL;
-}
-
 static int svvd_cropcap(struct file *file, void *priv,
 					struct v4l2_cropcap *cap)
 {
@@ -624,7 +512,7 @@ static int svvd_s_crop(struct file *file, void *priv,
 					struct v4l2_crop *crop)
 {
 	struct svvd_fh *fh = priv;
-//	struct svvd_dev *dev = fh->dev;
+	struct svvd_dev *dev = fh->dev;
 
 	if (crop->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
 	{
@@ -641,15 +529,12 @@ static int svvd_s_crop(struct file *file, void *priv,
 	if (crop->c.height != fh->height)
 		return -EINVAL;		
 
-	// TODO:
-/*
 	mutex_lock(&dev->mutex);
-	dev->crop_output.top = crop->c.top;
-	dev->crop_output.left = crop->c.left;
-	dev->crop_output.height = crop->c.height;
-	dev->crop_output.width = crop->c.width;
+	dev->crop_overlay.top = crop->c.top;
+	dev->crop_overlay.left = crop->c.left;
+	dev->crop_overlay.height = crop->c.height;
+	dev->crop_overlay.width = crop->c.width;
 	mutex_unlock(&dev->mutex);
-*/
 
 	return 0;
 }
@@ -692,7 +577,7 @@ static int svvd_open(struct file *file)
 
 	fh->type     = V4L2_BUF_TYPE_VIDEO_OVERLAY;
 	fh->fmt      = &formats[0];
-	// TODO: variable size support?
+	// TODO: variable size support? getting from fb?
 	fh->width    = 480;
 	fh->height   = 800;
 
@@ -771,9 +656,6 @@ static const struct v4l2_ioctl_ops svvd_ioctl_ops = {
 	.vidioc_qbuf          = svvd_qbuf,
 	.vidioc_dqbuf         = svvd_dqbuf,
 	.vidioc_s_std         = svvd_s_std,
-	.vidioc_queryctrl     = svvd_queryctrl,
-	.vidioc_g_ctrl        = svvd_g_ctrl,
-	.vidioc_s_ctrl        = svvd_s_ctrl,
 	.vidioc_cropcap       = svvd_cropcap,
 	.vidioc_s_crop        = svvd_s_crop,
 #ifdef CONFIG_VIDEO_V4L1_COMPAT
@@ -820,7 +702,7 @@ static int __init svvd_create_instance(int inst)
 {
 	struct svvd_dev *dev;
 	struct video_device *vfd;
-	int ret, i;
+	int ret;
 
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev)
@@ -849,10 +731,6 @@ static int __init svvd_create_instance(int inst)
 		goto rel_vdev;
 
 	video_set_drvdata(vfd, dev);
-
-	/* Set all controls to their default value. */
-	for (i = 0; i < ARRAY_SIZE(svvd_qctrl); i++)
-		dev->qctl_regs[i] = svvd_qctrl[i].default_value;
 
 	/* Now that everything is fine, let's add it to device list */
 	list_add_tail(&dev->svvd_devlist, &svvd_devlist);
