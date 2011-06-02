@@ -40,11 +40,6 @@
 
 #define SVVD_MODULE_NAME "svvd"
 
-/* Wake up at about 30 fps */
-#define WAKE_NUMERATOR 30
-#define WAKE_DENOMINATOR 1001
-#define BUFFER_TIMEOUT     msecs_to_jiffies(500)  /* 0.5 seconds */
-
 #define SVVD_MAJOR_VERSION 0
 #define SVVD_MINOR_VERSION 6
 #define SVVD_RELEASE 0
@@ -69,7 +64,7 @@ MODULE_PARM_DESC(debug, "activates debug info");
 
 static unsigned int vid_limit = 16;
 module_param(vid_limit, uint, 0644);
-MODULE_PARM_DESC(vid_limit, "capture memory limit in megabytes");
+MODULE_PARM_DESC(vid_limit, "memory limit in megabytes");
 
 
 /* supported controls */
@@ -152,23 +147,6 @@ static struct svvd_fmt formats[] = {
 	},
 };
 
-static struct svvd_fmt *get_format(struct v4l2_format *f)
-{
-	struct svvd_fmt *fmt;
-	unsigned int k;
-
-	for (k = 0; k < ARRAY_SIZE(formats); k++) {
-		fmt = &formats[k];
-		if (fmt->fourcc == f->fmt.pix.pixelformat)
-			break;
-	}
-
-	if (k == ARRAY_SIZE(formats))
-		return NULL;
-
-	return &formats[k];
-}
-
 struct sg_to_addr {
 	int pos;
 	struct scatterlist *sg;
@@ -220,7 +198,6 @@ struct svvd_dev {
 	int 			   qctl_regs[ARRAY_SIZE(svvd_qctrl)];
 
 	// TODO: shared with qemu ?
-	struct v4l2_rect           crop_output;
 	struct v4l2_rect           crop_overlay;
 };
 
@@ -376,14 +353,6 @@ static void precalculate_bars(struct svvd_fh *fh)
 
 }
 
-#define TSTAMP_MIN_Y	24
-#define TSTAMP_MAX_Y	(TSTAMP_MIN_Y + 15)
-#define TSTAMP_INPUT_X	10
-#define TSTAMP_MIN_X	(54 + TSTAMP_INPUT_X)
-
-#define frames_to_ms(frames)					\
-	((frames * WAKE_NUMERATOR * 1000) / WAKE_DENOMINATOR)
-
 /* ------------------------------------------------------------------
 	Videobuf operations
    ------------------------------------------------------------------*/
@@ -514,107 +483,8 @@ static int svvd_querycap(struct file *file, void  *priv,
 	strcpy(cap->card, "svvd");
 	strlcpy(cap->bus_info, dev->v4l2_dev.name, sizeof(cap->bus_info));
 	cap->version = SVVD_VERSION;
-	cap->capabilities =	V4L2_CAP_VIDEO_CAPTURE |
-				V4L2_CAP_STREAMING     |
-				V4L2_CAP_READWRITE     |
-				V4L2_CAP_VIDEO_OUTPUT;
+	cap->capabilities =	V4L2_CAP_VIDEO_OVERLAY;
 	return 0;
-}
-
-static int svvd_enum_fmt_vid_out(struct file *file, void  *priv,
-					struct v4l2_fmtdesc *f)
-{
-	struct svvd_fmt *fmt;
-
-	if (f->index >= ARRAY_SIZE(formats))
-		return -EINVAL;
-
-	fmt = &formats[f->index];
-
-	strlcpy(f->description, fmt->name, sizeof(f->description));
-	f->pixelformat = fmt->fourcc;
-	return 0;
-}
-
-static int svvd_g_fmt_vid_out(struct file *file, void *priv,
-					struct v4l2_format *f)
-{
-	struct svvd_fh *fh = priv;
-
-	f->fmt.pix.width        = fh->width;
-	f->fmt.pix.height       = fh->height;
-	f->fmt.pix.field        = fh->vb_vidq.field;
-	f->fmt.pix.pixelformat  = fh->fmt->fourcc;
-	f->fmt.pix.bytesperline =
-		(f->fmt.pix.width * fh->fmt->depth) >> 3;
-	f->fmt.pix.sizeimage =
-		f->fmt.pix.height * f->fmt.pix.bytesperline;
-
-	return (0);
-}
-
-static int svvd_try_fmt_vid(struct file *file, void *priv,
-			struct v4l2_format *f)
-{
-	struct svvd_fh  *fh  = priv;
-	struct svvd_dev *dev = fh->dev;
-	struct svvd_fmt *fmt;
-	enum v4l2_field field;
-	unsigned int maxw, maxh;
-
-	fmt = get_format(f);
-	if (!fmt) {
-		dprintk(dev, 1, "Fourcc format (0x%08x) invalid.\n",
-			f->fmt.pix.pixelformat);
-		return -EINVAL;
-	}
-
-	field = f->fmt.pix.field;
-
-	maxw  = norm_maxw();
-	maxh  = norm_maxh();
-
-	f->fmt.pix.field = field;
-	v4l_bound_align_image(&f->fmt.pix.width, 48, maxw, 2,
-			      &f->fmt.pix.height, 32, maxh, 0, 0);
-	f->fmt.pix.bytesperline =
-		(f->fmt.pix.width * fmt->depth) >> 3;
-	f->fmt.pix.sizeimage =
-		f->fmt.pix.height * f->fmt.pix.bytesperline;
-
-	return 0;
-}
-
-/*FIXME: This seems to be generic enough to be at videodev2 */
-static int svvd_s_fmt_vid_out(struct file *file, void *priv,
-					struct v4l2_format *f)
-{
-	struct svvd_fh *fh = priv;
-	struct videobuf_queue *q = &fh->vb_vidq;
-
-	int ret = svvd_try_fmt_vid(file, fh, f);
-	if (ret < 0)
-		return ret;
-
-	mutex_lock(&q->vb_lock);
-
-	if (videobuf_queue_is_busy(&fh->vb_vidq)) {
-		dprintk(fh->dev, 1, "%s queue busy\n", __func__);
-		ret = -EBUSY;
-		goto out;
-	}
-
-	fh->fmt           = get_format(f);
-	fh->width         = f->fmt.pix.width;
-	fh->height        = f->fmt.pix.height;
-	fh->vb_vidq.field = f->fmt.pix.field;
-	fh->type          = f->type;
-
-	ret = 0;
-out:
-	mutex_unlock(&q->vb_lock);
-
-	return ret;
 }
 
 static int svvd_s_fmt_vid_overlay(struct file *file, void *priv,
@@ -623,11 +493,9 @@ static int svvd_s_fmt_vid_overlay(struct file *file, void *priv,
 	struct svvd_fh *fh = priv;
 	struct svvd_dev *dev = fh->dev;
 
-	if (f->type != V4L2_BUF_TYPE_VIDEO_CAPTURE &&
-			f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY &&
-			f->type != V4L2_BUF_TYPE_VIDEO_OUTPUT)
+	if (f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
 	{
-		printk("Crop type is (%d)\n, We support video capture or video overlay or video output", f->type);
+		printk("Crop type is (%d)\n, We support video overlay", f->type);
 		return -EINVAL;
 	}
 	if (f->fmt.win.w.height < 0)
@@ -684,73 +552,12 @@ static int svvdgmbuf(struct file *file, void *priv, struct video_mbuf *mbuf)
 }
 #endif
 
-static int svvd_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
-{
-	struct svvd_fh  *fh = priv;
-
-	if (fh->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
-		return -EINVAL;
-	if (i != fh->type)
-		return -EINVAL;
-
-	return videobuf_streamon(&fh->vb_vidq);
-}
-
-static int svvd_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
-{
-	struct svvd_fh  *fh = priv;
-
-	if (fh->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
-		return -EINVAL;
-	if (i != fh->type)
-		return -EINVAL;
-
-	return videobuf_streamoff(&fh->vb_vidq);
-}
-
 static int svvd_s_std(struct file *file, void *priv, v4l2_std_id *i)
 {
 	return 0;
 }
 
-/* only one input in this sample driver */
-static int svvd_enum_input(struct file *file, void *priv,
-				struct v4l2_input *inp)
-{
-	if (inp->index >= NUM_INPUTS)
-		return -EINVAL;
-
-	inp->type = V4L2_INPUT_TYPE_CAMERA;
-	inp->std = V4L2_STD_525_60;
-	sprintf(inp->name, "Camera %u", inp->index);
-
-	return (0);
-}
-
-static int svvd_g_input(struct file *file, void *priv, unsigned int *i)
-{
-	struct svvd_fh *fh = priv;
-	struct svvd_dev *dev = fh->dev;
-
-	*i = dev->input;
-
-	return (0);
-}
-static int svvd_s_input(struct file *file, void *priv, unsigned int i)
-{
-	struct svvd_fh *fh = priv;
-	struct svvd_dev *dev = fh->dev;
-
-	if (i >= NUM_INPUTS)
-		return -EINVAL;
-
-	dev->input = i;
-	precalculate_bars(fh);
-
-	return (0);
-}
-
-	/* --- controls ---------------------------------------------- */
+/* --- controls ---------------------------------------------- */
 static int svvd_queryctrl(struct file *file, void *priv,
 			    struct v4l2_queryctrl *qc)
 {
@@ -817,13 +624,11 @@ static int svvd_s_crop(struct file *file, void *priv,
 					struct v4l2_crop *crop)
 {
 	struct svvd_fh *fh = priv;
-	struct svvd_dev *dev = fh->dev;
+//	struct svvd_dev *dev = fh->dev;
 
-	if (crop->type != V4L2_BUF_TYPE_VIDEO_CAPTURE &&
-			crop->type != V4L2_BUF_TYPE_VIDEO_OVERLAY &&
-			crop->type != V4L2_BUF_TYPE_VIDEO_OUTPUT)
+	if (crop->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
 	{
-		printk("Crop type is (%d)\n, We support video capture or video overlay or video output", crop->type);
+		printk("Crop type is (%d)\n, We support video overlay", crop->type);
 		return -EINVAL;
 	}
 	if (crop->c.height < 0)
@@ -836,12 +641,15 @@ static int svvd_s_crop(struct file *file, void *priv,
 	if (crop->c.height != fh->height)
 		return -EINVAL;		
 
+	// TODO:
+/*
 	mutex_lock(&dev->mutex);
 	dev->crop_output.top = crop->c.top;
 	dev->crop_output.left = crop->c.left;
 	dev->crop_output.height = crop->c.height;
 	dev->crop_output.width = crop->c.width;
 	mutex_unlock(&dev->mutex);
+*/
 
 	return 0;
 }
@@ -866,7 +674,7 @@ static int svvd_open(struct file *file)
 	}
 
 	dprintk(dev, 1, "open /dev/video%d type=%s users=%d\n", dev->vfd->num,
-		v4l2_type_names[V4L2_BUF_TYPE_VIDEO_OUTPUT], dev->users);
+		v4l2_type_names[V4L2_BUF_TYPE_VIDEO_OVERLAY], dev->users);
 
 	/* allocate + initialize per filehandle data */
 	fh = kzalloc(sizeof(*fh), GFP_KERNEL);
@@ -882,7 +690,7 @@ static int svvd_open(struct file *file)
 	file->private_data = fh;
 	fh->dev      = dev;
 
-	fh->type     = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+	fh->type     = V4L2_BUF_TYPE_VIDEO_OVERLAY;
 	fh->fmt      = &formats[0];
 	// TODO: variable size support?
 	fh->width    = 480;
@@ -903,33 +711,6 @@ static int svvd_open(struct file *file)
 			sizeof(struct svvd_buffer), fh);
 
 	return 0;
-}
-
-static ssize_t
-svvd_read(struct file *file, char __user *data, size_t count, loff_t *ppos)
-{
-	struct svvd_fh *fh = file->private_data;
-
-	if (fh->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-		return videobuf_read_stream(&fh->vb_vidq, data, count, ppos, 0,
-					file->f_flags & O_NONBLOCK);
-	}
-	return 0;
-}
-
-static unsigned int
-svvd_poll(struct file *file, struct poll_table_struct *wait)
-{
-	struct svvd_fh        *fh = file->private_data;
-	struct svvd_dev       *dev = fh->dev;
-	struct videobuf_queue *q = &fh->vb_vidq;
-
-	dprintk(dev, 1, "%s\n", __func__);
-
-	if (V4L2_BUF_TYPE_VIDEO_CAPTURE != fh->type)
-		return POLLERR;
-
-	return videobuf_poll_stream(file, q, wait);
 }
 
 static int svvd_close(struct file *file)
@@ -976,31 +757,23 @@ static const struct v4l2_file_operations svvd_fops = {
 	.owner		= THIS_MODULE,
 	.open           = svvd_open,
 	.release        = svvd_close,
-	.read           = svvd_read,
-	.poll		= svvd_poll,
+//	.read           = svvd_read,
+//	.poll		= svvd_poll,
 	.ioctl          = video_ioctl2, /* V4L2 ioctl handler */
 	.mmap           = svvd_mmap,
 };
 
 static const struct v4l2_ioctl_ops svvd_ioctl_ops = {
 	.vidioc_querycap      = svvd_querycap,
-	.vidioc_enum_fmt_vid_out  = svvd_enum_fmt_vid_out,
-	.vidioc_g_fmt_vid_out     = svvd_g_fmt_vid_out,
-	.vidioc_s_fmt_vid_out     = svvd_s_fmt_vid_out,
 	.vidioc_s_fmt_vid_overlay = svvd_s_fmt_vid_overlay,
 	.vidioc_reqbufs       = svvd_reqbufs,
 	.vidioc_querybuf      = svvd_querybuf,
 	.vidioc_qbuf          = svvd_qbuf,
 	.vidioc_dqbuf         = svvd_dqbuf,
 	.vidioc_s_std         = svvd_s_std,
-	.vidioc_enum_input    = svvd_enum_input,
-	.vidioc_g_input       = svvd_g_input,
-	.vidioc_s_input       = svvd_s_input,
 	.vidioc_queryctrl     = svvd_queryctrl,
 	.vidioc_g_ctrl        = svvd_g_ctrl,
 	.vidioc_s_ctrl        = svvd_s_ctrl,
-	.vidioc_streamon      = svvd_streamon,
-	.vidioc_streamoff     = svvd_streamoff,
 	.vidioc_cropcap       = svvd_cropcap,
 	.vidioc_s_crop        = svvd_s_crop,
 #ifdef CONFIG_VIDEO_V4L1_COMPAT
@@ -1133,7 +906,7 @@ static int __init svvd_init(void)
 	}
 
 	printk(KERN_INFO "S-core Virtual Video "
-			"Capture Board ver %u.%u.%u successfully loaded.\n",
+			"Overlay Board ver %u.%u.%u successfully loaded.\n",
 			(SVVD_VERSION >> 16) & 0xFF, (SVVD_VERSION >> 8) & 0xFF,
 			SVVD_VERSION & 0xFF);
 
