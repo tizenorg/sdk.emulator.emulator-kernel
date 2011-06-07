@@ -348,7 +348,7 @@ buffer_prepare(struct videobuf_queue *vq, struct videobuf_buffer *vb,
 	    fh->height < 32 || fh->height > norm_maxh())
 		return -EINVAL;
 
-	buf->vb.size = fh->width*fh->height*2;
+	buf->vb.size = fh->width * fh->height * fh->fmt->depth / 8;	// RGB888 (24bit)
 	if (0 != buf->vb.baddr  &&  buf->vb.bsize < buf->vb.size)
 		return -EINVAL;
 
@@ -422,6 +422,13 @@ static int svvd_querycap(struct file *file, void  *priv,
 	strlcpy(cap->bus_info, dev->v4l2_dev.name, sizeof(cap->bus_info));
 	cap->version = SVVD_VERSION;
 	cap->capabilities =	V4L2_CAP_VIDEO_OVERLAY;
+	return 0;
+}
+
+static int svvd_g_fmt_vid_overlay(struct file *file, void *priv,
+					struct v4l2_format *f)
+{
+	// TODO: 
 	return 0;
 }
 
@@ -539,6 +546,13 @@ static int svvd_s_crop(struct file *file, void *priv,
 	return 0;
 }
 
+static int svvd_overlay (struct file *file, void *fh,
+					unsigned int i)
+{
+	// TODO: qemu job
+	return 0;
+}
+
 /* ------------------------------------------------------------------
 	File operations for the device
    ------------------------------------------------------------------*/
@@ -650,14 +664,16 @@ static const struct v4l2_file_operations svvd_fops = {
 
 static const struct v4l2_ioctl_ops svvd_ioctl_ops = {
 	.vidioc_querycap      = svvd_querycap,
+	.vidioc_g_fmt_vid_overlay = svvd_g_fmt_vid_overlay,
 	.vidioc_s_fmt_vid_overlay = svvd_s_fmt_vid_overlay,
 	.vidioc_reqbufs       = svvd_reqbufs,
 	.vidioc_querybuf      = svvd_querybuf,
-	.vidioc_qbuf          = svvd_qbuf,
-	.vidioc_dqbuf         = svvd_dqbuf,
-	.vidioc_s_std         = svvd_s_std,
+//	.vidioc_qbuf          = svvd_qbuf,
+//	.vidioc_dqbuf         = svvd_dqbuf,
+//	.vidioc_s_std         = svvd_s_std,
 	.vidioc_cropcap       = svvd_cropcap,
 	.vidioc_s_crop        = svvd_s_crop,
+	.vidioc_overlay       = svvd_overlay,
 #ifdef CONFIG_VIDEO_V4L1_COMPAT
 	.vidiocgmbuf          = svvdgmbuf,
 #endif
