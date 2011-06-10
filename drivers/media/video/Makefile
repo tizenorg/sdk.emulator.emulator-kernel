@@ -144,7 +144,7 @@ obj-$(CONFIG_VIDEO_IVTV) += ivtv/
 obj-$(CONFIG_VIDEO_CX18) += cx18/
 
 obj-$(CONFIG_VIDEO_VIVI) += vivi.o
-obj-$(CONFIG_VIDEO_SVVD)  += svvd.o
+obj-$(CONFIG_VIDEO_SVO)  += svo.o
 obj-$(CONFIG_VIDEO_SVCD)  += svcd.o
 
 obj-$(CONFIG_VIDEO_CX23885) += cx23885/
