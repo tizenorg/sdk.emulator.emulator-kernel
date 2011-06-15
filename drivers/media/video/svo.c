@@ -27,26 +27,51 @@ static struct pci_device_id svo_pci_tbl[] = {
 struct svo {
 	struct pci_dev *pci_dev;		/* pci device */
 	struct video_device *video_dev;		/* video device parameters */
+
 	unsigned char __iomem *svo_mem;		/* svo: memory */
 	unsigned char __iomem *svo_mmregs;	/* svo: memory mapped registers */
-};
 
-static const struct v4l2_file_operations svo_fops = {
-	.owner		= THIS_MODULE,
-//	.open		= meye_open,
-//	.release	= meye_release,
-//	.mmap		= meye_mmap,
-	.ioctl		= video_ioctl2,
-//	.poll		= meye_poll,
+	unsigned long in_use;			/* set to 1 if the device is in use */
 };
 
 /* driver structure - only one possible */
 static struct svo svo;
 
+/****************************************************************************/
+/* video4linux integration                                                  */
+/****************************************************************************/
+
+static int svo_open(struct file *file)
+{
+	if (test_and_set_bit(0, &svo.in_use))
+		return -EBUSY;
+
+	return 0;
+}
+
+static int svo_release(struct file *file)
+{
+	// TODO: overlay off
+	clear_bit(0, &svo.in_use);
+	return 0;
+}
+
+static const struct v4l2_ioctl_ops svo_ioctl_ops = {
+	// TODO: fill it
+};
+
+static const struct v4l2_file_operations svo_fops = {
+	.owner		= THIS_MODULE,
+	.open		= svo_open,
+	.release	= svo_release,
+//	.mmap		= meye_mmap,
+	.ioctl		= video_ioctl2,
+};
+
 static struct video_device svo_template = {
 	.name		= "svo",
 	.fops		= &svo_fops,
-//	.ioctl_ops 	= &meye_ioctl_ops,
+	.ioctl_ops 	= &svo_ioctl_ops,
 	.release	= video_device_release,
 	.minor		= -1,
 };
