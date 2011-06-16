@@ -157,7 +157,7 @@ static int svo_reqbufs(struct file *file, void *priv,
 	if (p->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
 		return -EINVAL;
 
-	if (p->count != 1)
+	if (p->count > 1)
 		return -EINVAL;
 
 	if (p->memory != V4L2_MEMORY_MMAP)
