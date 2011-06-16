@@ -15,6 +15,13 @@
 #include <media/v4l2-common.h>
 #include <media/v4l2-ioctl.h>
 
+#define SVO_DRIVER_MAJORVERSION	 0
+#define SVO_DRIVER_MINORVERSION  1
+
+// TODO: getting from fb?
+#define FB_WIDTH	480
+#define FB_HEIGHT	800
+
 static struct pci_device_id svo_pci_tbl[] = {
 	{
 		.vendor       = PCI_VENDOR_ID_SAMSUNG,
@@ -37,6 +44,114 @@ struct svo {
 /* driver structure - only one possible */
 static struct svo svo;
 
+static int svo_querycap(struct file *file, void *fh,
+				struct v4l2_capability *cap)
+{
+	strcpy(cap->driver, "svo");
+	strcpy(cap->card, "svo");
+	sprintf(cap->bus_info, "PCI:%s", pci_name(svo.pci_dev));
+
+	cap->version = (SVO_DRIVER_MAJORVERSION << 8) +
+		       SVO_DRIVER_MINORVERSION;
+
+	cap->capabilities = V4L2_CAP_VIDEO_OVERLAY;
+
+	return 0;
+}
+
+static int svo_cropcap(struct file *file, void *fh,
+				struct v4l2_cropcap *cap)
+{
+	if (cap->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
+		return -EINVAL;
+
+	return 0;
+}
+
+static int svo_s_crop(struct file *file, void *priv,
+				struct v4l2_crop *crop)
+{
+	if (crop->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
+		return -EINVAL;
+
+	if (crop->c.left)
+		return -EINVAL;
+	if (crop->c.top)
+		return -EINVAL;
+
+	if (crop->c.width != FB_WIDTH)
+		return -EINVAL;
+	if (crop->c.height != FB_HEIGHT)
+		return -EINVAL;
+
+	return 0;
+}
+
+static int svo_g_fmt_vid_overlay(struct file *file, void *priv,
+						struct v4l2_format *f)
+{
+	if (f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
+		return -EINVAL;
+
+	f->fmt.win.w.left = 0;
+	f->fmt.win.w.top = 0;
+	f->fmt.win.w.width = FB_WIDTH;
+	f->fmt.win.w.height = FB_HEIGHT;
+
+	// TODO: alpha blend check
+	// TODO: format check - ARGB8888?
+
+	return 0;
+}
+
+static int svo_s_fmt_vid_overlay(struct file *file, void *priv,
+						struct v4l2_format *f)
+{
+	if (f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
+		return -EINVAL;
+
+	if (f->fmt.win.w.left)
+		return -EINVAL;
+	if (f->fmt.win.w.top)
+		return -EINVAL;
+
+	if (f->fmt.win.w.width != FB_WIDTH)
+		return -EINVAL;
+	if (f->fmt.win.w.height != FB_HEIGHT)
+		return -EINVAL;
+
+	// TODO: alpha blend check
+	// TODO: format check - ARGB8888?
+
+	return 0;
+}
+
+static int svo_reqbufs(struct file *file, void *priv,
+				  struct v4l2_requestbuffers *p)
+{
+	if (p->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
+		return -EINVAL;
+
+	if (p->count != 1)
+		return -EINVAL;
+
+	if (p->memory != V4L2_MEMORY_MMAP)
+		return -EINVAL;
+
+	return 0;
+}
+
+static int svo_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
+{
+	if (p->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
+		return -EINVAL;
+
+	if (p->index)
+		return -EINVAL;
+
+	return 0;
+}
+
 /****************************************************************************/
 /* video4linux integration                                                  */
 /****************************************************************************/
@@ -57,7 +172,13 @@ static int svo_release(struct file *file)
 }
 
 static const struct v4l2_ioctl_ops svo_ioctl_ops = {
-	// TODO: fill it
+	.vidioc_querycap	= svo_querycap,
+	.vidioc_cropcap		= svo_cropcap,
+	.vidioc_s_crop		= svo_s_crop,
+	.vidioc_g_fmt_vid_overlay = svo_g_fmt_vid_overlay,
+	.vidioc_s_fmt_vid_overlay = svo_s_fmt_vid_overlay,
+	.vidioc_reqbufs		= svo_reqbufs,
+	.vidioc_querybuf	= svo_querybuf,
 };
 
 static const struct v4l2_file_operations svo_fops = {
@@ -155,7 +276,8 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 		goto outreqirq;
 	}
 
-	printk(KERN_INFO "svo: Samsung Virtual Overlay Driver v0.1\n");
+	printk(KERN_INFO "svo: Samsung Virtual Overlay Driver v%d.%d\n",
+		SVO_DRIVER_MAJORVERSION, SVO_DRIVER_MINORVERSION);
 
 	return 0;
 
@@ -187,7 +309,8 @@ static struct pci_driver svo_pci_driver = {
 
 static int __init svo_init(void)
 {
-	printk(KERN_INFO "svo: samsung virtual overlay driver version 0.1 loaded\n");
+	printk(KERN_INFO "svo: samsung virtual overlay driver version %d.%d loaded\n",
+		SVO_DRIVER_MAJORVERSION, SVO_DRIVER_MINORVERSION);
 
 	return pci_register_driver(&svo_pci_driver);
 }
