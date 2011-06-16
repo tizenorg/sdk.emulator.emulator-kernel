@@ -22,6 +22,14 @@
 #define FB_WIDTH	480
 #define FB_HEIGHT	800
 
+// virtual register
+enum {
+    OVERLAY_POWER    = 0x00,
+    OVERLAY_FORMAT   = 0x04,
+    OVERLAY_SIZE     = 0x08,
+    OVERLAY_POSITION = 0x0C,
+};
+
 static struct pci_device_id svo_pci_tbl[] = {
 	{
 		.vendor       = PCI_VENDOR_ID_SAMSUNG,
@@ -35,14 +43,31 @@ struct svo {
 	struct pci_dev *pci_dev;		/* pci device */
 	struct video_device *video_dev;		/* video device parameters */
 
-	unsigned char __iomem *svo_mem;		/* svo: memory */
-	unsigned char __iomem *svo_mmregs;	/* svo: memory mapped registers */
+	resource_size_t mem_start;
+	resource_size_t reg_start;
+
+	resource_size_t mem_size;
+	resource_size_t reg_size;
+
+	unsigned char __iomem *svo_mmreg;	/* svo: memory mapped registers */
 
 	unsigned long in_use;			/* set to 1 if the device is in use */
 };
 
 /* driver structure - only one possible */
 static struct svo svo;
+
+/****************************************************************************/
+/* virtual register access helper                                                 */
+/****************************************************************************/
+
+static void overlay_power(int onoff) {
+	writel(onoff, svo.svo_mmreg + OVERLAY_POWER);
+}
+
+/****************************************************************************/
+/* svo ioctls                                                  */
+/****************************************************************************/
 
 static int svo_querycap(struct file *file, void *fh,
 				struct v4l2_capability *cap)
@@ -149,11 +174,21 @@ static int svo_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
 	if (p->index)
 		return -EINVAL;
 
+	p->length = svo.mem_size;
+	p->m.offset = svo.mem_start;
+
+	return 0;
+}
+
+static int svo_overlay (struct file *file, void *fh, unsigned int i)
+{
+	overlay_power(i);
+
 	return 0;
 }
 
 /****************************************************************************/
-/* video4linux integration                                                  */
+/* File operations                                                  */
 /****************************************************************************/
 
 static int svo_open(struct file *file)
@@ -164,10 +199,41 @@ static int svo_open(struct file *file)
 	return 0;
 }
 
+static void svo_vm_open(struct vm_area_struct *vma)
+{
+}
+
+static void svo_vm_close(struct vm_area_struct *vma)
+{
+}
+
+static const struct vm_operations_struct svo_vm_ops = {
+	.open		= svo_vm_open,
+	.close		= svo_vm_close,
+};
+
+static int svo_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	unsigned long size = vma->vm_end - vma->vm_start;
+
+	if (size > svo.mem_size)
+		return -EINVAL;
+
+	if (remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff, size, PAGE_SHARED))
+		return -EAGAIN;
+	
+	vma->vm_ops = &svo_vm_ops;
+	vma->vm_flags &= ~VM_IO;	/* not I/O memory */
+	vma->vm_flags |= VM_RESERVED;	/* avoid to swap out this VMA */
+
+	return 0;
+}
+
 static int svo_release(struct file *file)
 {
-	// TODO: overlay off
 	clear_bit(0, &svo.in_use);
+	overlay_power(0);
+
 	return 0;
 }
 
@@ -179,13 +245,14 @@ static const struct v4l2_ioctl_ops svo_ioctl_ops = {
 	.vidioc_s_fmt_vid_overlay = svo_s_fmt_vid_overlay,
 	.vidioc_reqbufs		= svo_reqbufs,
 	.vidioc_querybuf	= svo_querybuf,
+	.vidioc_overlay		= svo_overlay,
 };
 
 static const struct v4l2_file_operations svo_fops = {
 	.owner		= THIS_MODULE,
 	.open		= svo_open,
 	.release	= svo_release,
-//	.mmap		= meye_mmap,
+	.mmap		= svo_mmap,
 	.ioctl		= video_ioctl2,
 };
 
@@ -206,7 +273,6 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 				    const struct pci_device_id *ent)
 {
 	int ret = -EBUSY;
-	unsigned long svo_mem_adr, svo_reg_adr;
 
 	if (svo.pci_dev != NULL) {
 		printk(KERN_ERR "svo: only one device allowed!\n");
@@ -231,8 +297,9 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 		goto outnotdev;
 	}
 
-	svo_mem_adr = pci_resource_start(svo.pci_dev,0);
-	if (!svo_mem_adr) {
+	svo.mem_start = pci_resource_start(svo.pci_dev,0);
+	svo.mem_size = pci_resource_len(svo.pci_dev, 0);
+	if (!svo.mem_start) {
 		printk(KERN_ERR "svo: svo has no device base address\n");
 		goto outregions;
 	}
@@ -242,14 +309,10 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 		printk(KERN_ERR "svo: request_mem_region failed\n");
 		goto outregions;
 	}
-	svo.svo_mem = ioremap(svo_mem_adr, 0x200000);	// 2MB
-	if (!svo.svo_mem) {
-		printk(KERN_ERR "svo: ioremap failed\n");
-		goto outremap;
-	}
 	
-	svo_reg_adr = pci_resource_start(svo.pci_dev,1);
-	if (!svo_reg_adr) {
+	svo.reg_start = pci_resource_start(svo.pci_dev,1);
+	svo.reg_size = pci_resource_len(svo.pci_dev, 1);
+	if (!svo.reg_start) {
 		printk(KERN_ERR "svo: svo has no device base address\n");
 		goto outregions;
 	}
@@ -259,8 +322,9 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 		printk(KERN_ERR "svo: request_mem_region failed\n");
 		goto outregions;
 	}
-	svo.svo_mmregs = ioremap(svo_mem_adr, 0x100);	// 256 bytes
-	if (!svo.svo_mmregs) {
+
+	svo.svo_mmreg = ioremap(svo.mem_start, svo.mem_size);
+	if (!svo.svo_mmreg) {
 		printk(KERN_ERR "svo: ioremap failed\n");
 		goto outremap;
 	}
@@ -282,8 +346,7 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 	return 0;
 
 outreqirq:
-	iounmap(svo.svo_mem);
-	iounmap(svo.svo_mmregs);
+	iounmap(svo.svo_mmreg);
 outremap:
 	release_mem_region(pci_resource_start(svo.pci_dev, 0),
 			   pci_resource_len(svo.pci_dev, 0));
