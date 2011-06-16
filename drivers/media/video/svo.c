@@ -323,7 +323,7 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 		goto outregions;
 	}
 
-	svo.svo_mmreg = ioremap(svo.mem_start, svo.mem_size);
+	svo.svo_mmreg = ioremap(svo.reg_start, svo.reg_size);
 	if (!svo.svo_mmreg) {
 		printk(KERN_ERR "svo: ioremap failed\n");
 		goto outremap;
