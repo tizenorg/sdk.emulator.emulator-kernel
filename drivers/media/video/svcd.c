@@ -42,8 +42,8 @@
 
 /* Wake up at about 30 fps */
 #define WAKE_NUMERATOR 30
-#define WAKE_DENOMINATOR 1001
-#define BUFFER_TIMEOUT     msecs_to_jiffies(500)  /* 0.5 seconds */
+#define WAKE_DENOMINATOR 1000
+#define BUFFER_TIMEOUT     msecs_to_jiffies(1000)  /* 1 seconds */
 
 #define VCDS_MAJOR_VERSION 0
 #define VCDS_MINOR_VERSION 6
@@ -74,8 +74,8 @@ MODULE_PARM_DESC(vid_limit, "capture memory limit in megabytes");
 #define DFL_WIDTH	320
 #define DFL_HEIGHT	240
 
-#define VIDEO_PATH_320x240	"/root/test_320x240.yuv"
-#define VIDEO_PATH_640x480	"/root/test_640x480.yuv"
+#define VIDEO_PATH_320x240	"/opt/home/root/test_320x240.yuv"
+#define VIDEO_PATH_640x480	"/opt/home/root/test_640x480.yuv"
 
 static struct file *video_filp;
 mm_segment_t old_fs;
@@ -336,7 +336,7 @@ unlock:
 }
 
 #define frames_to_ms(frames)					\
-	((frames * WAKE_NUMERATOR * 1000) / WAKE_DENOMINATOR)
+	((frames * WAKE_NUMERATOR * 800) / WAKE_DENOMINATOR)
 
 static void vcds_sleep(struct vcds_fh *fh)
 {
