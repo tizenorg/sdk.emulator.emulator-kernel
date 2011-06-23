@@ -18,10 +18,6 @@
 #define SVO_DRIVER_MAJORVERSION	 0
 #define SVO_DRIVER_MINORVERSION  1
 
-// TODO: getting from fb?
-#define FB_WIDTH	480
-#define FB_HEIGHT	800
-
 // virtual register
 enum {
     OVERLAY_POWER    = 0x00,
@@ -52,6 +48,8 @@ struct svo {
 	unsigned char __iomem *svo_mmreg;	/* svo: memory mapped registers */
 
 	unsigned long in_use;			/* set to 1 if the device is in use */
+
+	unsigned int left, top, width, height;
 };
 
 /* driver structure - only one possible */
@@ -84,44 +82,16 @@ static int svo_querycap(struct file *file, void *fh,
 	return 0;
 }
 
-static int svo_cropcap(struct file *file, void *fh,
-				struct v4l2_cropcap *cap)
-{
-	if (cap->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
-		return -EINVAL;
-
-	return 0;
-}
-
-static int svo_s_crop(struct file *file, void *priv,
-				struct v4l2_crop *crop)
-{
-	if (crop->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
-		return -EINVAL;
-
-	if (crop->c.left)
-		return -EINVAL;
-	if (crop->c.top)
-		return -EINVAL;
-
-	if (crop->c.width != FB_WIDTH)
-		return -EINVAL;
-	if (crop->c.height != FB_HEIGHT)
-		return -EINVAL;
-
-	return 0;
-}
-
 static int svo_g_fmt_vid_overlay(struct file *file, void *priv,
 						struct v4l2_format *f)
 {
 	if (f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
 		return -EINVAL;
 
-	f->fmt.win.w.left = 0;
-	f->fmt.win.w.top = 0;
-	f->fmt.win.w.width = FB_WIDTH;
-	f->fmt.win.w.height = FB_HEIGHT;
+	f->fmt.win.w.left = svo.left;
+	f->fmt.win.w.top = svo.top;
+	f->fmt.win.w.width = svo.width;
+	f->fmt.win.w.height = svo.height;
 
 	// TODO: alpha blend check
 	// TODO: format check - ARGB8888?
@@ -135,14 +105,14 @@ static int svo_s_fmt_vid_overlay(struct file *file, void *priv,
 	if (f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
 		return -EINVAL;
 
-	if (f->fmt.win.w.left)
+	if (f->fmt.win.w.left < 0)
 		return -EINVAL;
-	if (f->fmt.win.w.top)
+	if (f->fmt.win.w.top < 0)
 		return -EINVAL;
 
-	if (f->fmt.win.w.width != FB_WIDTH)
+	if (f->fmt.win.w.width < 0)
 		return -EINVAL;
-	if (f->fmt.win.w.height != FB_HEIGHT)
+	if (f->fmt.win.w.height < 0)
 		return -EINVAL;
 
 	// TODO: alpha blend check
@@ -239,8 +209,6 @@ static int svo_release(struct file *file)
 
 static const struct v4l2_ioctl_ops svo_ioctl_ops = {
 	.vidioc_querycap	= svo_querycap,
-	.vidioc_cropcap		= svo_cropcap,
-	.vidioc_s_crop		= svo_s_crop,
 	.vidioc_g_fmt_vid_overlay = svo_g_fmt_vid_overlay,
 	.vidioc_s_fmt_vid_overlay = svo_s_fmt_vid_overlay,
 	.vidioc_reqbufs		= svo_reqbufs,
