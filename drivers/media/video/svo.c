@@ -18,12 +18,14 @@
 #define SVO_DRIVER_MAJORVERSION	 0
 #define SVO_DRIVER_MINORVERSION  1
 
-// virtual register
 enum {
-    OVERLAY_POWER    = 0x00,
-    OVERLAY_FORMAT   = 0x04,
-    OVERLAY_SIZE     = 0x08,
-    OVERLAY_POSITION = 0x0C,
+	OVERLAY0_POWER    = 0x00,
+	OVERLAY0_SIZE     = 0x04,	// width and height
+	OVERLAY0_POSITION = 0x08,	// left top position
+	NUM_REGISTER      = 0x0C,
+	OVERLAY1_POWER    = 0x0C,
+	OVERLAY1_SIZE     = 0x10,	// width and height
+	OVERLAY1_POSITION = 0x14,	// left top position
 };
 
 static struct pci_device_id svo_pci_tbl[] = {
@@ -37,7 +39,9 @@ static struct pci_device_id svo_pci_tbl[] = {
 
 struct svo {
 	struct pci_dev *pci_dev;		/* pci device */
-	struct video_device *video_dev;		/* video device parameters */
+
+	struct video_device *video_dev0;	/* video device parameters */
+	struct video_device *video_dev1;	/* video device parameters */
 
 	resource_size_t mem_start;
 	resource_size_t reg_start;
@@ -47,9 +51,10 @@ struct svo {
 
 	unsigned char __iomem *svo_mmreg;	/* svo: memory mapped registers */
 
-	unsigned long in_use;			/* set to 1 if the device is in use */
+	unsigned long in_use0;			/* set to 1 if the device is in use */
+	unsigned long in_use1;			/* set to 1 if the device is in use */
 
-	unsigned int left, top, width, height;
+	struct v4l2_rect w0, w1;		/* overlaid rect */
 };
 
 /* driver structure - only one possible */
@@ -59,8 +64,8 @@ static struct svo svo;
 /* virtual register access helper                                                 */
 /****************************************************************************/
 
-static void overlay_power(int onoff) {
-	writel(onoff, svo.svo_mmreg + OVERLAY_POWER);
+static void overlay_power(int num, int onoff) {
+	writel(onoff, svo.svo_mmreg + OVERLAY0_POWER + NUM_REGISTER * num);
 }
 
 /****************************************************************************/
@@ -82,24 +87,35 @@ static int svo_querycap(struct file *file, void *fh,
 	return 0;
 }
 
-static int svo_g_fmt_vid_overlay(struct file *file, void *priv,
+static int svo0_g_fmt_vid_overlay(struct file *file, void *priv,
 						struct v4l2_format *f)
 {
 	if (f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
 		return -EINVAL;
 
-	f->fmt.win.w.left = svo.left;
-	f->fmt.win.w.top = svo.top;
-	f->fmt.win.w.width = svo.width;
-	f->fmt.win.w.height = svo.height;
-
-	// TODO: alpha blend check
-	// TODO: format check - ARGB8888?
+	f->fmt.win.w.left = svo.w0.left;
+	f->fmt.win.w.top = svo.w0.top;
+	f->fmt.win.w.width = svo.w0.width;
+	f->fmt.win.w.height = svo.w0.height;
 
 	return 0;
 }
 
-static int svo_s_fmt_vid_overlay(struct file *file, void *priv,
+static int svo1_g_fmt_vid_overlay(struct file *file, void *priv,
+						struct v4l2_format *f)
+{
+	if (f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
+		return -EINVAL;
+
+	f->fmt.win.w.left = svo.w1.left;
+	f->fmt.win.w.top = svo.w1.top;
+	f->fmt.win.w.width = svo.w1.width;
+	f->fmt.win.w.height = svo.w1.height;
+
+	return 0;
+}
+
+static int svo0_s_fmt_vid_overlay(struct file *file, void *priv,
 						struct v4l2_format *f)
 {
 	if (f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
@@ -115,8 +131,34 @@ static int svo_s_fmt_vid_overlay(struct file *file, void *priv,
 	if (f->fmt.win.w.height < 0)
 		return -EINVAL;
 
-	// TODO: alpha blend check
-	// TODO: format check - ARGB8888?
+	svo.w0.left = f->fmt.win.w.left;
+	svo.w0.top = f->fmt.win.w.top;
+	svo.w0.width = f->fmt.win.w.width;
+	svo.w0.height = f->fmt.win.w.height;
+
+	return 0;
+}
+
+static int svo1_s_fmt_vid_overlay(struct file *file, void *priv,
+						struct v4l2_format *f)
+{
+	if (f->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
+		return -EINVAL;
+
+	if (f->fmt.win.w.left < 0)
+		return -EINVAL;
+	if (f->fmt.win.w.top < 0)
+		return -EINVAL;
+
+	if (f->fmt.win.w.width < 0)
+		return -EINVAL;
+	if (f->fmt.win.w.height < 0)
+		return -EINVAL;
+
+	svo.w1.left = f->fmt.win.w.left;
+	svo.w1.top = f->fmt.win.w.top;
+	svo.w1.width = f->fmt.win.w.width;
+	svo.w1.height = f->fmt.win.w.height;
 
 	return 0;
 }
@@ -136,7 +178,7 @@ static int svo_reqbufs(struct file *file, void *priv,
 	return 0;
 }
 
-static int svo_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
+static int svo0_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
 	if (p->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
 		return -EINVAL;
@@ -144,15 +186,36 @@ static int svo_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
 	if (p->index)
 		return -EINVAL;
 
-	p->length = svo.mem_size;
+	p->length = svo.mem_size / 2;
 	p->m.offset = svo.mem_start;
 
 	return 0;
 }
 
-static int svo_overlay (struct file *file, void *fh, unsigned int i)
+static int svo1_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
-	overlay_power(i);
+	if (p->type != V4L2_BUF_TYPE_VIDEO_OVERLAY)
+		return -EINVAL;
+
+	if (p->index)
+		return -EINVAL;
+
+	p->length = svo.mem_size / 2;
+	p->m.offset = svo.mem_start + p->length;
+
+	return 0;
+}
+
+static int svo0_overlay (struct file *file, void *fh, unsigned int i)
+{
+	overlay_power(0, i);
+
+	return 0;
+}
+
+static int svo1_overlay (struct file *file, void *fh, unsigned int i)
+{
+	overlay_power(1, i);
 
 	return 0;
 }
@@ -161,9 +224,17 @@ static int svo_overlay (struct file *file, void *fh, unsigned int i)
 /* File operations                                                  */
 /****************************************************************************/
 
-static int svo_open(struct file *file)
+static int svo0_open(struct file *file)
 {
-	if (test_and_set_bit(0, &svo.in_use))
+	if (test_and_set_bit(0, &svo.in_use0))
+		return -EBUSY;
+
+	return 0;
+}
+
+static int svo1_open(struct file *file)
+{
+	if (test_and_set_bit(0, &svo.in_use1))
 		return -EBUSY;
 
 	return 0;
@@ -199,35 +270,68 @@ static int svo_mmap(struct file *file, struct vm_area_struct *vma)
 	return 0;
 }
 
-static int svo_release(struct file *file)
+static int svo0_release(struct file *file)
 {
-	clear_bit(0, &svo.in_use);
-	overlay_power(0);
+	clear_bit(0, &svo.in_use0);
+	overlay_power(0, 0);
 
 	return 0;
 }
 
-static const struct v4l2_ioctl_ops svo_ioctl_ops = {
+static int svo1_release(struct file *file)
+{
+	clear_bit(0, &svo.in_use1);
+	overlay_power(1, 0);
+
+	return 0;
+}
+
+static const struct v4l2_ioctl_ops svo0_ioctl_ops = {
 	.vidioc_querycap	= svo_querycap,
-	.vidioc_g_fmt_vid_overlay = svo_g_fmt_vid_overlay,
-	.vidioc_s_fmt_vid_overlay = svo_s_fmt_vid_overlay,
+	.vidioc_g_fmt_vid_overlay = svo0_g_fmt_vid_overlay,
+	.vidioc_s_fmt_vid_overlay = svo0_s_fmt_vid_overlay,
 	.vidioc_reqbufs		= svo_reqbufs,
-	.vidioc_querybuf	= svo_querybuf,
-	.vidioc_overlay		= svo_overlay,
+	.vidioc_querybuf	= svo0_querybuf,
+	.vidioc_overlay		= svo0_overlay,
 };
 
-static const struct v4l2_file_operations svo_fops = {
+static const struct v4l2_ioctl_ops svo1_ioctl_ops = {
+	.vidioc_querycap	= svo_querycap,
+	.vidioc_g_fmt_vid_overlay = svo1_g_fmt_vid_overlay,
+	.vidioc_s_fmt_vid_overlay = svo1_s_fmt_vid_overlay,
+	.vidioc_reqbufs		= svo_reqbufs,
+	.vidioc_querybuf	= svo1_querybuf,
+	.vidioc_overlay		= svo1_overlay,
+};
+
+static const struct v4l2_file_operations svo0_fops = {
 	.owner		= THIS_MODULE,
-	.open		= svo_open,
-	.release	= svo_release,
+	.open		= svo0_open,
+	.release	= svo0_release,
 	.mmap		= svo_mmap,
 	.ioctl		= video_ioctl2,
 };
 
-static struct video_device svo_template = {
-	.name		= "svo",
-	.fops		= &svo_fops,
-	.ioctl_ops 	= &svo_ioctl_ops,
+static const struct v4l2_file_operations svo1_fops = {
+	.owner		= THIS_MODULE,
+	.open		= svo1_open,
+	.release	= svo1_release,
+	.mmap		= svo_mmap,
+	.ioctl		= video_ioctl2,
+};
+
+static struct video_device svo0_template = {
+	.name		= "svo0",
+	.fops		= &svo0_fops,
+	.ioctl_ops 	= &svo0_ioctl_ops,
+	.release	= video_device_release,
+	.minor		= -1,
+};
+
+static struct video_device svo1_template = {
+	.name		= "svo1",
+	.fops		= &svo1_fops,
+	.ioctl_ops 	= &svo1_ioctl_ops,
 	.release	= video_device_release,
 	.minor		= -1,
 };
@@ -249,14 +353,22 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 
 	ret = -ENOMEM;
 	svo.pci_dev = pci_dev;
-	svo.video_dev = video_device_alloc();
-	if (!svo.video_dev) {
-		printk(KERN_ERR "svo: video_device_alloc() failed!\n");
+	svo.video_dev0 = video_device_alloc();
+	if (!svo.video_dev0) {
+		printk(KERN_ERR "svo0: video_device_alloc() failed!\n");
 		goto outnotdev;
 	}
 
-	memcpy(svo.video_dev, &svo_template, sizeof(svo_template));
-	svo.video_dev->parent = &svo.pci_dev->dev;
+	svo.video_dev1 = video_device_alloc();
+	if (!svo.video_dev1) {
+		printk(KERN_ERR "svo1: video_device_alloc() failed!\n");
+		goto outnotdev;
+	}
+
+	memcpy(svo.video_dev0, &svo0_template, sizeof(svo0_template));
+	svo.video_dev0->parent = &svo.pci_dev->dev;
+	memcpy(svo.video_dev1, &svo1_template, sizeof(svo1_template));
+	svo.video_dev1->parent = &svo.pci_dev->dev;
 
 	ret = -EIO;
 
@@ -302,7 +414,12 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 
 	pci_set_master(svo.pci_dev);
 
-	if (video_register_device(svo.video_dev, VFL_TYPE_GRABBER,
+	if (video_register_device(svo.video_dev0, VFL_TYPE_GRABBER,
+				  video_nr) < 0) {
+		printk(KERN_ERR "svo: video_register_device failed\n");
+		goto outreqirq;
+	}
+	if (video_register_device(svo.video_dev1, VFL_TYPE_GRABBER,
 				  video_nr) < 0) {
 		printk(KERN_ERR "svo: video_register_device failed\n");
 		goto outreqirq;
@@ -322,7 +439,8 @@ outremap:
 			   pci_resource_len(svo.pci_dev, 1));
 outregions:
 	pci_disable_device(svo.pci_dev);
-	video_device_release(svo.video_dev);
+	video_device_release(svo.video_dev0);
+	video_device_release(svo.video_dev1);
 outnotdev:
 	return ret;
 }
