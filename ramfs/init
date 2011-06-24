@@ -133,6 +133,7 @@ echo "create device filesystem"
 
 /bin/mknod /new_root/dev/video0 c 81 0
 /bin/mknod /new_root/dev/video1 c 81 1
+/bin/mknod /new_root/dev/video2 c 81 2
 
 /bin/mknod /new_root/dev/mtd0 b 90 0
 /bin/mknod /new_root/dev/mtd1 b 90 2

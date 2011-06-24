@@ -136,6 +136,9 @@ static int svo0_s_fmt_vid_overlay(struct file *file, void *priv,
 	svo.w0.width = f->fmt.win.w.width;
 	svo.w0.height = f->fmt.win.w.height;
 
+	writel(svo.w0.left | svo.w0.top << 16, svo.svo_mmreg + OVERLAY0_POSITION);
+	writel(svo.w0.width | svo.w0.height << 16, svo.svo_mmreg + OVERLAY0_SIZE);
+
 	return 0;
 }
 
@@ -159,6 +162,9 @@ static int svo1_s_fmt_vid_overlay(struct file *file, void *priv,
 	svo.w1.top = f->fmt.win.w.top;
 	svo.w1.width = f->fmt.win.w.width;
 	svo.w1.height = f->fmt.win.w.height;
+
+	writel(svo.w1.left | svo.w1.top << 16, svo.svo_mmreg + OVERLAY1_POSITION);
+	writel(svo.w1.width | svo.w1.height << 16, svo.svo_mmreg + OVERLAY1_SIZE);
 
 	return 0;
 }
