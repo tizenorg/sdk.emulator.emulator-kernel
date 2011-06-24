@@ -19,13 +19,9 @@
 #define SVO_DRIVER_MINORVERSION  1
 
 enum {
-	OVERLAY0_POWER    = 0x00,
-	OVERLAY0_SIZE     = 0x04,	// width and height
-	OVERLAY0_POSITION = 0x08,	// left top position
-	NUM_REGISTER      = 0x0C,
-	OVERLAY1_POWER    = 0x0C,
-	OVERLAY1_SIZE     = 0x10,	// width and height
-	OVERLAY1_POSITION = 0x14,	// left top position
+	OVERLAY_POWER    = 0x00,
+	OVERLAY_POSITION = 0x04,	// left top position
+	OVERLAY_SIZE     = 0x08,	// width and height
 };
 
 static struct pci_device_id svo_pci_tbl[] = {
@@ -65,7 +61,7 @@ static struct svo svo;
 /****************************************************************************/
 
 static void overlay_power(int num, int onoff) {
-	writel(onoff, svo.svo_mmreg + OVERLAY0_POWER + NUM_REGISTER * num);
+	writel(onoff, svo.svo_mmreg + num * svo.reg_size / 2 + OVERLAY_POWER);
 }
 
 /****************************************************************************/
@@ -136,8 +132,8 @@ static int svo0_s_fmt_vid_overlay(struct file *file, void *priv,
 	svo.w0.width = f->fmt.win.w.width;
 	svo.w0.height = f->fmt.win.w.height;
 
-	writel(svo.w0.left | svo.w0.top << 16, svo.svo_mmreg + OVERLAY0_POSITION);
-	writel(svo.w0.width | svo.w0.height << 16, svo.svo_mmreg + OVERLAY0_SIZE);
+	writel(svo.w0.left | svo.w0.top << 16, svo.svo_mmreg + OVERLAY_POSITION);
+	writel(svo.w0.width | svo.w0.height << 16, svo.svo_mmreg + OVERLAY_SIZE);
 
 	return 0;
 }
@@ -163,8 +159,8 @@ static int svo1_s_fmt_vid_overlay(struct file *file, void *priv,
 	svo.w1.width = f->fmt.win.w.width;
 	svo.w1.height = f->fmt.win.w.height;
 
-	writel(svo.w1.left | svo.w1.top << 16, svo.svo_mmreg + OVERLAY1_POSITION);
-	writel(svo.w1.width | svo.w1.height << 16, svo.svo_mmreg + OVERLAY1_SIZE);
+	writel(svo.w1.left | svo.w1.top << 16, svo.svo_mmreg + svo.reg_size / 2 + OVERLAY_POSITION);
+	writel(svo.w1.width | svo.w1.height << 16, svo.svo_mmreg + svo.reg_size / 2 + OVERLAY_SIZE);
 
 	return 0;
 }
