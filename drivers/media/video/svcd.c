@@ -41,12 +41,12 @@
 #define SVCD_MODULE_NAME "svcd"
 
 /* Wake up at about 30 fps */
-#define WAKE_NUMERATOR 30
+#define WAKE_NUMERATOR 40
 #define WAKE_DENOMINATOR 1000
 #define BUFFER_TIMEOUT     msecs_to_jiffies(1000)  /* 1 seconds */
 
 #define SVCD_MAJOR_VERSION 0
-#define SVCD_MINOR_VERSION 6
+#define SVCD_MINOR_VERSION 7
 #define SVCD_RELEASE 0
 #define SVCD_VERSION \
 	KERNEL_VERSION(SVCD_MAJOR_VERSION, SVCD_MINOR_VERSION, SVCD_RELEASE)
@@ -770,7 +770,6 @@ static int vidioc_enum_input(struct file *file, void *priv,
 		return -EINVAL;
 
 	inp->type = V4L2_INPUT_TYPE_CAMERA;
-	inp->std = V4L2_STD_525_60;
 	sprintf(inp->name, "Camera %u", inp->index);
 
 	return (0);
@@ -834,6 +833,60 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 			dev->qctl_regs[i] = ctrl->value;
 			return 0;
 		}
+	return -EINVAL;
+}
+
+static int vidioc_g_parm(struct file *file, void *fh,
+				struct v4l2_streamparm *parm)
+{
+	struct v4l2_captureparm *cp = &parm->parm.capture;
+
+	if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
+
+	memset(cp, 0, sizeof(struct v4l2_captureparm));
+	cp->capability = V4L2_CAP_TIMEPERFRAME;
+	cp->timeperframe.numerator = 1;
+	cp->timeperframe.denominator = 30;
+
+	return 0;
+}
+
+static int vidioc_enum_framesizes(struct file *file, void *fh,
+				struct v4l2_frmsizeenum *fsize)
+{
+	if (fsize->index > 0)
+		return -EINVAL;
+
+	/* Only support V4L2_PIX_FMT_YUV420 & 320x240 size */
+	switch (fsize->pixel_format) {
+		case V4L2_PIX_FMT_YUV420:
+			fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
+			fsize->discrete.width = DFL_WIDTH;
+			fsize->discrete.height = DFL_HEIGHT;
+			return 0;
+		default:
+			return -EINVAL;
+	}
+}
+
+static int vidioc_enum_frameintervals(struct file *file, void *fh,
+				struct v4l2_frmivalenum *fival)
+{
+	if (fival->index > 1)
+		return -EINVAL;
+
+	/* Only support V4L2_PIX_FMT_YUV420 */
+	if (fival->pixel_format != V4L2_PIX_FMT_YUV420)
+		return -EINVAL;
+
+	/* Only support 30 FPS */
+	if ((fival->width == DFL_WIDTH) && (fival->height == DFL_HEIGHT)) {
+		fival->type = V4L2_FRMIVAL_TYPE_DISCRETE;
+		fival->discrete.numerator = 1;
+		fival->discrete.denominator = 30;
+		return 0;
+	}
 	return -EINVAL;
 }
 
@@ -999,6 +1052,9 @@ static const struct v4l2_ioctl_ops svcd_ioctl_ops = {
 	.vidioc_s_ctrl        = vidioc_s_ctrl,
 	.vidioc_streamon      = vidioc_streamon,
 	.vidioc_streamoff     = vidioc_streamoff,
+	.vidioc_g_parm			= vidioc_g_parm,
+	.vidioc_enum_framesizes	= vidioc_enum_framesizes,
+	.vidioc_enum_frameintervals	= vidioc_enum_frameintervals,
 #ifdef CONFIG_VIDEO_V4L1_COMPAT
 	.vidiocgmbuf          = vidiocgmbuf,
 #endif
@@ -1010,9 +1066,6 @@ static struct video_device svcd_template = {
 	.ioctl_ops 	= &svcd_ioctl_ops,
 	.minor		= -1,
 	.release	= video_device_release,
-
-	.tvnorms              = V4L2_STD_525_60,
-	.current_norm         = V4L2_STD_NTSC_M,
 };
 
 /* -----------------------------------------------------------------
