@@ -1,7 +1,10 @@
 /*
- * Virtual Video driver - This code emulates a real video device with v4l2 api
+ * Virtual Camera driver
  *
- * Copyright (C) 2011 S-core
+ * Copyright (c) 2011 Samsung Electronics Co., Ltd All Rights Reserved
+ *
+ * Contact : Jinhyung Jo <jinhyung.jo@samsung.com>
+ *
  * Copyright (c) 2006 by:
  *      Mauro Carvalho Chehab <mchehab--a.t--infradead.org>
  *      Ted Walther <ted--a.t--enumera.com>
