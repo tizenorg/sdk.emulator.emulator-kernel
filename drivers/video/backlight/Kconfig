@@ -106,7 +106,7 @@ config LCD_HP700
 config BACKLIGHT_CLASS_DEVICE
         tristate "Lowlevel Backlight controls"
 	depends on BACKLIGHT_LCD_SUPPORT
-	default m
+	default n 
 	help
 	  This framework adds support for low-level control of the LCD
           backlight. This includes support for brightness and power.
@@ -262,3 +262,8 @@ config BACKLIGHT_ADP5520
 	  To compile this driver as a module, choose M here: the module will
 	  be called adp5520_bl.
 
+config BACKLIGHT_EMUL
+	tristate "Virtual Emulator Backlight Driver"
+	default y
+	help
+	  Say Y to enable the backlight driver on Emulator.
