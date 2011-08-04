@@ -56,7 +56,7 @@ static ssize_t bl_brightness_show(struct device *dev,
 	printk(KERN_INFO "%s: brightness = %d\n", __FUNCTION__, brightness);
 
 	/* handover to qemu layer */
-	//brightness = (unsigned int)readl(svb_device->svb_mmreg);
+	brightness = (unsigned int)readl(svb_device->svb_mmreg);
 
 	return sprintf(buf, "%d\n", brightness);
 }
