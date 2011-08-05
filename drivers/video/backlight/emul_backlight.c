@@ -53,10 +53,9 @@ static int max_brightness = 10;
 static ssize_t bl_brightness_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	printk(KERN_INFO "%s: brightness = %d\n", __FUNCTION__, brightness);
-
 	/* handover to qemu layer */
 	brightness = (unsigned int)readl(svb_device->svb_mmreg);
+	printk(KERN_INFO "%s: brightness = %d\n", __FUNCTION__, brightness);
 
 	return sprintf(buf, "%d\n", brightness);
 }
@@ -113,7 +112,6 @@ static int __devinit svb_probe(struct pci_dev *pci_dev,
 			const struct pci_device_id *ent)
 {
 	int ret = -EBUSY;
-	printk(KERN_INFO "svb: svb_probe() is called.\n");
 
 	svb_device = kmalloc(sizeof(struct svb), GFP_KERNEL);
 	if (svb_device == NULL) {
@@ -176,8 +174,6 @@ static void __devexit svb_exit(struct pci_dev *pcidev)
 	iounmap(svb_device->svb_mmreg);
 	pci_disable_device(pcidev);
 	kfree(svb_device);
-
-	printk(KERN_INFO "svb_exit() is called.\n");
 }
 
 /* register pci driver
@@ -196,7 +192,7 @@ static struct pci_driver svb_pci_driver = {
 
 static int backlight_svb_init(void)
 {
-	pci_register_driver(&svb_pci_driver);
+	return pci_register_driver(&svb_pci_driver);
 }
 
 static int __init emul_backlight_class_init(void)
@@ -215,7 +211,7 @@ static int __init emul_backlight_class_init(void)
 	for (i=0; i < ARRAY_SIZE(emul_bl_device_attrib); i++) {
 		ret = device_create_file(emul_backlight_dev, emul_bl_device_attrib[i]);
 		if (ret != 0) {
-			printk(KERN_ERR, "emul_bl: Failed to create attr %d: %d\n", i, ret);
+			printk(KERN_ERR "emul_bl: Failed to create attr %d: %d\n", i, ret);
 			return ret;
 		}
 	}
