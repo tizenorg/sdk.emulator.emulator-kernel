@@ -98,8 +98,8 @@ static ssize_t bl_max_brightness_store(struct device *dev,
 	return 0;
 }
 
-static DEVICE_ATTR(brightness, 0644, bl_brightness_show, bl_brightness_store);
-static DEVICE_ATTR(max_brightness, 0644, bl_max_brightness_show, NULL);
+static DEVICE_ATTR(brightness, 0664, bl_brightness_show, bl_brightness_store);
+static DEVICE_ATTR(max_brightness, 0664, bl_max_brightness_show, NULL);
 
 static struct device_attribute *emul_bl_device_attrib[] = {
 		&dev_attr_brightness,

@@ -286,7 +286,7 @@ static int my_atoi(const char *name)
 }
 
 extern char *saved_command_line;
-#define DPI_DEF_VALUE		2400
+#define DPI_DEF_VALUE		3200
 #define DPI_MIN_VALUE		1000
 #define DPI_MAX_VALUE		4800
 
