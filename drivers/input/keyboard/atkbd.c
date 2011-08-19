@@ -1054,7 +1054,8 @@ static void atkbd_set_device_attrs(struct atkbd *atkbd)
 			 "AT Set 2 Extra keyboard");
 	else
 		snprintf(atkbd->name, sizeof(atkbd->name),
-			 "AT %s Set %d keyboard",
+//			 "AT %s Set %d keyboard",
+			 "AT %s Set %d HardKeys", // by dhhong to support Hardkey via udev
 			 atkbd->translated ? "Translated" : "Raw", atkbd->set);
 
 	snprintf(atkbd->phys, sizeof(atkbd->phys),
