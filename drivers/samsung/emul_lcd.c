@@ -16,6 +16,19 @@
 
 static struct class *emul_lcd_class;
 static struct device *emul_lcd_dev;
+static int lcd_power = 0;
+
+static ssize_t lcd_power_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	printk(KERN_INFO "lcd_power = %d\n", lcd_power);
+	return sprintf(buf, "%d\n", lcd_power);
+}
+
+static DEVICE_ATTR(lcd_power, 0664, lcd_power_show, NULL);
+static struct device_attribute *emul_lcd_device_attrib[] = {
+	&dev_attr_lcd_power,
+};
 
 static int __init emul_lcd_class_init(void)
 {
@@ -30,15 +43,13 @@ static int __init emul_lcd_class_init(void)
 
 	emul_lcd_dev = device_create(emul_lcd_class, NULL, NULL, NULL, "emulator");
 
-	/*
-	for (i=0; i < ARRAY_SIZE(emul_bl_device_attrib); i++) {
-		ret = device_create_file(emul_backlight_dev, emul_bl_device_attrib[i]);
+	for (i=0; i < ARRAY_SIZE(emul_lcd_device_attrib); i++) {
+		ret = device_create_file(emul_lcd_dev, emul_lcd_device_attrib[i]);
 		if (ret != 0) {
-			printk(KERN_ERR "emul_bl: Failed to create attr %d: %d\n", i, ret);
+			printk(KERN_ERR "emul_lcd: Failed to create attr %d: %d\n", i, ret);
 			return ret;
 		}
 	}
-	*/
 
 	return 0;
 }
