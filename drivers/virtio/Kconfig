@@ -7,6 +7,11 @@ config VIRTIO_RING
 	tristate
 	depends on VIRTIO
 
+config VIRTIO_EXAMPLE
+	tristate "Virtio example driver (EXPERIMENTAL)"
+	select VIRTIO
+	select VIRTIO_RING
+
 config VIRTIO_PCI
 	tristate "PCI driver for virtio devices (EXPERIMENTAL)"
 	depends on PCI && EXPERIMENTAL
