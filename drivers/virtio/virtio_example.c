@@ -1,20 +1,20 @@
-/*
- * Copyright (C) 2010 Intel Corporation
+/* Virtio example implementation
  *
- * Author: Ian Molton <ian.molton@collabora.co.uk>
+ *  Copyright 2011 Dongkyun Yun
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 of the License.
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
 #include <linux/kernel.h>
@@ -27,6 +27,7 @@
 #include <linux/virtio.h>
 #include <linux/virtio_ids.h>
 #include <linux/virtio_config.h>
+#include <asm/uaccess.h>
 
 // include/linux/virtio_ids.h
 #define VIRTIO_ID_EXAMPLE   10 /* virtio example */
@@ -49,32 +50,18 @@
 #endif
 
 struct virtio_ex_data {
-	char *buffer;
-	int pages;
-	unsigned int pid;
-};
-
-struct virtio_ex_header {
 	int pid;
-	int buf_size;
+
+	int w_buf_size;
+	char *w_buf;
+
 	int r_buf_size;
-#ifdef DEBUG_EXIO
-	int sum;
-#endif
-	char buffer;
-} __packed;
+	char *r_buf;
+}__packed;
 
 #define to_virtio_ex_data(a)   ((struct virtio_ex_data *)(a)->private_data)
 
-#ifdef DEBUG_EXIO
-#define SIZE_OUT_HEADER (sizeof(int)*4)
-#define SIZE_IN_HEADER (sizeof(int)*2)
-#else
-#define SIZE_OUT_HEADER (sizeof(int)*3)
-#define SIZE_IN_HEADER sizeof(int)
-#endif
-
-static struct virtqueue *vq;
+static struct virtqueue *vq = NULL;
 
 static struct virtio_device_id id_table[] = {
 	{ VIRTIO_ID_EXAMPLE, VIRTIO_DEV_ANY_ID },
@@ -89,7 +76,8 @@ static struct scatterlist *vmalloc_to_sg(struct scatterlist *sg_list,
 {
 	struct page *pg;
 
-	logout("\n");
+	logout("pid %d \n", pid_nr(task_pid(current)));
+
 	/* unaligned */
 	BUG_ON((ulong)virt & ~PAGE_MASK);
 
@@ -109,55 +97,45 @@ static struct scatterlist *vmalloc_to_sg(struct scatterlist *sg_list,
 
 err:
 	kfree(sg_list);
+	sg_list = NULL;
 	return NULL;
 }
 
-static int put_data(struct virtio_ex_data *exdata)
+static unsigned int put_data(struct virtio_ex_data *exdata)
 {
-	struct scatterlist *sg, *sg_list;
-	unsigned int count, ret, o_page, i_page, sg_entries;
-	struct virtio_ex_header *header =
-		(struct virtio_ex_header *)exdata->buffer;
+	struct scatterlist *sg;
+	static struct scatterlist *sg_list = NULL;
+	unsigned int ret, count, i_page, o_page, sg_entries;
 
-	logout("\n");
-	ret = header->buf_size;
+	logout("pid %d \n", pid_nr(task_pid(current)));
+	ret = exdata->w_buf_size;
 
-	o_page = (header->buf_size + PAGE_SIZE-1) >> PAGE_SHIFT;
-	i_page = (header->r_buf_size + PAGE_SIZE-1) >> PAGE_SHIFT;
-
-	header->pid = exdata->pid;
-
-	if ((o_page && i_page) &&
-			(o_page > exdata->pages || i_page > exdata->pages)) {
-		i_page = 0;
-	}
-
-	if (o_page > exdata->pages)
-		o_page = exdata->pages;
-
-	if (i_page > exdata->pages)
-		i_page = exdata->pages;
-
+	o_page = (exdata->w_buf_size + PAGE_SIZE-1) >> PAGE_SHIFT;
+	i_page = (exdata->r_buf_size + PAGE_SIZE-1) >> PAGE_SHIFT;
 	if (!o_page)
 		o_page = 1;
+	if (!i_page)
+		i_page = 1;
+
+	logout("add_buf(out:%d, in:%d) \n", o_page*PAGE_SIZE, i_page*PAGE_SIZE);
 
 	sg_entries = o_page + i_page;
 
 	sg_list = kcalloc(sg_entries, sizeof(struct scatterlist), GFP_KERNEL);
-
 	if (!sg_list) {
+		logout("kcalloc is fail ");
 		ret = -EIO;
 		goto out;
 	}
 
 	sg_init_table(sg_list, sg_entries);
 
-	sg = vmalloc_to_sg(sg_list, exdata->buffer, o_page);
-	sg = vmalloc_to_sg(sg, exdata->buffer, i_page);
-
+	sg = vmalloc_to_sg(sg_list, exdata->w_buf, o_page);
+	sg = vmalloc_to_sg(sg, exdata->r_buf, i_page);
 	if (!sg) {
+		logout("vmalloc_to_sq is fail ");
 		ret = -EIO;
-		goto out_free;
+		goto out;
 	}
 
 	/* Transfer data */
@@ -168,114 +146,186 @@ static int put_data(struct virtio_ex_data *exdata)
 			cpu_relax();
 	}
 
-out_free:
-	kfree(sg_list);
 out:
+	if (sg_list){
+		kfree(sg_list);
+		sg_list = NULL;
+	}
+
 	return ret;
 }
 
+#if 0
+static unsigned int get_data(struct virtio_ex_data *exdata)
+{
+	unsigned int ret, count;
+
+	ret = exdata->r_buf_size;
+
+	/* Chill out until it's done with the buffer. */
+	while (!vq->vq_ops->get_buf(vq, &count))
+		cpu_relax();
+
+	if (sg_list)
+		kfree(sg_list);
+
+	if (exdata->r_buf) {
+		exdata->r_buf_size = 0;
+		vfree(exdata->r_buf);
+		exdata->r_buf= NULL;
+	}
+	return ret;
+}
+#endif
+
 static void free_buffer(struct virtio_ex_data *exdata)
 {
-	logout("\n");
-	if (exdata->buffer) {
-		vfree(exdata->buffer);
-		exdata->buffer = NULL;
-	}
-}
+	logout("pid %d \n", pid_nr(task_pid(current)));
 
+	if (exdata->w_buf) {
+		exdata->w_buf_size = 0;
+		vfree(exdata->w_buf);
+		exdata->w_buf= NULL;
+	}
+	if (exdata->r_buf) {
+		exdata->r_buf_size = 0;
+		vfree(exdata->r_buf);
+		exdata->r_buf= NULL;
+	}
+} 
 static int virtexample_open(struct inode *inode, struct file *file)
 {
 	struct virtio_ex_data *exdata = NULL;
 
-	logout("\n");
+	logout("pid %d \n", pid_nr(task_pid(current)));
 
 	exdata = kzalloc(sizeof(struct virtio_ex_data), GFP_KERNEL);
 	if (!exdata)
 		return -ENXIO;
 
 	exdata->pid = pid_nr(task_pid(current));
+	logout("pid %d \n", exdata->pid);
 
 	file->private_data = exdata;
 
 	return 0;
 }
 
-static int virtexample_mmap(struct file *filp, struct vm_area_struct *vma)
+static int log_dump(char *buffer, int size)
 {
-	struct virtio_ex_data *exdata = to_virtio_ex_data(filp);
-	int pages = (vma->vm_end - vma->vm_start) / PAGE_SIZE;
+	int i;
+	unsigned char *ptr = (unsigned char*)buffer;
 
-	logout("\n");
+	logout("pid %d ", pid_nr(task_pid(current)));
 
-	/* Set a reasonable limit */
-	if (pages > 16)
-		return -ENOMEM;
+	logout("buffer[%p] size[%d] ", buffer, size);
+	logout("DATA BEGIN -------------- ");
 
-	/* for now, just allow one buffer to be mmap()ed. */
-	if (exdata->buffer)
-		return -EIO;
-
-	exdata->buffer = vmalloc_user(pages*PAGE_SIZE);
-
-	if (!exdata->buffer)
-		return -ENOMEM;
-
-	exdata->pages = pages;
-
-	if (remap_vmalloc_range(vma, exdata->buffer, 0) < 0) {
-		vfree(exdata->buffer);
-		return -EIO;
+	for(i=0; i < size; i++) 
+	{
+		logout(" %d =  %02x ", i, ptr[i]);
+		//if(i!=0 && (i+1)%7 == 0) {
+		//	printk(KERN_INFO "\n");
+		//}
 	}
-
-	vma->vm_flags |= VM_DONTEXPAND;
-
+	logout("DATA END  -------------- ");
 	return 0;
 }
 
-static int virtexample_fsync(struct file *filp, int datasync)
+static ssize_t virtexample_read(struct file * filp, char * buffer, 
+		size_t count, loff_t *ppos)
 {
 	struct virtio_ex_data *exdata = to_virtio_ex_data(filp);
+	ssize_t ret;
 
-	logout("\n");
+	logout("pid %d \n", pid_nr(task_pid(current)));
+
+	if (exdata->r_buf)
+		return -EIO;
+
+	//get_data(exdata);
+
+	log_dump(exdata->r_buf, exdata->r_buf_size);
+
+	if (copy_to_user(buffer, exdata->r_buf, exdata->r_buf_size))
+		return -EINVAL;
+
+	ret = exdata->r_buf_size;
+
+	if (exdata->r_buf) {
+		exdata->r_buf_size = 0;
+		vfree(exdata->r_buf);
+		exdata->r_buf= NULL;
+	}
+
+	return ret;
+}
+
+static ssize_t virtexample_write(struct file *filp, const char *buffer,
+		size_t count, loff_t * posp)
+{
+	struct virtio_ex_data *exdata = to_virtio_ex_data(filp);
+	ssize_t ret;
+
+	logout("pid %d \n", pid_nr(task_pid(current)));
+
+	/* for now, just allow one buffer to write(). */
+	if (exdata->w_buf)
+		return -EIO;
+
+	exdata->w_buf_size = count;
+	exdata->w_buf = vmalloc(exdata->w_buf_size);
+	if (!exdata->w_buf)
+		return -ENOMEM;
+
+	exdata->r_buf_size = count;
+	exdata->r_buf = vmalloc(exdata->r_buf_size);
+	if (!exdata->r_buf)
+		return -ENOMEM;
+
+	if (copy_from_user(exdata->w_buf, buffer, exdata->w_buf_size))
+		return -EINVAL;
+
+	log_dump(exdata->w_buf, exdata->w_buf_size);
+
 	put_data(exdata);
 
-	return 0;
+	ret = exdata->w_buf_size;
+
+	if (exdata->w_buf) {
+		exdata->w_buf_size = 0;
+		vfree(exdata->w_buf);
+		exdata->w_buf= NULL;
+	}
+
+	return ret;
 }
 
 static int virtexample_release(struct inode *inode, struct file *file)
 {
 	struct virtio_ex_data *exdata = to_virtio_ex_data(file);
 
-	logout("\n");
-	if (exdata && exdata->buffer) {
-		struct virtio_ex_header *header =
-			(struct virtio_ex_header *)exdata->buffer;
+	logout("pid %d \n", pid_nr(task_pid(current)));
 
-		/* Make sure the host hears about the process ending / dying */
-		header->pid = exdata->pid;
-		header->buf_size = SIZE_OUT_HEADER + 2;
-		header->r_buf_size = SIZE_IN_HEADER;
-		*(short *)(&header->buffer) = -1;
-
-		put_data(exdata);
+	if (exdata) {
 		free_buffer(exdata);
 	}
 
 	kfree(exdata);
-
 	return 0;
 }
 
 static const struct file_operations virtexample_fops = {
 	.owner		= THIS_MODULE,
 	.open		= virtexample_open,
-	.mmap		= virtexample_mmap,
-	.fsync		= virtexample_fsync,
+	.read       = virtexample_read,
+	.write      = virtexample_write,
 	.release	= virtexample_release,
 };
 
 static struct miscdevice virtexample_dev = {
-	MISC_DYNAMIC_MINOR,
+	//MISC_DYNAMIC_MINOR,
+	70,
 	DEVICE_NAME,
 	&virtexample_fops
 };
@@ -284,7 +334,7 @@ static int virtexample_probe(struct virtio_device *vdev)
 {
 	int ret;
 
-	logout("\n");
+	logout("pid %d \n", pid_nr(task_pid(current)));
 
 	/* We expect a single virtqueue. */
 	vq = virtio_find_single_vq(vdev, NULL, "output");
@@ -302,7 +352,7 @@ static int virtexample_probe(struct virtio_device *vdev)
 
 static void __devexit virtexample_remove(struct virtio_device *vdev)
 {
-	logout("\n");
+	logout("pid %d \n", pid_nr(task_pid(current)));
 	vdev->config->reset(vdev);
 	misc_deregister(&virtexample_dev);
 	vdev->config->del_vqs(vdev);
@@ -310,7 +360,7 @@ static void __devexit virtexample_remove(struct virtio_device *vdev)
 
 static void virtexample_changed(struct virtio_device *vdev)
 {
-	logout("\n");
+	logout("pid %d \n", pid_nr(task_pid(current)));
 	//struct virtio_balloon *vb = vdev->priv;
 	//wake_up(&vb->config_change);
 }
@@ -331,13 +381,13 @@ static struct virtio_driver virtio_example = {
 
 static int __init init(void)
 {
-	logout("\n");
+	logout("pid %d \n", pid_nr(task_pid(current)));
 	return register_virtio_driver(&virtio_example);
 }
 
 static void __exit fini(void)
 {
-	logout("\n");
+	logout("pid %d \n", pid_nr(task_pid(current)));
 	unregister_virtio_driver(&virtio_example);
 }
 
