@@ -1,0 +1,13 @@
+#
+# Character device configuration
+#
+
+menu "Character devices"
+
+source "drivers/usb_mode/Kconfig"
+
+config USB_MODE
+	"usb_mode"
+
+
+endmenu

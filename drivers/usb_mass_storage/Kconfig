@@ -1,0 +1,13 @@
+#
+# Character device configuration
+#
+
+menu "Character devices"
+
+source "drivers/usb_mass_storage/Kconfig"
+
+config USB_MASS_STORAGE
+	"usb mass storage"
+
+
+endmenu

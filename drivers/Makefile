@@ -111,5 +111,8 @@ obj-$(CONFIG_VLYNQ)		+= vlynq/
 obj-$(CONFIG_STAGING)		+= staging/
 obj-y				+= platform/
 obj-y				+= ieee802154/
+obj-y				+= jack/
+obj-y				+= usb_mode/
+obj-y				+= usb_mass_storage/
 
 obj-$(CONFIG_HW_ACCELERATOR)    += samsung/
