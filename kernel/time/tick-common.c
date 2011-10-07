@@ -65,6 +65,27 @@ static void tick_periodic(int cpu)
 		/* Keep track of the next tick event */
 		tick_next_period = ktime_add(tick_next_period, tick_period);
 
+		if (0 == (jiffies & 0x7)) {
+			static __kernel_time_t rt;
+			static unsigned long rt_jiffies = INITIAL_JIFFIES;
+
+			unsigned long tick = 1;
+
+			struct timespec ts;
+			read_persistent_clock(&ts);
+
+			if (rt != ts.tv_sec) {
+				rt = ts.tv_sec;
+				rt_jiffies += HZ;
+				if (rt_jiffies>jiffies) {
+					tick=rt_jiffies-jiffies;
+					if (tick > HZ)
+						tick = 1;
+				}
+			}
+			do_timer(tick);
+		}
+		else
 		do_timer(1);
 		write_sequnlock(&xtime_lock);
 	}
