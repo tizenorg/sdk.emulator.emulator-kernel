@@ -28,9 +28,9 @@
 
 #define SVCD_MODULE_NAME "svcd"
 
-#define SVCD_MAJOR_VERSION 1
-#define SVCD_MINOR_VERSION 0
-#define SVCD_RELEASE 0
+#define SVCD_MAJOR_VERSION 0
+#define SVCD_MINOR_VERSION 15
+#define SVCD_RELEASE 1
 #define SVCD_VERSION \
 	KERNEL_VERSION(SVCD_MAJOR_VERSION, SVCD_MINOR_VERSION, SVCD_RELEASE)
 
@@ -73,10 +73,6 @@ struct svcd_buffer {
 	unsigned int			pixelformat;
 };
 
-struct svcd_dmaqueue {
-	struct list_head		active;
-};
-
 struct svcd_device {
 	struct v4l2_device		v4l2_dev;
 
@@ -93,77 +89,69 @@ struct svcd_device {
 	resource_size_t			mem_base;
 	resource_size_t			mem_size;
 
-	struct svcd_dmaqueue	vidq;
-};
-
-struct svcd_fh {
-	struct svcd_device		*dev;
-	enum v4l2_buf_type		type;	
+	int streaming;
+	enum v4l2_buf_type		type;
 	unsigned int			width;
 	unsigned int			height;
 	unsigned int 			pixelformat;
 	struct videobuf_queue	vb_vidq;
+
+	struct list_head		active;
 };
 
-static int get_image_size(struct svcd_fh *fh)
+static int get_image_size(struct svcd_device *dev)
 {
 	int size;
 
-	switch (fh->pixelformat) {
+	switch (dev->pixelformat) {
 		case V4L2_PIX_FMT_YUV420:
 		case V4L2_PIX_FMT_NV12:
-			size = (fh->width * fh->height * 3) /2;
+			size = (dev->width * dev->height * 3) /2;
 			break;
 		case V4L2_PIX_FMT_YUYV:
 		default:
-			size = fh->width * fh->height * 2;
+			size = dev->width * dev->height * 2;
 			break;
 	}
-	
+
 	return size;
 }
-static void svcd_fillbuf(struct svcd_fh *fh, struct svcd_buffer *buf)
+
+static void svcd_fillbuf(struct svcd_device *dev, struct svcd_buffer *buf)
 {
-	struct svcd_device *dev = fh->dev;
-	struct timeval ts;
 	void *vbuf = videobuf_to_vmalloc(&buf->vb);
-	uint32_t size = get_image_size(fh);
+	uint32_t size = get_image_size(dev);
 
 	memcpy_fromio(vbuf, dev->mmmems, size);
-
-	buf->vb.field_count++;
-	do_gettimeofday(&ts);
-	buf->vb.ts = ts;
-	buf->vb.state = VIDEOBUF_DONE;
 }
 
 static irqreturn_t svcd_irq_handler(int irq, void *dev_id)
 {
-	struct svcd_fh *fh = dev_id;
-	struct svcd_device *dev = fh->dev;
-	struct svcd_dmaqueue *dma_q = &dev->vidq;
+	struct svcd_device *dev = dev_id;
 	struct svcd_buffer *buf = NULL;
 	unsigned long flags = 0;
 
 	spin_lock_irqsave(&dev->slock, flags);
-	if (list_empty(&dma_q->active)) {
+
+	if (list_empty(&dev->active)) {
 		spin_unlock_irqrestore(&dev->slock, flags);
 		return IRQ_NONE;
 	}
 	
-	buf = list_entry(dma_q->active.next, struct svcd_buffer, vb.queue);
-
+	buf = list_entry(dev->active.next, struct svcd_buffer, vb.queue);
+/*
 	if (!waitqueue_active(&buf->vb.done)) {
 		spin_unlock_irqrestore(&dev->slock, flags);
 		return IRQ_NONE;
 	}
-
-	list_del(&buf->vb.queue);
-	do_gettimeofday(&buf->vb.ts);
+*/
+	list_del_init(&buf->vb.queue);
 	
-	svcd_fillbuf(fh, buf);
-	printk(KERN_DEBUG "svcd : Filled buffer - %p\n", buf);
+	svcd_fillbuf(dev, buf);
 
+	buf->vb.state = VIDEOBUF_DONE;
+	do_gettimeofday(&buf->vb.ts);
+	buf->vb.field_count++;
 	wake_up(&buf->vb.done);
 
 	spin_unlock_irqrestore(&dev->slock, flags);
@@ -176,8 +164,7 @@ static irqreturn_t svcd_irq_handler(int irq, void *dev_id)
 static int vidioc_querycap(struct file *file, void  *priv,
 					struct v4l2_capability *cap)
 {
-	struct svcd_fh  *fh  = priv;
-	struct svcd_device *dev = fh->dev;
+	struct svcd_device *dev = priv;
 
 	strcpy(cap->driver, SVCD_MODULE_NAME);
 	strcpy(cap->card, SVCD_MODULE_NAME);
@@ -191,8 +178,7 @@ static int vidioc_querycap(struct file *file, void  *priv,
 static int vidioc_enum_fmt_vid_cap(struct file *file, void  *priv,
 					struct v4l2_fmtdesc *f)
 {
-	struct svcd_fh *fh = priv;
-	struct svcd_device *dev = fh->dev;
+	struct svcd_device *dev = priv;
 	uint32_t ret;
 
 	if (f->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
@@ -217,8 +203,7 @@ static int vidioc_enum_fmt_vid_cap(struct file *file, void  *priv,
 static int vidioc_g_fmt_vid_cap(struct file *file, void *priv,
 					struct v4l2_format *f)
 {
-	struct svcd_fh *fh = priv;
-	struct svcd_device *dev = fh->dev;
+	struct svcd_device *dev = priv;
 	uint32_t ret;
 
 	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
@@ -240,8 +225,7 @@ static int vidioc_g_fmt_vid_cap(struct file *file, void *priv,
 static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
 			struct v4l2_format *f)
 {
-	struct svcd_fh  *fh  = priv;
-	struct svcd_device *dev = fh->dev;
+	struct svcd_device *dev = priv;
 	enum v4l2_field field;
 	uint32_t ret;
 
@@ -265,13 +249,12 @@ static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
 static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 					struct v4l2_format *f)
 {
-	struct svcd_fh  *fh  = priv;
-	struct svcd_device *dev = fh->dev;
-	struct videobuf_queue *q = &fh->vb_vidq;
+	struct svcd_device *dev = priv;
+	struct videobuf_queue *q = &dev->vb_vidq;
 	uint32_t ret;
 
 	mutex_lock(&q->vb_lock);
-	if (videobuf_queue_is_busy(&fh->vb_vidq)) {
+	if (videobuf_queue_is_busy(&dev->vb_vidq)) {
 		printk(KERN_DEBUG "svcd : %s queue busy\n", __func__);
 		mutex_unlock(&q->vb_lock);
 		return -EBUSY;
@@ -289,11 +272,11 @@ static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 	if (ret > 0) 
 		return -(ret);
 
-	fh->pixelformat = f->fmt.pix.pixelformat;
-	fh->width = f->fmt.pix.width;
-	fh->height = f->fmt.pix.height;
-	fh->vb_vidq.field = f->fmt.pix.field;
-	fh->type = f->type;
+	dev->pixelformat = f->fmt.pix.pixelformat;
+	dev->width = f->fmt.pix.width;
+	dev->height = f->fmt.pix.height;
+	dev->vb_vidq.field = f->fmt.pix.field;
+	dev->type = f->type;
 	
 	return 0;
 }
@@ -301,43 +284,42 @@ static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 static int vidioc_reqbufs(struct file *file, void *priv,
 			  struct v4l2_requestbuffers *p)
 {
-	struct svcd_fh  *fh = priv;
-	fh->type = p->type;
+	struct svcd_device *dev = priv;
 
-	return (videobuf_reqbufs(&fh->vb_vidq, p));
+	dev->type = p->type;
+
+	return (videobuf_reqbufs(&dev->vb_vidq, p));
 }
 
 static int vidioc_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
-	struct svcd_fh  *fh = priv;
+	struct svcd_device *dev = priv;
 
-	return (videobuf_querybuf(&fh->vb_vidq, p));
+	return (videobuf_querybuf(&dev->vb_vidq, p));
 }
 
 static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
-	struct svcd_fh *fh = priv;
+	struct svcd_device *dev = priv;
 
-	return (videobuf_qbuf(&fh->vb_vidq, p));
+	return (videobuf_qbuf(&dev->vb_vidq, p));
 }
 
 static int vidioc_dqbuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
-	struct svcd_fh  *fh = priv;
+	struct svcd_device *dev = priv;
 
-	return (videobuf_dqbuf(&fh->vb_vidq, p,
-				file->f_flags & O_NONBLOCK));
+	return (videobuf_dqbuf(&dev->vb_vidq, p, file->f_flags & O_NONBLOCK));
 }
 
 static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 {
 	int ret = 0;
-	struct svcd_fh  *fh = priv;
-	struct svcd_device *dev = fh->dev;
+	struct svcd_device *dev = priv;
 
-	if (fh->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+	if (dev->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
-	if (i != fh->type)
+	if (i != dev->type)
 		return -EINVAL;
 
 	iowrite32(1, dev->mmregs + CAMERA_CMD_START_PREVIEW);
@@ -346,11 +328,11 @@ static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 		printk(KERN_ERR "svcd : device streamon failed!\n");
 		return -(ret);
 	}
+	dev->streaming = 1;
 
-	ret = videobuf_streamon(&fh->vb_vidq);
+	ret = videobuf_streamon(&dev->vb_vidq);
 	if (ret < 0) {
-		printk(KERN_ERR "svcd : vidioc_streamon failed!\n");
-		return ret;
+		printk(KERN_ERR "svcd : vidioc_streamon failed!, ret = %d\n", ret);
 	}
 	return ret;
 }
@@ -358,12 +340,11 @@ static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 {
 	int ret = 0;
-	struct svcd_fh  *fh = priv;
-	struct svcd_device *dev = fh->dev;
+	struct svcd_device *dev = priv;
 
-	if (fh->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+	if (dev->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
-	if (i != fh->type)
+	if (i != dev->type)
 		return -EINVAL;
 
 	iowrite32(1, dev->mmregs + CAMERA_CMD_STOP_PREVIEW);
@@ -372,11 +353,11 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 		printk(KERN_ERR "svcd : device streamoff failed!\n");
 		return -(ret);
 	}
+	dev->streaming = 0;
 
-	ret = videobuf_streamoff(&fh->vb_vidq);
+	ret = videobuf_streamoff(&dev->vb_vidq);
 	if (ret < 0) {
 		printk(KERN_ERR "svcd : vidioc_streamoff failed!\n");
-		return ret;
 	}
 
 	return ret;
@@ -414,8 +395,7 @@ static int vidioc_s_input(struct file *file, void *priv, unsigned int i)
 static int vidioc_queryctrl(struct file *file, void *priv,
 			    struct v4l2_queryctrl *qc)
 {
-	struct svcd_fh  *fh = priv;
-	struct svcd_device *dev = fh->dev;
+	struct svcd_device *dev = priv;
 	uint32_t ret;
 
 	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
@@ -441,8 +421,7 @@ static int vidioc_queryctrl(struct file *file, void *priv,
 static int vidioc_g_ctrl(struct file *file, void *priv,
 			 struct v4l2_control *ctrl)
 {
-	struct svcd_fh  *fh = priv;
-	struct svcd_device *dev = fh->dev;
+	struct svcd_device *dev = priv;
 	uint32_t ret;
 
 	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
@@ -462,8 +441,7 @@ static int vidioc_g_ctrl(struct file *file, void *priv,
 static int vidioc_s_ctrl(struct file *file, void *priv,
 				struct v4l2_control *ctrl)
 {
-	struct svcd_fh  *fh = priv;
-	struct svcd_device *dev = fh->dev;
+	struct svcd_device *dev = priv;
 	uint32_t ret;
 	
 	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
@@ -479,11 +457,10 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 	return 0;
 }
 
-static int vidioc_s_parm(struct file *file, void *fh,
+static int vidioc_s_parm(struct file *file, void *priv,
 				struct v4l2_streamparm *parm)
 {
-	struct svcd_fh *sfh = fh;
-	struct svcd_device *dev = sfh->dev;
+	struct svcd_device *dev = priv;
 	struct v4l2_captureparm *cp = &parm->parm.capture;
 	uint32_t ret;
 
@@ -503,11 +480,10 @@ static int vidioc_s_parm(struct file *file, void *fh,
 	return 0;
 }
 
-static int vidioc_g_parm(struct file *file, void *fh,
+static int vidioc_g_parm(struct file *file, void *priv,
 				struct v4l2_streamparm *parm)
 {
-	struct svcd_fh  *sfh = fh;
-	struct svcd_device *dev = sfh->dev;
+	struct svcd_device *dev = priv;
 	struct v4l2_captureparm *cp = &parm->parm.capture;
 	uint32_t ret;
 
@@ -529,11 +505,10 @@ static int vidioc_g_parm(struct file *file, void *fh,
 	return 0;	
 }
 
-static int vidioc_enum_framesizes(struct file *file, void *fh,
+static int vidioc_enum_framesizes(struct file *file, void *priv,
 				struct v4l2_frmsizeenum *fsize)
 {
-	struct svcd_fh  *sfh = fh;
-	struct svcd_device *dev = sfh->dev;
+	struct svcd_device *dev = priv;
 	uint32_t ret;
 
 	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
@@ -552,11 +527,10 @@ static int vidioc_enum_framesizes(struct file *file, void *fh,
 	return 0;	
 }
 
-static int vidioc_enum_frameintervals(struct file *file, void *fh,
+static int vidioc_enum_frameintervals(struct file *file, void *priv,
 				struct v4l2_frmivalenum *fival)
 {
-	struct svcd_fh  *sfh = fh;
-	struct svcd_device *dev = sfh->dev;
+	struct svcd_device *dev = priv;
 	uint32_t ret;
 
 	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
@@ -580,12 +554,24 @@ static int vidioc_enum_frameintervals(struct file *file, void *fh,
 /* ------------------------------------------------------------------
 	Videobuf operations
    ------------------------------------------------------------------*/
+static void free_buffer(struct videobuf_queue *vq, struct svcd_buffer *buf)
+{
+	printk(KERN_DEBUG "svcd : %s, state: %i\n", __func__, buf->vb.state);
+
+	if (in_interrupt())
+		BUG();
+
+	videobuf_vmalloc_free(&buf->vb);
+	printk(KERN_DEBUG "svcd : free_buffer: freed\n");
+	buf->vb.state = VIDEOBUF_NEEDS_INIT;
+}
+
 static int
 buffer_setup(struct videobuf_queue *vq, unsigned int *count, unsigned int *size)
 {
-	struct svcd_fh *fh = vq->priv_data;
+	struct svcd_device *dev = vq->priv_data;
 
-	*size = get_image_size(fh);
+	*size = get_image_size(dev);
 
 	if (0 == *count)
 		*count = 2;
@@ -599,40 +585,28 @@ buffer_setup(struct videobuf_queue *vq, unsigned int *count, unsigned int *size)
 	return 0;
 }
 
-static void free_buffer(struct videobuf_queue *vq, struct svcd_buffer *buf)
-{
-	printk(KERN_DEBUG "svcd : %s, state: %i\n", __func__, buf->vb.state);
-
-	if (in_interrupt())
-		BUG();
-
-	videobuf_waiton(&buf->vb, 0, 0);
-	videobuf_vmalloc_free(&buf->vb);
-	printk(KERN_DEBUG "svcd : free_buffer: freed\n");
-	buf->vb.state = VIDEOBUF_NEEDS_INIT;
-}
-
 static int
 buffer_prepare(struct videobuf_queue *vq, struct videobuf_buffer *vb,
 						enum v4l2_field field)
 {
-	struct svcd_fh     *fh  = vq->priv_data;
-	struct svcd_buffer *buf = container_of(vb, struct svcd_buffer, vb);
 	int rc;
+	struct svcd_device *dev = vq->priv_data;
+
+	struct svcd_buffer *buf = container_of(vb, struct svcd_buffer, vb);
 
 	printk(KERN_DEBUG "svcd : %s, field=%d\n", __func__, field);
 
-	buf->vb.size = get_image_size(fh);
+	buf->vb.size = get_image_size(dev);
 	
 	if (0 != buf->vb.baddr  &&  buf->vb.bsize < buf->vb.size)
 		return -EINVAL;
 
-	buf->pixelformat = fh->pixelformat;
-	buf->vb.width  = fh->width;
-	buf->vb.height = fh->height;
+	buf->pixelformat = dev->pixelformat;
+	buf->vb.width  = dev->width;
+	buf->vb.height = dev->height;
 	buf->vb.field  = field;
 
-	if (VIDEOBUF_NEEDS_INIT == buf->vb.state) {
+	if (buf->vb.state == VIDEOBUF_NEEDS_INIT) {
 		rc = videobuf_iolock(vq, &buf->vb, NULL);
 		if (rc < 0)
 			goto fail;
@@ -651,14 +625,12 @@ static void
 buffer_queue(struct videobuf_queue *vq, struct videobuf_buffer *vb)
 {
 	struct svcd_buffer		*buf  = container_of(vb, struct svcd_buffer, vb);
-	struct svcd_fh			*fh   = vq->priv_data;
-	struct svcd_device		*dev  = fh->dev;
-	struct svcd_dmaqueue	*vidq = &dev->vidq;
+	struct svcd_device		*dev = vq->priv_data;
 
 	printk(KERN_DEBUG "svcd : %s\n", __func__);
 
 	buf->vb.state = VIDEOBUF_QUEUED;
-	list_add_tail(&buf->vb.queue, &vidq->active);
+	list_add_tail(&buf->vb.queue, &dev->active);
 }
 
 static void buffer_release(struct videobuf_queue *vq,
@@ -685,30 +657,17 @@ static struct videobuf_queue_ops svcd_video_qops = {
 static int svcd_open(struct file *file)
 {
 	struct svcd_device *dev = video_drvdata(file);
-	struct svcd_fh *fh = NULL;
 	int ret;
 
-	fh = kzalloc(sizeof(*fh), GFP_KERNEL);
-	if (NULL == fh) 
-		return -ENOMEM;
+	file->private_data 	= dev;
+	dev->type     		= V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	dev->pixelformat     = V4L2_PIX_FMT_YUYV;
+	dev->width    		= DFL_WIDTH;
+	dev->height   		= DFL_HEIGHT;
 
-	file->private_data 	= fh;
-	fh->dev      		= dev;
-
-	fh->type     		= V4L2_BUF_TYPE_VIDEO_CAPTURE;
-	fh->pixelformat     = V4L2_PIX_FMT_YUYV;
-	fh->width    		= DFL_WIDTH;
-	fh->height   		= DFL_HEIGHT;
-
-	ret = request_irq(dev->pdev->irq, svcd_irq_handler, IRQF_SHARED, SVCD_MODULE_NAME, fh);
-	if (ret) {
-		printk(KERN_WARNING "svcd : request_irq failed!!! irq num : %d\n", dev->pdev->irq);
-		return ret;
-	}
-	
-	videobuf_queue_vmalloc_init(&fh->vb_vidq, &svcd_video_qops,
-			&dev->pdev->dev, &dev->slock, fh->type, V4L2_FIELD_INTERLACED,
-			sizeof(struct svcd_buffer), fh); 
+	videobuf_queue_vmalloc_init(&dev->vb_vidq, &svcd_video_qops,
+				&dev->pdev->dev, &dev->slock, dev->type, V4L2_FIELD_INTERLACED,
+				sizeof(struct svcd_buffer), dev);
 	
 	iowrite32(0, dev->mmregs + CAMERA_CMD_OPEN);
 	ret = (int)ioread32(dev->mmregs + CAMERA_CMD_OPEN);
@@ -723,17 +682,13 @@ static int svcd_open(struct file *file)
 
 static int svcd_close(struct file *file)
 {
-	struct svcd_fh *fh = file->private_data;
-	struct svcd_device *dev = fh->dev;
+	struct svcd_device *dev = file->private_data;
 	uint32_t ret;
 
 	int minor = video_devdata(file)->minor;
 
-	videobuf_stop(&fh->vb_vidq);
-	videobuf_mmap_free(&fh->vb_vidq);
-
-	free_irq(dev->pdev->irq, fh);
-	kfree(fh);
+	videobuf_stop(&dev->vb_vidq);
+	videobuf_mmap_free(&dev->vb_vidq);
 	
 	iowrite32(0, dev->mmregs + CAMERA_CMD_CLOSE);
 	ret = ioread32(dev->mmregs + CAMERA_CMD_CLOSE);
@@ -750,37 +705,42 @@ static int svcd_close(struct file *file)
 static ssize_t
 svcd_read(struct file *file, char __user *data, size_t count, loff_t *ppos)
 {
-	struct svcd_fh *fh = file->private_data;
+	struct svcd_device *dev = file->private_data;
 
-	if (fh->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-		return videobuf_read_stream(&fh->vb_vidq, data, count, ppos, 0,
+	if (dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
+		return videobuf_read_stream(&dev->vb_vidq, data, count, ppos, 0,
 					file->f_flags & O_NONBLOCK);
 	}
+	printk(KERN_ERR "svcd : %s, not supported uf type\n", __func__);
 	return 0;
 }
 
 static unsigned int
 svcd_poll(struct file *file, struct poll_table_struct *wait)
 {
-	struct svcd_fh *fh = file->private_data;
-	struct videobuf_queue *q = &fh->vb_vidq;
+	struct svcd_device *dev = file->private_data;
+	struct videobuf_queue *q = &dev->vb_vidq;
+
+	unsigned int ret;
 
 	printk(KERN_DEBUG "svcd : %s\n", __func__);
 
-	if (V4L2_BUF_TYPE_VIDEO_CAPTURE != fh->type)
+	if (dev->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return POLLERR;
 
-	return videobuf_poll_stream(file, q, wait);
+	ret = videobuf_poll_stream(file, q, wait);
+	printk(KERN_ERR "svcd : %s, ret = %d\n", __func__, ret);
+	return ret;
 }
 
 static int svcd_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	struct svcd_fh  *fh = file->private_data;
+	struct svcd_device *dev = file->private_data;
 	int ret;
 
 	printk(KERN_DEBUG "svcd : mmap called, vma=0x%08lx\n", (unsigned long)vma);
 
-	ret = videobuf_mmap_mapper(&fh->vb_vidq, vma);
+	ret = videobuf_mmap_mapper(&dev->vb_vidq, vma);
 
 	printk(KERN_DEBUG "svcd : vma start=0x%08lx, size=%ld, ret=%d\n",
 		(unsigned long)vma->vm_start,
@@ -861,7 +821,7 @@ static int svcd_pci_initdev(struct pci_dev *pdev,	const struct pci_device_id *id
 	if (ret)
 		goto out_free;
 
-	INIT_LIST_HEAD(&dev->vidq.active);
+	INIT_LIST_HEAD(&dev->active);
 
 	mutex_init(&dev->mlock);
 	spin_lock_init(&dev->slock);
@@ -885,6 +845,12 @@ static int svcd_pci_initdev(struct pci_dev *pdev,	const struct pci_device_id *id
 		goto rel_vdev;
 	pci_set_master(dev->pdev);
 	
+	ret = request_irq(dev->pdev->irq, svcd_irq_handler, IRQF_SHARED, SVCD_MODULE_NAME, dev);
+	if (ret) {
+		printk(KERN_WARNING "svcd : request_irq failed!!! irq num : %d\n", dev->pdev->irq);
+		return ret;
+	}
+
 	ret = -EIO;
 	dev->mem_base = pci_resource_start(dev->pdev, 0);
 	dev->mem_size = pci_resource_len(dev->pdev, 0);
@@ -989,7 +955,7 @@ static void svcd_pci_removedev(struct pci_dev *pdev)
 		release_mem_region(dev->mem_base, dev->mem_size);
 		dev->mem_base = 0;
 	}
-		
+	free_irq(dev->pdev->irq, dev);
 	pci_disable_device(dev->pdev);
 	v4l2_device_unregister(&dev->v4l2_dev);
 	kfree(dev);
