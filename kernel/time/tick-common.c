@@ -57,7 +57,8 @@ int tick_is_oneshot_available(void)
 /*
  * Periodic tick
  */
-static void tick_periodic(int cpu)
+#define UNDER_HYPERVISOR
+void tick_periodic(int cpu)
 {
 	if (tick_do_timer_cpu == cpu) {
 		write_seqlock(&xtime_lock);
@@ -65,28 +66,43 @@ static void tick_periodic(int cpu)
 		/* Keep track of the next tick event */
 		tick_next_period = ktime_add(tick_next_period, tick_period);
 
-		if (0 == (jiffies & 0x7)) {
-			static __kernel_time_t rt;
-			static unsigned long rt_jiffies = INITIAL_JIFFIES;
+		#ifdef UNDER_HYPERVISOR
+		{	/* Compensate slow timer tick under hypervisor */
+			static __kernel_time_t rt_sec;
+			static unsigned long rt_jiffies_sec = HZ;
+			static unsigned long rt_ticks_sec = HZ;
+			static unsigned long rt_tick = 0;
+			static unsigned long rt_current = 0;
+			static unsigned long rt_count = 1;
 
-			unsigned long tick = 1;
-
-			struct timespec ts;
-			read_persistent_clock(&ts);
-
-			if (rt != ts.tv_sec) {
-				rt = ts.tv_sec;
-				rt_jiffies += HZ;
-				if (rt_jiffies>jiffies) {
-					tick=rt_jiffies-jiffies;
-					if (tick > HZ)
-						tick = 1;
-				}
-			}
+			unsigned long tick = rt_jiffies_sec * ++rt_tick / rt_ticks_sec - rt_current;
+			rt_current += tick;
 			do_timer(tick);
+
+			if( 0 == --rt_count ) {
+				static int first = 2;
+
+				struct timespec ts;
+				read_persistent_clock(&ts);
+
+				if (rt_sec != ts.tv_sec) {
+					if (!first) {
+						rt_jiffies_sec = HZ + rt_jiffies_sec - rt_current;
+						rt_ticks_sec = rt_tick;
+					} else {
+						first--;
+					}
+					rt_sec = ts.tv_sec;
+					rt_tick = rt_current = 0;
+				}
+
+				rt_count = (!first && rt_ticks_sec > rt_tick + 3) ? (rt_ticks_sec - rt_tick) >> 2 : 1;
+			}
 		}
-		else
+		#else
 		do_timer(1);
+		#endif /* End of UNDER_HYPERVISOR */
+
 		write_sequnlock(&xtime_lock);
 	}
 
