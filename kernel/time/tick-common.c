@@ -69,34 +69,47 @@ void tick_periodic(int cpu)
 		#ifdef UNDER_HYPERVISOR
 		{	/* Compensate slow timer tick under hypervisor */
 			static __kernel_time_t rt_sec;
-			static unsigned long rt_jiffies_sec = HZ;
-			static unsigned long rt_ticks_sec = HZ;
-			static unsigned long rt_tick = 0;
-			static unsigned long rt_current = 0;
-			static unsigned long rt_count = 1;
+			static unsigned short rt_jiffies_sec = HZ;
+			static unsigned short rt_ticks_sec = HZ;
+			static unsigned short rt_jiffies = 0;
+			static unsigned short rt_ticks = 0;
+			static unsigned short rt_count = 1;
+			static unsigned short rt_log[11] = {0};
 
-			unsigned long tick = rt_jiffies_sec * ++rt_tick / rt_ticks_sec - rt_current;
-			rt_current += tick;
+			unsigned long tick = rt_jiffies_sec * ++rt_ticks / rt_ticks_sec - rt_jiffies;
+			if (rt_jiffies + tick > rt_jiffies_sec + (HZ/4) )
+				tick = (rt_jiffies + tick > rt_jiffies_sec + HZ) ? 0 : 1;
+
+			rt_jiffies += tick;
 			do_timer(tick);
 
-			if( 0 == --rt_count ) {
+			if (0 == --rt_count) {
 				static int first = 2;
 
 				struct timespec ts;
 				read_persistent_clock(&ts);
 
 				if (rt_sec != ts.tv_sec) {
+					rt_log[++rt_log[0]] = rt_ticks;
+					if (rt_log[0] == 10) {
+						rt_log[0] = 0;
+						printk(KERN_ERR "tick_count : %d %d %d %d %d %d %d %d %d %d\n",
+								rt_log[1], rt_log[2], rt_log[3], rt_log[4], rt_log[5],
+								rt_log[6], rt_log[7], rt_log[8], rt_log[9], rt_log[10]);
+					}
+
 					if (!first) {
-						rt_jiffies_sec = HZ + rt_jiffies_sec - rt_current;
-						rt_ticks_sec = rt_tick;
+						rt_jiffies_sec = HZ + rt_jiffies_sec - rt_jiffies;
+						rt_ticks_sec = rt_ticks ;
 					} else {
 						first--;
 					}
+
 					rt_sec = ts.tv_sec;
-					rt_tick = rt_current = 0;
+					rt_ticks = rt_jiffies = 0;
 				}
 
-				rt_count = (!first && rt_ticks_sec > rt_tick + 3) ? (rt_ticks_sec - rt_tick) >> 2 : 1;
+				rt_count = (!first && rt_ticks_sec > rt_ticks + 3) ? (rt_ticks_sec - rt_ticks) >> 2 : 1;
 			}
 		}
 		#else
