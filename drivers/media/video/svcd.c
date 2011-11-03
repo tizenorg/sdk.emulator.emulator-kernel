@@ -47,7 +47,7 @@ MODULE_LICENSE("GPL2");
    ------------------------------------------------------------------*/
 #define CAMERA_CMD_OPEN             0x00
 #define CAMERA_CMD_CLOSE            0x04
-#define CAMERA_CMD_IS_WEBCAM        0x08
+#define CAMERA_CMD_ISSTREAM        0x08
 #define CAMERA_CMD_START_PREVIEW    0x0C
 #define CAMERA_CMD_STOP_PREVIEW     0x10
 #define CAMERA_CMD_START_CAPTURE    0x14
@@ -65,6 +65,7 @@ MODULE_LICENSE("GPL2");
 #define CAMERA_CMD_ENUM_FINTV       0x44
 #define CAMERA_CMD_S_DATA           0x48
 #define CAMERA_CMD_G_DATA           0x4C
+#define CAMERA_CMD_CLRIRQ		0x50
 #define CAMERA_CMD_DTC				0xFF
 
 /* buffer for one video frame */
@@ -89,7 +90,6 @@ struct svcd_device {
 	resource_size_t			mem_base;
 	resource_size_t			mem_size;
 
-	int streaming;
 	enum v4l2_buf_type		type;
 	unsigned int			width;
 	unsigned int			height;
@@ -131,28 +131,29 @@ static irqreturn_t svcd_irq_handler(int irq, void *dev_id)
 	struct svcd_buffer *buf = NULL;
 	unsigned long flags = 0;
 
-	spin_lock_irqsave(&dev->slock, flags);
+	if (!ioread32(dev->mmregs + CAMERA_CMD_ISSTREAM))
+		return IRQ_NONE;
 
+	iowrite32(0, dev->mmregs + CAMERA_CMD_CLRIRQ);
+	spin_lock_irqsave(&dev->slock, flags);
 	if (list_empty(&dev->active)) {
 		spin_unlock_irqrestore(&dev->slock, flags);
 		return IRQ_NONE;
 	}
 	
 	buf = list_entry(dev->active.next, struct svcd_buffer, vb.queue);
-/*
 	if (!waitqueue_active(&buf->vb.done)) {
 		spin_unlock_irqrestore(&dev->slock, flags);
 		return IRQ_NONE;
 	}
-*/
-	list_del_init(&buf->vb.queue);
+	list_del(&buf->vb.queue);
 	
 	svcd_fillbuf(dev, buf);
 
 	buf->vb.state = VIDEOBUF_DONE;
 	do_gettimeofday(&buf->vb.ts);
 	buf->vb.field_count++;
-	wake_up(&buf->vb.done);
+	wake_up_interruptible(&buf->vb.done);
 
 	spin_unlock_irqrestore(&dev->slock, flags);
 	return IRQ_HANDLED;
@@ -328,7 +329,6 @@ static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 		printk(KERN_ERR "svcd : device streamon failed!\n");
 		return -(ret);
 	}
-	dev->streaming = 1;
 
 	ret = videobuf_streamon(&dev->vb_vidq);
 	if (ret < 0) {
@@ -353,7 +353,6 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 		printk(KERN_ERR "svcd : device streamoff failed!\n");
 		return -(ret);
 	}
-	dev->streaming = 0;
 
 	ret = videobuf_streamoff(&dev->vb_vidq);
 	if (ret < 0) {
@@ -665,6 +664,13 @@ static int svcd_open(struct file *file)
 	dev->width    		= DFL_WIDTH;
 	dev->height   		= DFL_HEIGHT;
 
+	ret = request_irq(dev->pdev->irq, svcd_irq_handler,
+				IRQF_SHARED, SVCD_MODULE_NAME, dev);
+	if (ret) {
+		printk(KERN_ERR "svcd : request_irq failed!!! irq num : %d\n", dev->pdev->irq);
+		return ret;
+	}
+
 	videobuf_queue_vmalloc_init(&dev->vb_vidq, &svcd_video_qops,
 				&dev->pdev->dev, &dev->slock, dev->type, V4L2_FIELD_INTERLACED,
 				sizeof(struct svcd_buffer), dev);
@@ -690,6 +696,8 @@ static int svcd_close(struct file *file)
 	videobuf_stop(&dev->vb_vidq);
 	videobuf_mmap_free(&dev->vb_vidq);
 	
+	free_irq(dev->pdev->irq, dev);
+
 	iowrite32(0, dev->mmregs + CAMERA_CMD_CLOSE);
 	ret = ioread32(dev->mmregs + CAMERA_CMD_CLOSE);
 	if (ret > 0) {
@@ -723,13 +731,10 @@ svcd_poll(struct file *file, struct poll_table_struct *wait)
 
 	unsigned int ret;
 
-	printk(KERN_DEBUG "svcd : %s\n", __func__);
-
 	if (dev->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return POLLERR;
 
 	ret = videobuf_poll_stream(file, q, wait);
-	printk(KERN_ERR "svcd : %s, ret = %d\n", __func__, ret);
 	return ret;
 }
 
@@ -844,12 +849,6 @@ static int svcd_pci_initdev(struct pci_dev *pdev,	const struct pci_device_id *id
 	if (ret)
 		goto rel_vdev;
 	pci_set_master(dev->pdev);
-	
-	ret = request_irq(dev->pdev->irq, svcd_irq_handler, IRQF_SHARED, SVCD_MODULE_NAME, dev);
-	if (ret) {
-		printk(KERN_WARNING "svcd : request_irq failed!!! irq num : %d\n", dev->pdev->irq);
-		return ret;
-	}
 
 	ret = -EIO;
 	dev->mem_base = pci_resource_start(dev->pdev, 0);
@@ -955,7 +954,6 @@ static void svcd_pci_removedev(struct pci_dev *pdev)
 		release_mem_region(dev->mem_base, dev->mem_size);
 		dev->mem_base = 0;
 	}
-	free_irq(dev->pdev->irq, dev);
 	pci_disable_device(dev->pdev);
 	v4l2_device_unregister(&dev->v4l2_dev);
 	kfree(dev);
