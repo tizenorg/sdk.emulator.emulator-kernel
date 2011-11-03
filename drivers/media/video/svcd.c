@@ -117,38 +117,25 @@ static int get_image_size(struct svcd_device *dev)
 	return size;
 }
 
-static void svcd_fillbuf(struct svcd_device *dev, struct svcd_buffer *buf)
+static void svcd_fillbuf(struct svcd_device *dev)
 {
-	void *vbuf = videobuf_to_vmalloc(&buf->vb);
-	uint32_t size = get_image_size(dev);
-
-	memcpy_fromio(vbuf, dev->mmmems, size);
-}
-
-static irqreturn_t svcd_irq_handler(int irq, void *dev_id)
-{
-	struct svcd_device *dev = dev_id;
 	struct svcd_buffer *buf = NULL;
 	unsigned long flags = 0;
 
-	if (!ioread32(dev->mmregs + CAMERA_CMD_ISSTREAM))
-		return IRQ_NONE;
-
-	iowrite32(0, dev->mmregs + CAMERA_CMD_CLRIRQ);
 	spin_lock_irqsave(&dev->slock, flags);
 	if (list_empty(&dev->active)) {
 		spin_unlock_irqrestore(&dev->slock, flags);
-		return IRQ_NONE;
+		return;
 	}
 	
 	buf = list_entry(dev->active.next, struct svcd_buffer, vb.queue);
 	if (!waitqueue_active(&buf->vb.done)) {
 		spin_unlock_irqrestore(&dev->slock, flags);
-		return IRQ_NONE;
+		return;
 	}
 	list_del(&buf->vb.queue);
-	
-	svcd_fillbuf(dev, buf);
+
+	memcpy_fromio(videobuf_to_vmalloc(&buf->vb), dev->mmmems, get_image_size(dev));
 
 	buf->vb.state = VIDEOBUF_DONE;
 	do_gettimeofday(&buf->vb.ts);
@@ -156,6 +143,17 @@ static irqreturn_t svcd_irq_handler(int irq, void *dev_id)
 	wake_up_interruptible(&buf->vb.done);
 
 	spin_unlock_irqrestore(&dev->slock, flags);
+}
+
+static irqreturn_t svcd_irq_handler(int irq, void *dev_id)
+{
+	struct svcd_device *dev = dev_id;
+
+	if (!ioread32(dev->mmregs + CAMERA_CMD_ISSTREAM))
+		return IRQ_NONE;
+
+	iowrite32(0, dev->mmregs + CAMERA_CMD_CLRIRQ);
+	svcd_fillbuf(dev);
 	return IRQ_HANDLED;
 }
 
