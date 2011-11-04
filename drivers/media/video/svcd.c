@@ -45,28 +45,27 @@ MODULE_LICENSE("GPL2");
 /* ------------------------------------------------------------------
 	Basic structures
    ------------------------------------------------------------------*/
-#define CAMERA_CMD_OPEN             0x00
-#define CAMERA_CMD_CLOSE            0x04
-#define CAMERA_CMD_ISSTREAM        0x08
-#define CAMERA_CMD_START_PREVIEW    0x0C
-#define CAMERA_CMD_STOP_PREVIEW     0x10
-#define CAMERA_CMD_START_CAPTURE    0x14
-#define CAMERA_CMD_STOP_CAPTURE     0x18
-#define CAMERA_CMD_S_PARAM          0x1C
-#define CAMERA_CMD_G_PARAM          0x20
-#define CAMERA_CMD_ENUM_FMT         0x24
-#define CAMERA_CMD_TRY_FMT          0x28
-#define CAMERA_CMD_S_FMT            0x2C
-#define CAMERA_CMD_G_FMT            0x30
-#define CAMERA_CMD_QCTRL            0x34
-#define CAMERA_CMD_S_CTRL           0x38
-#define CAMERA_CMD_G_CTRL           0x3C
-#define CAMERA_CMD_ENUM_FSIZES      0x40
-#define CAMERA_CMD_ENUM_FINTV       0x44
-#define CAMERA_CMD_S_DATA           0x48
-#define CAMERA_CMD_G_DATA           0x4C
-#define CAMERA_CMD_CLRIRQ		0x50
-#define CAMERA_CMD_DTC				0xFF
+#define SVCAM_CMD_INIT           0x00
+#define SVCAM_CMD_OPEN           0x04
+#define SVCAM_CMD_CLOSE          0x08
+#define SVCAM_CMD_ISSTREAM       0x0C
+#define SVCAM_CMD_START_PREVIEW  0x10
+#define SVCAM_CMD_STOP_PREVIEW   0x14
+#define SVCAM_CMD_S_PARAM        0x18
+#define SVCAM_CMD_G_PARAM        0x1C
+#define SVCAM_CMD_ENUM_FMT       0x20
+#define SVCAM_CMD_TRY_FMT        0x24
+#define SVCAM_CMD_S_FMT          0x28
+#define SVCAM_CMD_G_FMT          0x2C
+#define SVCAM_CMD_QCTRL          0x30
+#define SVCAM_CMD_S_CTRL         0x34
+#define SVCAM_CMD_G_CTRL         0x38
+#define SVCAM_CMD_ENUM_FSIZES    0x3C
+#define SVCAM_CMD_ENUM_FINTV     0x40
+#define SVCAM_CMD_S_DATA         0x44
+#define SVCAM_CMD_G_DATA         0x48
+#define SVCAM_CMD_CLRIRQ         0x4C
+#define SVCAM_CMD_DTC            0x50
 
 /* buffer for one video frame */
 struct svcd_buffer {
@@ -149,10 +148,10 @@ static irqreturn_t svcd_irq_handler(int irq, void *dev_id)
 {
 	struct svcd_device *dev = dev_id;
 
-	if (!ioread32(dev->mmregs + CAMERA_CMD_ISSTREAM))
+	if (!ioread32(dev->mmregs + SVCAM_CMD_ISSTREAM))
 		return IRQ_NONE;
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_CLRIRQ);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_CLRIRQ);
 	svcd_fillbuf(dev);
 	return IRQ_HANDLED;
 }
@@ -183,18 +182,18 @@ static int vidioc_enum_fmt_vid_cap(struct file *file, void  *priv,
 	if (f->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(f->index, dev->mmregs + CAMERA_CMD_S_DATA);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(f->index, dev->mmregs + SVCAM_CMD_S_DATA);
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_ENUM_FMT);
-	ret = ioread32(dev->mmregs + CAMERA_CMD_ENUM_FMT);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_ENUM_FMT);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_ENUM_FMT);
 	if (ret > 0) 
 		return -(ret);
 
-	f->index		= ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	f->flags		= ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	f->pixelformat	= ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	ioread32_rep(dev->mmregs + CAMERA_CMD_G_DATA, f->description, 8);	
+	f->index		= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->flags		= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->pixelformat	= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	ioread32_rep(dev->mmregs + SVCAM_CMD_G_DATA, f->description, 8);
 
 	return 0;
 }
@@ -205,18 +204,20 @@ static int vidioc_g_fmt_vid_cap(struct file *file, void *priv,
 	struct svcd_device *dev = priv;
 	uint32_t ret;
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(0, dev->mmregs + CAMERA_CMD_G_FMT);
-	ret = ioread32(dev->mmregs + CAMERA_CMD_G_FMT);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_G_FMT);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_G_FMT);
 	if (ret > 0) 
 		return -(ret);
 	
-	f->fmt.pix.width        = ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	f->fmt.pix.height       = ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	f->fmt.pix.field        = ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	f->fmt.pix.pixelformat  = ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	f->fmt.pix.bytesperline = ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	f->fmt.pix.sizeimage 	= ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
+	f->fmt.pix.width        = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.height       = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.field        = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.pixelformat  = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.bytesperline = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.sizeimage 	= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.colorspace = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.priv = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 
 	return 0;
 }
@@ -225,22 +226,28 @@ static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
 			struct v4l2_format *f)
 {
 	struct svcd_device *dev = priv;
-	enum v4l2_field field;
 	uint32_t ret;
 
-	field = f->fmt.pix.field;
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(f->fmt.pix.width, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(f->fmt.pix.height, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(f->fmt.pix.pixelformat, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(f->fmt.pix.field, dev->mmregs + SVCAM_CMD_S_DATA);
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(f->fmt.pix.width, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(f->fmt.pix.height, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(f->fmt.pix.pixelformat, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(f->fmt.pix.field, dev->mmregs + CAMERA_CMD_S_DATA);
-
-	iowrite32(0, dev->mmregs + CAMERA_CMD_TRY_FMT);
-	ret = ioread32(dev->mmregs + CAMERA_CMD_TRY_FMT);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_TRY_FMT);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_TRY_FMT);
 
 	if (ret > 0) 
 		return -(ret);
+
+	f->fmt.pix.width        = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.height       = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.field        = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.pixelformat  = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.bytesperline = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.sizeimage 	= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.colorspace = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.priv = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 
 	return 0;
 }
@@ -258,18 +265,29 @@ static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 		mutex_unlock(&q->vb_lock);
 		return -EBUSY;
 	}
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(f->fmt.pix.width, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(f->fmt.pix.height, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(f->fmt.pix.pixelformat, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(f->fmt.pix.field, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(0, dev->mmregs + CAMERA_CMD_S_FMT);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(f->fmt.pix.width, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(f->fmt.pix.height, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(f->fmt.pix.pixelformat, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(f->fmt.pix.field, dev->mmregs + SVCAM_CMD_S_DATA);
 
-	ret = ioread32(dev->mmregs + CAMERA_CMD_S_FMT);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_S_FMT);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_S_FMT);
 	mutex_unlock(&q->vb_lock);
 
-	if (ret > 0) 
+	if (ret > 0) {
+		printk(KERN_ERR "svcd[%s] : SVCAM_CMD_S_FMT failed\n", __func__);
 		return -(ret);
+	}
+
+	f->fmt.pix.width        = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.height       = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.field        = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.pixelformat  = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.bytesperline = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.sizeimage 	= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.colorspace = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	f->fmt.pix.priv = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 
 	dev->pixelformat = f->fmt.pix.pixelformat;
 	dev->width = f->fmt.pix.width;
@@ -321,8 +339,8 @@ static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 	if (i != dev->type)
 		return -EINVAL;
 
-	iowrite32(1, dev->mmregs + CAMERA_CMD_START_PREVIEW);
-	ret = (int)ioread32(dev->mmregs + CAMERA_CMD_START_PREVIEW);
+	iowrite32(1, dev->mmregs + SVCAM_CMD_START_PREVIEW);
+	ret = (int)ioread32(dev->mmregs + SVCAM_CMD_START_PREVIEW);
 	if (ret) {
 		printk(KERN_ERR "svcd : device streamon failed!\n");
 		return -(ret);
@@ -345,8 +363,8 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 	if (i != dev->type)
 		return -EINVAL;
 
-	iowrite32(1, dev->mmregs + CAMERA_CMD_STOP_PREVIEW);
-	ret = (int)ioread32(dev->mmregs + CAMERA_CMD_STOP_PREVIEW);
+	iowrite32(1, dev->mmregs + SVCAM_CMD_STOP_PREVIEW);
+	ret = (int)ioread32(dev->mmregs + SVCAM_CMD_STOP_PREVIEW);
 	if (ret > 0) {
 		printk(KERN_ERR "svcd : device streamoff failed!\n");
 		return -(ret);
@@ -395,22 +413,22 @@ static int vidioc_queryctrl(struct file *file, void *priv,
 	struct svcd_device *dev = priv;
 	uint32_t ret;
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(qc->id, dev->mmregs + CAMERA_CMD_S_DATA);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(qc->id, dev->mmregs + SVCAM_CMD_S_DATA);
 	
-	iowrite32(0, dev->mmregs + CAMERA_CMD_QCTRL);
-	ret = ioread32(dev->mmregs + CAMERA_CMD_QCTRL);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_QCTRL);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_QCTRL);
 	
 	if (ret > 0)
 		return -(ret);
 
-	qc->id 				= ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	qc->minimum 		= ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	qc->maximum 		= ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	qc->step 			= ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	qc->default_value 	= ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	qc->flags 			= ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	ioread32_rep(dev->mmregs + CAMERA_CMD_G_DATA, qc->name, 8);	
+	qc->id 				= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	qc->minimum 		= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	qc->maximum 		= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	qc->step 			= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	qc->default_value 	= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	qc->flags 			= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	ioread32_rep(dev->mmregs + SVCAM_CMD_G_DATA, qc->name, 8);
 	
 	return 0;
 }
@@ -421,16 +439,16 @@ static int vidioc_g_ctrl(struct file *file, void *priv,
 	struct svcd_device *dev = priv;
 	uint32_t ret;
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(ctrl->id, dev->mmregs + CAMERA_CMD_S_DATA);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(ctrl->id, dev->mmregs + SVCAM_CMD_S_DATA);
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_G_CTRL);
-	ret = ioread32(dev->mmregs + CAMERA_CMD_G_CTRL);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_G_CTRL);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_G_CTRL);
 	
 	if (ret > 0)
 		return -(ret);
 	
-	ctrl->value = ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
+	ctrl->value = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 
 	return 0;
 }
@@ -441,12 +459,12 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 	struct svcd_device *dev = priv;
 	uint32_t ret;
 	
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(ctrl->id, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(ctrl->value, dev->mmregs + CAMERA_CMD_S_DATA);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(ctrl->id, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(ctrl->value, dev->mmregs + SVCAM_CMD_S_DATA);
 	
-	iowrite32(0, dev->mmregs + CAMERA_CMD_S_CTRL);	
-	ret = ioread32(dev->mmregs + CAMERA_CMD_S_CTRL);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_S_CTRL);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_S_CTRL);
 
 	if (ret > 0)
 		return -(ret);
@@ -464,12 +482,12 @@ static int vidioc_s_parm(struct file *file, void *priv,
 	if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(cp->timeperframe.numerator, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(cp->timeperframe.denominator, dev->mmregs + CAMERA_CMD_S_DATA);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(cp->timeperframe.numerator, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(cp->timeperframe.denominator, dev->mmregs + SVCAM_CMD_S_DATA);
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_S_PARAM);	
-	ret = ioread32(dev->mmregs + CAMERA_CMD_S_PARAM);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_S_PARAM);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_S_PARAM);
 	
 	if (ret > 0)
 		return -(ret);
@@ -490,14 +508,14 @@ static int vidioc_g_parm(struct file *file, void *priv,
 	memset(cp, 0, sizeof(struct v4l2_captureparm));
 	cp->capability = V4L2_CAP_TIMEPERFRAME;
 	
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(0, dev->mmregs + CAMERA_CMD_G_PARAM);
-	ret = ioread32(dev->mmregs + CAMERA_CMD_G_PARAM);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_G_PARAM);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_G_PARAM);
 	if (ret > 0) 
 		return -(ret);
 	
-	cp->timeperframe.numerator = ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	cp->timeperframe.denominator = ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
+	cp->timeperframe.numerator = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	cp->timeperframe.denominator = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 
 	return 0;	
 }
@@ -508,18 +526,18 @@ static int vidioc_enum_framesizes(struct file *file, void *priv,
 	struct svcd_device *dev = priv;
 	uint32_t ret;
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(fsize->index, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(fsize->pixel_format, dev->mmregs + CAMERA_CMD_S_DATA);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(fsize->index, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(fsize->pixel_format, dev->mmregs + SVCAM_CMD_S_DATA);
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_ENUM_FSIZES);
-	ret = ioread32(dev->mmregs + CAMERA_CMD_ENUM_FSIZES);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_ENUM_FSIZES);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_ENUM_FSIZES);
 	if (ret > 0)
 		return -(ret);
 
 	fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
-	fsize->discrete.width = ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	fsize->discrete.height = ioread32(dev->mmregs + CAMERA_CMD_G_DATA); 
+	fsize->discrete.width = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	fsize->discrete.height = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 
 	return 0;	
 }
@@ -530,20 +548,20 @@ static int vidioc_enum_frameintervals(struct file *file, void *priv,
 	struct svcd_device *dev = priv;
 	uint32_t ret;
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_DTC);
-	iowrite32(fival->index, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(fival->pixel_format, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(fival->width, dev->mmregs + CAMERA_CMD_S_DATA);
-	iowrite32(fival->height, dev->mmregs + CAMERA_CMD_S_DATA);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
+	iowrite32(fival->index, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(fival->pixel_format, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(fival->width, dev->mmregs + SVCAM_CMD_S_DATA);
+	iowrite32(fival->height, dev->mmregs + SVCAM_CMD_S_DATA);
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_ENUM_FINTV);
-	ret = ioread32(dev->mmregs + CAMERA_CMD_ENUM_FINTV);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_ENUM_FINTV);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_ENUM_FINTV);
 	if (ret > 0)
 		return -(ret);
 
 	fival->type = V4L2_FRMIVAL_TYPE_DISCRETE;
-	fival->discrete.numerator = ioread32(dev->mmregs + CAMERA_CMD_G_DATA);
-	fival->discrete.denominator = ioread32(dev->mmregs + CAMERA_CMD_G_DATA); 
+	fival->discrete.numerator = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	fival->discrete.denominator = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 
 	return 0;
 }
@@ -673,8 +691,8 @@ static int svcd_open(struct file *file)
 				&dev->pdev->dev, &dev->slock, dev->type, V4L2_FIELD_INTERLACED,
 				sizeof(struct svcd_buffer), dev);
 	
-	iowrite32(0, dev->mmregs + CAMERA_CMD_OPEN);
-	ret = (int)ioread32(dev->mmregs + CAMERA_CMD_OPEN);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_OPEN);
+	ret = (int)ioread32(dev->mmregs + SVCAM_CMD_OPEN);
 
 	if (ret > 0) {
 		printk(KERN_ERR "svcd : open failed\n");
@@ -696,8 +714,8 @@ static int svcd_close(struct file *file)
 	
 	free_irq(dev->pdev->irq, dev);
 
-	iowrite32(0, dev->mmregs + CAMERA_CMD_CLOSE);
-	ret = ioread32(dev->mmregs + CAMERA_CMD_CLOSE);
+	iowrite32(0, dev->mmregs + SVCAM_CMD_CLOSE);
+	ret = ioread32(dev->mmregs + SVCAM_CMD_CLOSE);
 	if (ret > 0) {
 		printk(KERN_ERR "svcd : close failed\n");
 		return -(ret);
@@ -862,7 +880,6 @@ static int svcd_pci_initdev(struct pci_dev *pdev,	const struct pci_device_id *id
 		goto out_disable;
 	} 
 
-	ret = -EIO;
 	dev->io_base = pci_resource_start(dev->pdev, 1);
 	dev->io_size = pci_resource_len(dev->pdev, 1);
 	
