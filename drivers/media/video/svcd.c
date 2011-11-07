@@ -504,9 +504,6 @@ static int vidioc_g_parm(struct file *file, void *priv,
 
 	if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
-
-	memset(cp, 0, sizeof(struct v4l2_captureparm));
-	cp->capability = V4L2_CAP_TIMEPERFRAME;
 	
 	iowrite32(0, dev->mmregs + SVCAM_CMD_DTC);
 	iowrite32(0, dev->mmregs + SVCAM_CMD_G_PARAM);
@@ -514,6 +511,7 @@ static int vidioc_g_parm(struct file *file, void *priv,
 	if (ret > 0) 
 		return -(ret);
 	
+	cp->capability = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 	cp->timeperframe.numerator = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 	cp->timeperframe.denominator = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 
