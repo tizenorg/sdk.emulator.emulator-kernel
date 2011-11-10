@@ -103,7 +103,12 @@ static int get_image_size(struct svcd_device *dev)
 	int size;
 
 	switch (dev->pixelformat) {
+		case V4L2_PIX_FMT_RGB24:
+		case V4L2_PIX_FMT_BGR24:
+			size = dev->width * dev->height * 3;
+			break;
 		case V4L2_PIX_FMT_YUV420:
+		case V4L2_PIX_FMT_YVU420:
 		case V4L2_PIX_FMT_NV12:
 			size = (dev->width * dev->height * 3) /2;
 			break;
