@@ -84,7 +84,7 @@ static const unsigned short atkbd_set2_keycode[ATKBD_KEYMAP_SIZE] = {
 #ifndef SIM_SKINCODE 
 	  0, 67, 65, 63, 61, 59, 60, 88,  169, 68, 66, 64, 62, 15, 41,117,
 	  132, 56, 42, 93, 29, 16,  2,  0,  174,  0, 44, 31, 30, 17,  3,  0,
-	  212, 46, 45, 32, 18,  5,  4, 95,  217, 57, 47, 33, 20, 19,  6,183,
+	  116, 46, 45, 32, 18,  5,  4, 95,  217, 57, 47, 33, 20, 19,  6,183,
 	  356, 49, 48, 35, 34, 21,  7,184,  0,  114, 50, 36, 22,  8,  9,185,
 	  0, 51, 37, 23, 24, 11, 10,  0,  0, 52, 53, 38, 39, 25, 12,  0,
 	  0, 115, 40,  0, 26, 13,  0,  0, 58, 54, 28, 27,  0, 43,  0, 85,
@@ -475,7 +475,7 @@ static irqreturn_t atkbd_interrupt(struct serio *serio, unsigned char data,
 	if (code == 100) code = 169;
 	else if (code == 101) code = 132;
 	else if (code == 102) code = 174;
-	else if (code == 103) code = 212;
+	else if (code == 103) code = 116;
 	else if (code == 104) code = 217;
 	else if (code == 105) code = 356;		
 #endif
