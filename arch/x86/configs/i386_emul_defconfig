@@ -1719,6 +1719,7 @@ CONFIG_BACKLIGHT_EMUL=y
 #
 # CONFIG_DISPLAY_SUPPORT is not set
 CONFIG_EMUL_LCD=y
+CONFIG_EMUL_CODEC=y
 
 #
 # Console display driver support

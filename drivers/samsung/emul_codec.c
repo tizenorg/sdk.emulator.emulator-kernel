@@ -24,7 +24,6 @@
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
 #include <linux/wait.h>
-
 #include <asm/uaccess.h>
 #include <asm/io.h>
 
@@ -48,6 +47,12 @@ struct _param {
 	uint32_t ret;
 };
 
+enum codec_param_offset {
+	CODEC_API_INDEX = 0,
+	CODEC_IN_PARAM,
+	CODEC_RETURN_VALUE
+};
+
 struct codec_buf {
 	AVFormatContext *pFormatCtx;
 	AVClass *pClass;
@@ -66,7 +71,9 @@ struct codec_dev {
 
 	resource_size_t mem_start;
 	resource_size_t mem_size;
-//	struct codec_buf *buf;
+
+	/* image buffer */
+//	uint8_t *img_buf;
 };	
 
 static struct pci_device_id slpcodec_pci_table[] __devinitdata = {
@@ -105,103 +112,107 @@ static int slpcodec_open (struct inode *inode, struct file *file)
 static ssize_t slpcodec_write (struct file *file, const char __user *buf,
 								size_t count, loff_t *fops)
 {
-	struct _param aa;
+	struct _param paramInfo;
+	AVCodecContext tempCtx;
 	uint8_t *ptr;
-//	struct codec_buf *pBuf;
 	int i;
 	
 	if (!slpcodec) {
 		printk(KERN_ERR "[%s] : Fail to get codec device info\n", __func__);
 	}
 
-	copy_from_user(&aa, buf, sizeof(struct _param));
+	copy_from_user(&paramInfo, buf, sizeof(struct _param));
 
-	for (i = 0; i < aa.in_args_num; i++) {
-		writel(aa.in_args[i], slpcodec->ioaddr + 1);
+	for (i = 0; i < paramInfo.in_args_num; i++) {
+		writel(paramInfo.in_args[i], slpcodec->ioaddr + CODEC_IN_PARAM);
 	}
 
 	/* guest to host */
-	if (aa.func == 2) {
+	if (paramInfo.apiIndex == 2) {
 		AVCodecContext *ctx;
-		ctx = (AVCodecContext*)aa.in_args[0];
-
-		writel((uint32_t)&ctx->extradata_size, slpcodec->ioaddr + 1);
-		writel((uint32_t)ctx->extradata, slpcodec->ioaddr + 1);
-		writel((uint32_t)&ctx->time_base, slpcodec->ioaddr + 1);
-		writel((uint32_t)&ctx->sample_rate, slpcodec->ioaddr + 1);
-		writel((uint32_t)&ctx->channels, slpcodec->ioaddr + 1);
-		writel((uint32_t)&ctx->width, slpcodec->ioaddr + 1);
-		writel((uint32_t)&ctx->height, slpcodec->ioaddr + 1);
-		writel((uint32_t)&ctx->sample_fmt, slpcodec->ioaddr + 1);
-		writel((uint32_t)&ctx->sample_aspect_ratio, slpcodec->ioaddr+ 1);
-		writel((uint32_t)&ctx->coded_width, slpcodec->ioaddr+ 1);
-		writel((uint32_t)&ctx->coded_height, slpcodec->ioaddr+ 1);
-		writel((uint32_t)&ctx->ticks_per_frame, slpcodec->ioaddr+ 1);
-		writel((uint32_t)&ctx->chroma_sample_location, slpcodec->ioaddr+ 1);
-		writel((uint32_t)ctx->priv_data, slpcodec->ioaddr + 1);
-	} else if (aa.func == 20) {
+		ctx = (AVCodecContext*)paramInfo.in_args[0];
+		memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
+		writel((uint32_t)ctx->extradata, slpcodec->ioaddr + CODEC_IN_PARAM);
+	} else if (paramInfo.apiIndex == 20) {
 		AVCodecContext *ctx;
-		ctx = (AVCodecContext*)aa.in_args[0];
-		writel((uint32_t)&ctx->frame_number, slpcodec->ioaddr + 1);
-		writel((uint32_t)&ctx->pix_fmt, slpcodec->ioaddr + 1);
-		writel((uint32_t)&ctx->coded_frame, slpcodec->ioaddr + 1);
-		writel((uint32_t)&ctx->sample_aspect_ratio, slpcodec->ioaddr+ 1);
-		writel((uint32_t)&ctx->reordered_opaque, slpcodec->ioaddr + 1);
-	} else if (aa.func == 24) {
-/*		ptr[0] = (uint8_t*)aa.in_args[4];
-		ptr[1] = (uint8_t*)aa.in_args[5];
-		ptr[2] = (uint8_t*)aa.in_args[6];
-		ptr[3] = (uint8_t*)aa.in_args[7]; */
+		ctx = (AVCodecContext*)paramInfo.in_args[0];
+		writel((uint32_t)&ctx->frame_number, slpcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->pix_fmt, slpcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->coded_frame, slpcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->sample_aspect_ratio, slpcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->reordered_opaque, slpcodec->ioaddr + CODEC_IN_PARAM);
+	} else if (paramInfo.apiIndex == 22) {
+		AVCodecContext *ctx;
+		uint32_t buf_size;
+		ctx = (AVCodecContext*)paramInfo.in_args[0];
+		buf_size = *(uint32_t*)paramInfo.in_args[2];
+		writel((uint32_t)ctx->coded_frame, slpcodec->ioaddr + CODEC_IN_PARAM);
+		ptr = kmalloc(buf_size, GFP_KERNEL);
+		writel((uint32_t)ptr, slpcodec->ioaddr + CODEC_IN_PARAM);
+	} else if (paramInfo.apiIndex == 24) {
 		int width, height;
 		int size, size2;
-		width = *(int*)aa.in_args[2];
-		height = *(int*)aa.in_args[3];
+		width = *(int*)paramInfo.in_args[2];
+		height = *(int*)paramInfo.in_args[3];
 		size = width * height;
 		size2 = size / 4;
 		ptr = kmalloc(size + size2 * 2, GFP_KERNEL);
-		writel((uint32_t)ptr, slpcodec->ioaddr+ 1);
+		writel((uint32_t)ptr, slpcodec->ioaddr + CODEC_IN_PARAM);
 	} 
 
 	// return value
-	writel(aa.ret, slpcodec->ioaddr + 3);
+	writel(paramInfo.ret, slpcodec->ioaddr + CODEC_RETURN_VALUE);
 
 	// api index	
-	writel((uint32_t)aa.func, slpcodec->ioaddr);
+	writel((uint32_t)paramInfo.apiIndex, slpcodec->ioaddr + CODEC_API_INDEX);
 	
 	/* host to guest */
-	if (aa.func == 2) {
-		AVCodecContext *ctx;
-		AVCodec *codec;
-
-		ctx = (AVCodecContext*)aa.in_args[0];
-		codec = (AVCodec*)aa.in_args[1];
-
-		ctx->codec = codec;
-		memcpy(&ctx->codec_type, &codec->type, sizeof(int));
-		memcpy(&ctx->codec_id, &codec->id, sizeof(int));
-	} else if (aa.func == 20) {
+	if (paramInfo.apiIndex == 2) {
+		AVCodecContext *avctx;
+		avctx = (AVCodecContext*)paramInfo.in_args[0];
+#if 1
+		avctx->av_class = temp_ctx.av_class;
+		avctx->codec = (AVCodec*)paramInfo.in_args[1];
+//		avctx->priv_data = temp_ctx.priv_data;
+		avctx->extradata = temp_ctx.extradata;
+		avctx->opaque = temp_ctx.opaque;
+		avctx->get_buffer = temp_ctx.get_buffer;
+		avctx->release_buffer = temp_ctx.release_buffer;
+		avctx->stats_out = temp_ctx.stats_out;
+		avctx->stats_in = temp_ctx.stats_in;
+		avctx->rc_override = temp_ctx.rc_override;
+		avctx->rc_eq = temp_ctx.rc_eq;
+		avctx->slice_offset = temp_ctx.slice_offset;
+		avctx->get_format = temp_ctx.get_format;
+		avctx->internal_buffer = temp_ctx.internal_buffer;
+		avctx->intra_matrix = temp_ctx.intra_matrix;
+		avctx->inter_matrix = temp_ctx.inter_matrix;
+		avctx->reget_buffer = temp_ctx.reget_buffer;
+		avctx->execute = temp_ctx.execute;
+		avctx->thread_opaque = temp_ctx.thread_opaque;
+		avctx->execute2 = temp_ctx.execute2;
+#endif
+	} else if (paramInfo.apiIndex == 20) {
 		AVCodecContext *ctx;
 		AVFrame *frame;
-		ctx = (AVCodecContext*)aa.in_args[0];
-		frame = (AVFrame*)aa.in_args[1];
+		ctx = (AVCodecContext*)paramInfo.in_args[0];
+		frame = (AVFrame*)paramInfo.in_args[1];
 		ctx->coded_frame = frame;
-	} else if (aa.func == 24) {
-/*		AVPicture *src;
-		src = (AVPicture*)aa.in_args[0];
-		src->data[0] = ptr[0];
-		src->data[1] = ptr[1];
-		src->data[2] = ptr[2];
-		src->data[3] = ptr[3]; */
+	} else if (paramInfo.apiIndex == 22) {
+		uint32_t buf_size;
+		buf_size = *(uint32_t*)paramInfo.in_args[2];
+		copy_to_user(paramInfo.in_args[1], ptr, buf_size);
+		kfree(ptr);
+    } else if (paramInfo.apiIndex == 24) {
 		int width, height;
 		int size, size2;
-		width = *(int*)aa.in_args[2];
-		height = *(int*)aa.in_args[3];
+		width = *(int*)paramInfo.in_args[2];
+		height = *(int*)paramInfo.in_args[3];
 		size = width * height;
 		size2 = size / 4;
-		copy_to_user(aa.in_args[4], ptr, size + size2 * 2);
-		kfree(ptr); 
-		codec_log("\n");
-	}
+		copy_to_user(paramInfo.in_args[4], ptr, size + size2 * 2);
+		kfree(ptr);
+	} 
 
 	return 0;
 }
@@ -247,6 +258,12 @@ static int slpcodec_release (struct inode *inode, struct file *file)
 	if (slpcodec->dev->irq >= 0) {
 		free_irq(slpcodec->dev->irq, slpcodec);
 	}
+
+/*	if (slpcodec->img_buf) {
+		kfree(slpcodec->img_buf);
+		slpcodec->img_buf = NULL;
+	} */
+
 	module_put(THIS_MODULE);
 	codec_log("\n");		
 	return 0;
@@ -298,24 +315,6 @@ static int __devinit slpcodec_probe (struct pci_dev *pci_dev,
 	slpcodec = (struct codec_dev*)kmalloc(sizeof(struct codec_dev), GFP_KERNEL);
 	memset(slpcodec, 0x00, sizeof(struct codec_dev));
 
-/*	slpcodec->buf = kmalloc(sizeof(struct codec_dev), GFP_KERNEL);
-	memset(slpcodec->buf, 0x00, sizeof(struct codec_dev));
-
-	pBuf = slpcodec->buf;
-	pBuf->pFormatCtx = kmalloc(sizeof(AVFormatContext), GFP_KERNEL);
-	pBuf->pClass = kmalloc(sizeof(AVClass), GFP_KERNEL);
-	pBuf->pInputFmt = kmalloc(sizeof(struct AVInputFormat), GFP_KERNEL);
-	pBuf->pByteIOCtx = kmalloc(sizeof(ByteIOContext), GFP_KERNEL);
-	pBuf->pStream = kmalloc(sizeof(AVStream), GFP_KERNEL);
-
-	pBuf->pFormatCtx->av_class = kmalloc(sizeof(AVClass), GFP_KERNEL);
-	pBuf->pFormatCtx->iformat = kmalloc(sizeof(struct AVInputFormat), GFP_KERNEL);
-	pBuf->pFormatCtx->pb = kmalloc(sizeof(ByteIOContext), GFP_KERNEL);
-	pBuf->pFormatCtx->streams[0] = kmalloc(sizeof(AVStream), GFP_KERNEL);
-
-	pBuf->pCodecCtx = kmalloc(sizeof(AVCodecContext), GFP_KERNEL);
-	pBuf->pFrame = kmalloc(sizeof(AVFrame), GFP_KERNEL);
-	pBuf->pCodec = kmalloc(sizeof(AVCodec), GFP_KERNEL); */
 	slpcodec->dev = pci_dev;	
 
 	ret = -EIO;	
@@ -386,4 +385,3 @@ MODULE_DESCRIPTION("Virtual Codec Driver for Emulator");
 
 module_init(slpcodec_init);
 module_exit(slpcodec_exit);
-
