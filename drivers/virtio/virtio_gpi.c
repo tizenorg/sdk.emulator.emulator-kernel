@@ -1,4 +1,4 @@
-/* Virtio example implementation
+/* Virtio general purpose interface implementation
  *
  *  Copyright 2011 Dongkyun Yun
  *
@@ -29,28 +29,26 @@
 #include <linux/virtio_config.h>
 #include <asm/uaccess.h>
 
-// include/linux/virtio_ids.h
-#define VIRTIO_ID_EXAMPLE   10 /* virtio example */
-// include/linux/virtio_balloon.h
-#define VIRTIO_EXAMPLE_F_MUST_TELL_HOST 0
+/* include/linux/virtio_balloon.h */
+#define VIRTIO_GPI_F_MUST_TELL_HOST 0
 
-#define DEVICE_NAME "virtexample"
+#define DEVICE_NAME "virt_gpi"
 #define DEVICE_MINOR_NUM 70
 
 /* Define to use debugging checksums on transfers */
 #undef DEBUG_EXIO
 
 /* Enable debug messages. */
-#define VIRTIO_EX_DEBUG
+#define VIRTIO_GPI_DEBUG
 
-#if defined(VIRTIO_EX_DEBUG)
+#if defined(VIRTIO_GPI_DEBUG)
 #define logout(fmt, ...) \
-	printk(KERN_INFO "[virtio][%s][%d]" fmt, __func__, __LINE__, ##__VA_ARGS__)
+	printk(KERN_INFO "[virt_gpi][%s][%d]" fmt, __func__, __LINE__, ##__VA_ARGS__)
 #else
 #define logout(fmt, ...) ((void)0)
 #endif
 
-struct virtio_ex_data {
+struct virtio_gpi_data {
 	int pid;
 
 	int w_buf_size;
@@ -60,12 +58,12 @@ struct virtio_ex_data {
 	char *r_buf;
 }__packed;
 
-#define to_virtio_ex_data(a)   ((struct virtio_ex_data *)(a)->private_data)
+#define to_virtio_gpi_data(a)   ((struct virtio_gpi_data *)(a)->private_data)
 
 static struct virtqueue *vq = NULL;
 
 static struct virtio_device_id id_table[] = {
-	{ VIRTIO_ID_EXAMPLE, VIRTIO_DEV_ANY_ID },
+	{ VIRTIO_ID_GPI, VIRTIO_DEV_ANY_ID },
 	{ 0 },
 };
 
@@ -100,7 +98,7 @@ err:
 	return NULL;
 }
 
-static unsigned int put_data(struct virtio_ex_data *exdata)
+static unsigned int put_data(struct virtio_gpi_data *exdata)
 {
 	struct scatterlist *sg;
 	static struct scatterlist *sg_list = NULL;
@@ -115,7 +113,7 @@ static unsigned int put_data(struct virtio_ex_data *exdata)
 	if (!i_page)
 		i_page = 1;
 
-	logout("add_buf(out:%d, in:%d) \n", o_page*PAGE_SIZE, i_page*PAGE_SIZE);
+	logout("add_buf(out:%ld, in:%ld) \n", o_page*PAGE_SIZE, i_page*PAGE_SIZE);
 
 	sg_entries = o_page + i_page;
 
@@ -153,7 +151,7 @@ out:
 	return ret;
 }
 
-static void free_buffer(struct virtio_ex_data *exdata)
+static void free_buffer(struct virtio_gpi_data *exdata)
 {
 	if (exdata->w_buf) {
 		exdata->w_buf_size = 0;
@@ -166,13 +164,13 @@ static void free_buffer(struct virtio_ex_data *exdata)
 		exdata->r_buf= NULL;
 	}
 } 
-static int virtexample_open(struct inode *inode, struct file *file)
+static int virt_gpi_open(struct inode *inode, struct file *file)
 {
-	struct virtio_ex_data *exdata = NULL;
+	struct virtio_gpi_data *exdata = NULL;
 
 	logout("\n");
 
-	exdata = kzalloc(sizeof(struct virtio_ex_data), GFP_KERNEL);
+	exdata = kzalloc(sizeof(struct virtio_gpi_data), GFP_KERNEL);
 	if (!exdata)
 		return -ENXIO;
 
@@ -201,10 +199,10 @@ static int log_dump(char *buffer, int size)
 	return 0;
 }
 
-static ssize_t virtexample_write(struct file *filp, const char *buffer,
+static ssize_t virt_gpi_write(struct file *filp, const char *buffer,
 		size_t count, loff_t * posp)
 {
-	struct virtio_ex_data *exdata = to_virtio_ex_data(filp);
+	struct virtio_gpi_data *exdata = to_virtio_gpi_data(filp);
 	ssize_t ret;
 
 	logout("\n");
@@ -226,10 +224,12 @@ static ssize_t virtexample_write(struct file *filp, const char *buffer,
 	if (copy_from_user(exdata->w_buf, buffer, exdata->w_buf_size))
 		return -EINVAL;
 
+	logout("ping-pong: write data \n");
 	log_dump(exdata->w_buf, exdata->w_buf_size);
 
 	put_data(exdata);
 
+	logout("ping-pong: return data \n");
 	log_dump(exdata->r_buf, exdata->r_buf_size);
 
 	ret = exdata->w_buf_size;
@@ -237,9 +237,9 @@ static ssize_t virtexample_write(struct file *filp, const char *buffer,
 	return ret;
 }
 
-static int virtexample_release(struct inode *inode, struct file *file)
+static int virt_gpi_release(struct inode *inode, struct file *file)
 {
-	struct virtio_ex_data *exdata = to_virtio_ex_data(file);
+	struct virtio_gpi_data *exdata = to_virtio_gpi_data(file);
 
 	logout("\n");
 
@@ -251,20 +251,20 @@ static int virtexample_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static const struct file_operations virtexample_fops = {
+static const struct file_operations virt_gpi_fops = {
 	.owner		= THIS_MODULE,
-	.open		= virtexample_open,
-	.write      = virtexample_write,
-	.release	= virtexample_release,
+	.open		= virt_gpi_open,
+	.write      = virt_gpi_write,
+	.release	= virt_gpi_release,
 };
 
-static struct miscdevice virtexample_dev = {
+static struct miscdevice virt_gpi_dev = {
 	DEVICE_MINOR_NUM,
 	DEVICE_NAME,
-	&virtexample_fops
+	&virt_gpi_fops
 };
 
-static int virtexample_probe(struct virtio_device *vdev)
+static int virt_gpi_probe(struct virtio_device *vdev)
 {
 	int ret;
 
@@ -275,24 +275,24 @@ static int virtexample_probe(struct virtio_device *vdev)
 	if (IS_ERR(vq))
 		return PTR_ERR(vq);
 
-	ret = misc_register(&virtexample_dev);
+	ret = misc_register(&virt_gpi_dev);
 	if (ret) {
-		printk(KERN_ERR "virtexample: cannot register virtexample_dev as misc");
+		printk(KERN_ERR "virt_gpi: cannot register virt_gpi_dev as misc");
 		return -ENODEV;
 	}
 
 	return 0;
 }
 
-static void __devexit virtexample_remove(struct virtio_device *vdev)
+static void __devexit virt_gpi_remove(struct virtio_device *vdev)
 {
 	logout("\n");
 	vdev->config->reset(vdev);
-	misc_deregister(&virtexample_dev);
+	misc_deregister(&virt_gpi_dev);
 	vdev->config->del_vqs(vdev);
 }
 
-static void virtexample_changed(struct virtio_device *vdev)
+static void virt_gpi_changed(struct virtio_device *vdev)
 {
 	logout("\n");
 	//struct virtio_balloon *vb = vdev->priv;
@@ -300,35 +300,35 @@ static void virtexample_changed(struct virtio_device *vdev)
 }
 
 
-static unsigned int features[] = { VIRTIO_EXAMPLE_F_MUST_TELL_HOST };
+static unsigned int features[] = { VIRTIO_GPI_F_MUST_TELL_HOST };
 
-static struct virtio_driver virtio_example = {
+static struct virtio_driver virtio_gpi = {
 	.feature_table = features,
 	.feature_table_size = ARRAY_SIZE(features),
 	.driver.name =	KBUILD_MODNAME,
 	.driver.owner =	THIS_MODULE,
 	.id_table =	id_table,
-	.probe =	virtexample_probe,
-	.remove =	__devexit_p(virtexample_remove),
-	.config_changed = virtexample_changed,
+	.probe =	virt_gpi_probe,
+	.remove =	__devexit_p(virt_gpi_remove),
+	.config_changed = virt_gpi_changed,
 };
 
 static int __init init(void)
 {
 	logout("\n");
-	return register_virtio_driver(&virtio_example);
+	return register_virtio_driver(&virtio_gpi);
 }
 
 static void __exit fini(void)
 {
 	logout("\n");
-	unregister_virtio_driver(&virtio_example);
+	unregister_virtio_driver(&virtio_gpi);
 }
 
 module_init(init);
 module_exit(fini);
 
 MODULE_DEVICE_TABLE(virtio, id_table);
-MODULE_DESCRIPTION("Virtio example driver");
+MODULE_DESCRIPTION("Virtio general purpose driver");
 MODULE_LICENSE("GPL v2");
 

@@ -7,8 +7,8 @@ config VIRTIO_RING
 	tristate
 	depends on VIRTIO
 
-config VIRTIO_EXAMPLE
-	tristate "Virtio example driver (EXPERIMENTAL)"
+config VIRTIO_GPI
+	tristate "Virtio general purpose driver"
 	select VIRTIO
 	select VIRTIO_RING
 
