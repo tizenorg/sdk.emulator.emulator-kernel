@@ -48,7 +48,7 @@ static struct class *emul_backlight_class;
 static struct device *emul_backlight_dev;
 
 static int brightness;
-static int max_brightness = 10;
+static int max_brightness = 24;
 
 static ssize_t bl_brightness_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
