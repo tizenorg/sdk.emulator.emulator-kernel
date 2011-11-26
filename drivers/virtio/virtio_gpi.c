@@ -168,14 +168,12 @@ static int virt_gpi_open(struct inode *inode, struct file *file)
 {
 	struct virtio_gpi_data *exdata = NULL;
 
-	logout("\n");
-
 	exdata = kzalloc(sizeof(struct virtio_gpi_data), GFP_KERNEL);
 	if (!exdata)
 		return -ENXIO;
 
 	exdata->pid = pid_nr(task_pid(current));
-	logout("pid %d \n", exdata->pid);
+	logout("pid(%d) inode(%p) file(%p) \n", exdata->pid, inode, file);
 
 	file->private_data = exdata;
 
@@ -184,39 +182,43 @@ static int virt_gpi_open(struct inode *inode, struct file *file)
 
 static int log_dump(char *buffer, int size)
 {
+	logout("buffer[%p] size[%d] ", buffer, size);
+
+#if 0
 	int i;
 	unsigned char *ptr = (unsigned char*)buffer;
 
-	logout("pid %d ", pid_nr(task_pid(current)));
-
-	logout("buffer[%p] size[%d] ", buffer, size);
 	logout("DATA BEGIN -------------- ");
 
 	for(i=0; i < size; i++){
 		logout(" %d =  %02x(%c) ", i, ptr[i], ptr[i]);
 	}
 	logout("DATA END  -------------- ");
+#endif
+
 	return 0;
 }
 
 static ssize_t virt_gpi_write(struct file *filp, const char *buffer,
-		size_t count, loff_t * posp)
+		size_t size, loff_t * posp)
 {
 	struct virtio_gpi_data *exdata = to_virtio_gpi_data(filp);
 	ssize_t ret;
 
-	logout("\n");
+	logout("filep(%p) size(%d) \n", filp, size);
 
 	/* for now, just allow one buffer to write(). */
-	if (exdata->w_buf)
+	if (exdata->w_buf){
+		logout("just allow one buffer to write \n");
 		return -EIO;
+	}
 
-	exdata->w_buf_size = count;
+	exdata->w_buf_size = size;
 	exdata->w_buf = vmalloc(exdata->w_buf_size);
 	if (!exdata->w_buf)
 		return -ENOMEM;
 
-	exdata->r_buf_size = count;
+	exdata->r_buf_size = size;
 	exdata->r_buf = vmalloc(exdata->r_buf_size);
 	if (!exdata->r_buf)
 		return -ENOMEM;
@@ -224,15 +226,43 @@ static ssize_t virt_gpi_write(struct file *filp, const char *buffer,
 	if (copy_from_user(exdata->w_buf, buffer, exdata->w_buf_size))
 		return -EINVAL;
 
-	logout("ping-pong: write data \n");
+	logout("write data \n");
 	log_dump(exdata->w_buf, exdata->w_buf_size);
 
 	put_data(exdata);
 
-	logout("ping-pong: return data \n");
+	logout("return data \n");
 	log_dump(exdata->r_buf, exdata->r_buf_size);
 
 	ret = exdata->w_buf_size;
+
+	return ret;
+}
+
+static ssize_t virt_gpi_read(struct file *filp, char __user *buffer,
+		size_t size, loff_t * posp)
+{
+	struct virtio_gpi_data *exdata = to_virtio_gpi_data(filp);
+	ssize_t ret;
+
+	logout("file(%p) size(%d)  \n", filp, size);
+
+	if (!exdata->r_buf){
+		logout("read buffer is NULL \n");
+		return -EPERM;
+	}
+
+	if (size > exdata->r_buf_size || size < 0){
+		logout("read size is not correct \n");
+		return -EINVAL;
+	}
+
+	if (copy_to_user(buffer, exdata->r_buf, size))
+		return -EINVAL;
+
+	log_dump(exdata->r_buf, exdata->r_buf_size);
+
+	ret = size;
 
 	return ret;
 }
@@ -241,7 +271,7 @@ static int virt_gpi_release(struct inode *inode, struct file *file)
 {
 	struct virtio_gpi_data *exdata = to_virtio_gpi_data(file);
 
-	logout("\n");
+	logout("virio gpi release \n");
 
 	if (exdata) {
 		free_buffer(exdata);
@@ -255,6 +285,7 @@ static const struct file_operations virt_gpi_fops = {
 	.owner		= THIS_MODULE,
 	.open		= virt_gpi_open,
 	.write      = virt_gpi_write,
+	.read		= virt_gpi_read,
 	.release	= virt_gpi_release,
 };
 
@@ -268,7 +299,7 @@ static int virt_gpi_probe(struct virtio_device *vdev)
 {
 	int ret;
 
-	logout("\n");
+	logout("virtio gpi probe \n");
 
 	/* We expect a single virtqueue. */
 	vq = virtio_find_single_vq(vdev, NULL, "output");
@@ -315,13 +346,13 @@ static struct virtio_driver virtio_gpi = {
 
 static int __init init(void)
 {
-	logout("\n");
+	logout("virtio gpi init \n");
 	return register_virtio_driver(&virtio_gpi);
 }
 
 static void __exit fini(void)
 {
-	logout("\n");
+	logout("virtio gpi exit \n");
 	unregister_virtio_driver(&virtio_gpi);
 }
 
