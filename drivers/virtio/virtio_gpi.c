@@ -44,19 +44,48 @@
 #if defined(VIRTIO_GPI_DEBUG)
 #define logout(fmt, ...) \
 	printk(KERN_INFO "[virt_gpi][%s][%d]" fmt, __func__, __LINE__, ##__VA_ARGS__)
+
+static int log_dump(char *buffer, int size)
+{
+	logout("buffer[%p] size[%d] ", buffer, size);
+
+#if 0
+	int i;
+	unsigned char *ptr = (unsigned char*)buffer;
+
+	logout("DATA BEGIN -------------- ");
+
+	for(i=0; i < size; i++){
+		logout(" %d =  %02x(%c) ", i, ptr[i], ptr[i]);
+	}
+	logout("DATA END  -------------- ");
+#endif
+
+	return 0;
+}
+
 #else
 #define logout(fmt, ...) ((void)0)
+#define log_dump(fmt, ...) ((void)0)
 #endif
+
+#define SIZE_OUT_HEADER (sizeof(int)*3)
+#define SIZE_IN_HEADER sizeof(int)
 
 struct virtio_gpi_data {
 	int pid;
 
-	int w_buf_size;
 	char *w_buf;
-
-	int r_buf_size;
 	char *r_buf;
 }__packed;
+
+struct virtio_gpi_header {
+	int pid;
+
+	int buf_size;
+	int r_buf_size;
+
+} __packed;
 
 #define to_virtio_gpi_data(a)   ((struct virtio_gpi_data *)(a)->private_data)
 
@@ -103,17 +132,21 @@ static unsigned int put_data(struct virtio_gpi_data *exdata)
 	struct scatterlist *sg;
 	static struct scatterlist *sg_list = NULL;
 	unsigned int ret, count, i_page, o_page, sg_entries;
+	struct virtio_gpi_header *header = (struct virtio_gpi_header *)exdata->w_buf;
 
-	ret = exdata->w_buf_size;
+	ret = header->buf_size;
 
-	o_page = (exdata->w_buf_size + PAGE_SIZE-1) >> PAGE_SHIFT;
-	i_page = (exdata->r_buf_size + PAGE_SIZE-1) >> PAGE_SHIFT;
+	o_page = (header->buf_size + PAGE_SIZE-1) >> PAGE_SHIFT;
+	i_page = (header->r_buf_size + PAGE_SIZE-1) >> PAGE_SHIFT;
 	if (!o_page)
 		o_page = 1;
 	if (!i_page)
 		i_page = 1;
 
-	logout("add_buf(out:%ld, in:%ld) \n", o_page*PAGE_SIZE, i_page*PAGE_SIZE);
+	header->pid = exdata->pid;
+
+	logout("add_buf(pid:%d, out:%ld, in:%ld) \n"
+		, header->pid, o_page*PAGE_SIZE, i_page*PAGE_SIZE);
 
 	sg_entries = o_page + i_page;
 
@@ -136,7 +169,9 @@ static unsigned int put_data(struct virtio_gpi_data *exdata)
 
 	/* Transfer data */
 	if (vq->vq_ops->add_buf(vq, sg_list, o_page, i_page, (void *)1) >= 0) {
+
 		vq->vq_ops->kick(vq);
+
 		/* Chill out until it's done with the buffer. */
 		while (!vq->vq_ops->get_buf(vq, &count))
 			cpu_relax();
@@ -151,20 +186,7 @@ out:
 	return ret;
 }
 
-static void free_buffer(struct virtio_gpi_data *exdata)
-{
-	if (exdata->w_buf) {
-		exdata->w_buf_size = 0;
-		vfree(exdata->w_buf);
-		exdata->w_buf= NULL;
-	}
-	if (exdata->r_buf) {
-		exdata->r_buf_size = 0;
-		vfree(exdata->r_buf);
-		exdata->r_buf= NULL;
-	}
-} 
-static int virt_gpi_open(struct inode *inode, struct file *file)
+static int virt_gpi_open(struct inode *inode, struct file *filp)
 {
 	struct virtio_gpi_data *exdata = NULL;
 
@@ -173,28 +195,9 @@ static int virt_gpi_open(struct inode *inode, struct file *file)
 		return -ENXIO;
 
 	exdata->pid = pid_nr(task_pid(current));
-	logout("pid(%d) inode(%p) file(%p) \n", exdata->pid, inode, file);
+	logout("pid(%d) inode(%p) filp(%p) \n", exdata->pid, inode, filp);
 
-	file->private_data = exdata;
-
-	return 0;
-}
-
-static int log_dump(char *buffer, int size)
-{
-	logout("buffer[%p] size[%d] ", buffer, size);
-
-#if 0
-	int i;
-	unsigned char *ptr = (unsigned char*)buffer;
-
-	logout("DATA BEGIN -------------- ");
-
-	for(i=0; i < size; i++){
-		logout(" %d =  %02x(%c) ", i, ptr[i], ptr[i]);
-	}
-	logout("DATA END  -------------- ");
-#endif
+	filp->private_data = exdata;
 
 	return 0;
 }
@@ -202,8 +205,9 @@ static int log_dump(char *buffer, int size)
 static ssize_t virt_gpi_write(struct file *filp, const char *buffer,
 		size_t size, loff_t * posp)
 {
-	struct virtio_gpi_data *exdata = to_virtio_gpi_data(filp);
 	ssize_t ret;
+	struct virtio_gpi_header *header = NULL;
+	struct virtio_gpi_data *exdata = to_virtio_gpi_data(filp);
 
 	logout("filep(%p) size(%d) \n", filp, size);
 
@@ -213,28 +217,35 @@ static ssize_t virt_gpi_write(struct file *filp, const char *buffer,
 		return -EIO;
 	}
 
-	exdata->w_buf_size = size;
-	exdata->w_buf = vmalloc(exdata->w_buf_size);
+	exdata->w_buf = vmalloc(size);
 	if (!exdata->w_buf)
 		return -ENOMEM;
 
-	exdata->r_buf_size = size;
-	exdata->r_buf = vmalloc(exdata->r_buf_size);
+	if (copy_from_user(exdata->w_buf, buffer, size))
+		return -EINVAL;
+
+
+	header = (struct virtio_gpi_header *)exdata->w_buf;
+
+	if(header->buf_size != size){
+		logout("size is mismatch \n");
+		return -EINVAL;
+	}
+
+	exdata->r_buf = vmalloc(header->r_buf_size);
 	if (!exdata->r_buf)
 		return -ENOMEM;
 
-	if (copy_from_user(exdata->w_buf, buffer, exdata->w_buf_size))
-		return -EINVAL;
-
-	logout("write data \n");
-	log_dump(exdata->w_buf, exdata->w_buf_size);
+	logout("write data with (buf_size:%d, r_buf_size:%d\n"
+			, header->buf_size, header->r_buf_size);
+	log_dump(exdata->w_buf, header->buf_size);
 
 	put_data(exdata);
 
 	logout("return data \n");
-	log_dump(exdata->r_buf, exdata->r_buf_size);
+	log_dump(exdata->r_buf, header->r_buf_size);
 
-	ret = exdata->w_buf_size;
+	ret = size;
 
 	return ret;
 }
@@ -242,17 +253,18 @@ static ssize_t virt_gpi_write(struct file *filp, const char *buffer,
 static ssize_t virt_gpi_read(struct file *filp, char __user *buffer,
 		size_t size, loff_t * posp)
 {
-	struct virtio_gpi_data *exdata = to_virtio_gpi_data(filp);
 	ssize_t ret;
+	struct virtio_gpi_data *exdata = to_virtio_gpi_data(filp);
+	struct virtio_gpi_header *header = (struct virtio_gpi_header *)exdata->w_buf;
 
-	logout("file(%p) size(%d)  \n", filp, size);
+	logout("file(%p) size(%d) header->r_buf_size(%d)  \n", filp, size, header->r_buf_size);
 
 	if (!exdata->r_buf){
 		logout("read buffer is NULL \n");
 		return -EPERM;
 	}
 
-	if (size > exdata->r_buf_size || size < 0){
+	if (size != header->r_buf_size || size < 0){
 		logout("read size is not correct \n");
 		return -EINVAL;
 	}
@@ -260,18 +272,30 @@ static ssize_t virt_gpi_read(struct file *filp, char __user *buffer,
 	if (copy_to_user(buffer, exdata->r_buf, size))
 		return -EINVAL;
 
-	log_dump(exdata->r_buf, exdata->r_buf_size);
+	log_dump(exdata->r_buf, header->r_buf_size);
 
 	ret = size;
 
 	return ret;
 }
 
-static int virt_gpi_release(struct inode *inode, struct file *file)
+static void free_buffer(struct virtio_gpi_data *exdata)
 {
-	struct virtio_gpi_data *exdata = to_virtio_gpi_data(file);
+	if (exdata->w_buf) {
+		vfree(exdata->w_buf);
+		exdata->w_buf= NULL;
+	}
+	if (exdata->r_buf) {
+		vfree(exdata->r_buf);
+		exdata->r_buf= NULL;
+	}
+}
 
-	logout("virio gpi release \n");
+static int virt_gpi_release(struct inode *inode, struct file *filp)
+{
+	struct virtio_gpi_data *exdata = to_virtio_gpi_data(filp);
+
+	logout("virio gpi release(%p) \n", filp);
 
 	if (exdata) {
 		free_buffer(exdata);
@@ -303,12 +327,14 @@ static int virt_gpi_probe(struct virtio_device *vdev)
 
 	/* We expect a single virtqueue. */
 	vq = virtio_find_single_vq(vdev, NULL, "output");
-	if (IS_ERR(vq))
+	if (IS_ERR(vq)){
+		printk(KERN_ERR "virt_gpi_probe: cannot find vq");
 		return PTR_ERR(vq);
+	}
 
 	ret = misc_register(&virt_gpi_dev);
 	if (ret) {
-		printk(KERN_ERR "virt_gpi: cannot register virt_gpi_dev as misc");
+		printk(KERN_ERR "virt_gpi_probe: cannot register virt_gpi_dev as misc");
 		return -ENODEV;
 	}
 
@@ -326,10 +352,7 @@ static void __devexit virt_gpi_remove(struct virtio_device *vdev)
 static void virt_gpi_changed(struct virtio_device *vdev)
 {
 	logout("\n");
-	//struct virtio_balloon *vb = vdev->priv;
-	//wake_up(&vb->config_change);
 }
-
 
 static unsigned int features[] = { VIRTIO_GPI_F_MUST_TELL_HOST };
 
