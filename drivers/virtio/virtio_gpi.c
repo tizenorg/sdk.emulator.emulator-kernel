@@ -69,9 +69,6 @@ static int log_dump(char *buffer, int size)
 #define log_dump(fmt, ...) ((void)0)
 #endif
 
-#define SIZE_OUT_HEADER (sizeof(int)*3)
-#define SIZE_IN_HEADER sizeof(int)
-
 struct virtio_gpi_data {
 	int pid;
 
