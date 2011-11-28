@@ -29,25 +29,29 @@
 
 #include "avformat.h" 
 
-#define DRIVER_NAME		"codec"
+#define DRIVER_NAME		"SVCODEC"
 #define CODEC_MAJOR		240
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
+MODULE_DESCRIPTION("Virtual Codec Driver for Emulator");
 
 #define CODEC_DEBUG
 #ifdef CODEC_DEBUG
-#define codec_log(fmt, ...) \
-    printk(KERN_INFO "[codec][%s][%d]" fmt, __func__, __LINE__, ##__VA_ARGS__)
+#define SVCODEC_LOG(fmt, ...) \
+    printk(KERN_INFO "[%s][%s][%d]" fmt, DRIVER_NAME, __func__, __LINE__, ##__VA_ARGS__)
 #else
-#define codec_log(fmt, ...) ((void)0)
+#define SVCODEC_LOG(fmt, ...) ((void)0)
 #endif
 
 struct _param {
-	uint32_t func;
+	uint32_t apiIndex;
 	uint32_t in_args_num;
 	uint32_t in_args[20];
 	uint32_t ret;
 };
 
-enum codec_param_offset {
+enum svodec_param_offset {
 	CODEC_API_INDEX = 0,
 	CODEC_IN_PARAM,
 	CODEC_RETURN_VALUE
@@ -65,10 +69,14 @@ struct codec_buf {
 	AVCodec *pCodec;
 };
 
-struct codec_dev {
+struct svcodec_dev {
 	struct pci_dev *dev;				/* pci device */
-	volatile unsigned int *ioaddr;		/* memory mapped registers */
 
+	volatile unsigned long *ioaddr;		/* memory mapped registers */
+	volatile unsigned long *memaddr;		/* memory mapped registers */
+
+	resource_size_t io_start;
+	resource_size_t io_size;
 	resource_size_t mem_start;
 	resource_size_t mem_size;
 
@@ -76,7 +84,7 @@ struct codec_dev {
 //	uint8_t *img_buf;
 };	
 
-static struct pci_device_id slpcodec_pci_table[] __devinitdata = {
+static struct pci_device_id svcodec_pci_table[] __devinitdata = {
 	{
 	.vendor 	= PCI_VENDOR_ID_SAMSUNG,
 	.device		= PCI_DEVICE_ID_VIRTUAL_CODEC,
@@ -84,71 +92,123 @@ static struct pci_device_id slpcodec_pci_table[] __devinitdata = {
 	.subdevice	= PCI_ANY_ID,
 	},
 };
-MODULE_DEVICE_TABLE(pci, slpcodec_pci_table);
+MODULE_DEVICE_TABLE(pci, svcodec_pci_table);
 
-static struct codec_dev *slpcodec;
+static struct svcodec_dev *svcodec;
 
 // static void call_workqueue(void *data);
 
 // DECLARE_WAIT_QUEUE_HEAD(waitqueue_read);
 // DECLARE_WORK(work_queue, call_workqueue);
 
-static irqreturn_t slpcodec_interrupt (int irq, void *dev_id);
+static irqreturn_t svcodec_interrupt (int irq, void *dev_id);
 
-static int slpcodec_open (struct inode *inode, struct file *file)
+static int svcodec_open (struct inode *inode, struct file *file)
 {
-	codec_log("\n");
+	SVCODEC_LOG("\n");
 	try_module_get(THIS_MODULE);
 
 	/* register interrupt handler */
-	if (request_irq(slpcodec->dev->irq, slpcodec_interrupt, IRQF_SHARED,
-					DRIVER_NAME, slpcodec)) {
+	if (request_irq(svcodec->dev->irq, svcodec_interrupt, IRQF_SHARED,
+					DRIVER_NAME, svcodec)) {
 		printk(KERN_ERR "[%s] : request_irq failed\n", __func__);
 	}		
 
 	return 0;
 }
 
-static ssize_t slpcodec_write (struct file *file, const char __user *buf,
+static ssize_t svcodec_write (struct file *file, const char __user *buf,
 								size_t count, loff_t *fops)
 {
 	struct _param paramInfo;
 	AVCodecContext tempCtx;
-	uint8_t *ptr;
+	uint8_t *ptr = NULL;
 	int i;
 	
-	if (!slpcodec) {
+	if (!svcodec) {
 		printk(KERN_ERR "[%s] : Fail to get codec device info\n", __func__);
 	}
 
 	copy_from_user(&paramInfo, buf, sizeof(struct _param));
 
 	for (i = 0; i < paramInfo.in_args_num; i++) {
-		writel(paramInfo.in_args[i], slpcodec->ioaddr + CODEC_IN_PARAM);
+		writel(paramInfo.in_args[i], svcodec->ioaddr + CODEC_IN_PARAM);
 	}
-
 	/* guest to host */
 	if (paramInfo.apiIndex == 2) {
 		AVCodecContext *ctx;
+		AVCodec *codec;
+		int size, size1;
+		int *id;
+		char *bEncode;;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
-		memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
-		writel((uint32_t)ctx->extradata, slpcodec->ioaddr + CODEC_IN_PARAM);
+		codec = (AVCodec*)paramInfo.in_args[1];
+/*		id = (int*)paramInfo.in_args[2];
+		bEncode = (char*)paramInfo.in_args[3]; */
+
+		size = sizeof(AVCodecContext);
+		memcpy(&tempCtx, ctx, size);
+
+		memcpy_toio(svcodec->memaddr, ctx, size);
+		memcpy_toio((uint8_t*)svcodec->memaddr + size, codec, sizeof(AVCodec));
+
+		size1 = size + sizeof(AVCodec);
+		memcpy_toio((uint8_t*)svcodec->memaddr + size1, ctx->extradata, ctx->extradata_size);
+
+//		memcpy_toio(svcodec->memaddr + size + 4, bEncode, sizeof(char));
+//		writel((uint32_t)ctx->extradata, svcodec->ioaddr + CODEC_IN_PARAM);
+	} else if (paramInfo.apiIndex == 6) {
+		int value;
+		value = *(int*)paramInfo.ret;
+		memcpy_toio(svcodec->memaddr, &value, sizeof(int));
 	} else if (paramInfo.apiIndex == 20) {
 		AVCodecContext *ctx;
+		AVFrame* frame;
+		int size, buf_size;
+		uint8_t *buf;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
-		writel((uint32_t)&ctx->frame_number, slpcodec->ioaddr + CODEC_IN_PARAM);
-		writel((uint32_t)&ctx->pix_fmt, slpcodec->ioaddr + CODEC_IN_PARAM);
-		writel((uint32_t)&ctx->coded_frame, slpcodec->ioaddr + CODEC_IN_PARAM);
-		writel((uint32_t)&ctx->sample_aspect_ratio, slpcodec->ioaddr + CODEC_IN_PARAM);
-		writel((uint32_t)&ctx->reordered_opaque, slpcodec->ioaddr + CODEC_IN_PARAM);
+		frame = (AVFrame*)paramInfo.in_args[1];
+		buf = (uint8_t*)paramInfo.in_args[3];
+		buf_size = *(int*)paramInfo.in_args[4];
+
+		size = sizeof(AVCodecContext);
+		memcpy(&tempCtx, ctx, size);
+	
+		memcpy_toio(svcodec->memaddr, ctx, size);
+		memcpy_toio((uint8_t*)svcodec->memaddr + size, &buf_size, sizeof(int));
+
+		if (buf_size > 0) {
+			size += sizeof(int);
+			memcpy_toio((uint8_t*)svcodec->memaddr + size, buf, buf_size);
+		}
+		
+/*		writel((uint32_t)&ctx->frame_number, svcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->pix_fmt, svcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->coded_frame, svcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->sample_aspect_ratio, svcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->reordered_opaque, svcodec->ioaddr + CODEC_IN_PARAM); */
 	} else if (paramInfo.apiIndex == 22) {
 		AVCodecContext *ctx;
-		uint32_t buf_size;
+		AVFrame *pict;
+		int buf_size, size, pict_buf_size;
+		uint8_t *buf, *pict_buf;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
-		buf_size = *(uint32_t*)paramInfo.in_args[2];
-		writel((uint32_t)ctx->coded_frame, slpcodec->ioaddr + CODEC_IN_PARAM);
+		pict_buf = (uint8_t*)paramInfo.in_args[4];
+		pict_buf_size = (ctx->height * ctx->width) * 3 / 2;
+
+		buf = (uint8_t*)paramInfo.in_args[1];
+		buf_size = *(int*)paramInfo.in_args[2];
+		pict = (AVFrame*)paramInfo.in_args[3];
+//		writel((uint32_t)ctx->coded_frame, svcodec->ioaddr + CODEC_IN_PARAM);
 		ptr = kmalloc(buf_size, GFP_KERNEL);
-		writel((uint32_t)ptr, slpcodec->ioaddr + CODEC_IN_PARAM);
+//		writel((uint32_t)ptr, svcodec->ioaddr + CODEC_IN_PARAM);
+
+		memcpy_toio(svcodec->memaddr, &buf_size, sizeof(int));
+		memcpy_toio((uint8_t*)svcodec->memaddr + 4, buf, buf_size);
+		size = buf_size + 4;
+		memcpy_toio((uint8_t*)svcodec->memaddr + size, pict, sizeof(AVFrame));
+		size += sizeof(AVFrame);
+		memcpy_toio((uint8_t*)svcodec->memaddr + size, pict_buf, pict_buf_size);
 	} else if (paramInfo.apiIndex == 24) {
 		int width, height;
 		int size, size2;
@@ -157,51 +217,105 @@ static ssize_t slpcodec_write (struct file *file, const char __user *buf,
 		size = width * height;
 		size2 = size / 4;
 		ptr = kmalloc(size + size2 * 2, GFP_KERNEL);
-		writel((uint32_t)ptr, slpcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)ptr, svcodec->ioaddr + CODEC_IN_PARAM);
 	} 
 
 	// return value
-	writel(paramInfo.ret, slpcodec->ioaddr + CODEC_RETURN_VALUE);
+	writel(paramInfo.ret, svcodec->ioaddr + CODEC_RETURN_VALUE);
 
 	// api index	
-	writel((uint32_t)paramInfo.apiIndex, slpcodec->ioaddr + CODEC_API_INDEX);
+	writel((uint32_t)paramInfo.apiIndex, svcodec->ioaddr + CODEC_API_INDEX);
 	
 	/* host to guest */
 	if (paramInfo.apiIndex == 2) {
 		AVCodecContext *avctx;
+		int *ret, size;
 		avctx = (AVCodecContext*)paramInfo.in_args[0];
+		size = sizeof(AVCodecContext);
+		memcpy_fromio(avctx, svcodec->memaddr, size);
 #if 1
-		avctx->av_class = temp_ctx.av_class;
+		avctx->av_class = tempCtx.av_class;
 		avctx->codec = (AVCodec*)paramInfo.in_args[1];
-//		avctx->priv_data = temp_ctx.priv_data;
-		avctx->extradata = temp_ctx.extradata;
-		avctx->opaque = temp_ctx.opaque;
-		avctx->get_buffer = temp_ctx.get_buffer;
-		avctx->release_buffer = temp_ctx.release_buffer;
-		avctx->stats_out = temp_ctx.stats_out;
-		avctx->stats_in = temp_ctx.stats_in;
-		avctx->rc_override = temp_ctx.rc_override;
-		avctx->rc_eq = temp_ctx.rc_eq;
-		avctx->slice_offset = temp_ctx.slice_offset;
-		avctx->get_format = temp_ctx.get_format;
-		avctx->internal_buffer = temp_ctx.internal_buffer;
-		avctx->intra_matrix = temp_ctx.intra_matrix;
-		avctx->inter_matrix = temp_ctx.inter_matrix;
-		avctx->reget_buffer = temp_ctx.reget_buffer;
-		avctx->execute = temp_ctx.execute;
-		avctx->thread_opaque = temp_ctx.thread_opaque;
-		avctx->execute2 = temp_ctx.execute2;
+//		avctx->priv_data = tempCtx.priv_data;
+		avctx->extradata = tempCtx.extradata;
+		avctx->opaque = tempCtx.opaque;
+		avctx->get_buffer = tempCtx.get_buffer;
+		avctx->release_buffer = tempCtx.release_buffer;
+		avctx->stats_out = tempCtx.stats_out;
+		avctx->stats_in = tempCtx.stats_in;
+		avctx->rc_override = tempCtx.rc_override;
+		avctx->rc_eq = tempCtx.rc_eq;
+		avctx->slice_offset = tempCtx.slice_offset;
+		avctx->get_format = tempCtx.get_format;
+		avctx->internal_buffer = tempCtx.internal_buffer;
+		avctx->intra_matrix = tempCtx.intra_matrix;
+		avctx->inter_matrix = tempCtx.inter_matrix;
+		avctx->reget_buffer = tempCtx.reget_buffer;
+		avctx->execute = tempCtx.execute;
+		avctx->thread_opaque = tempCtx.thread_opaque;
+		avctx->execute2 = tempCtx.execute2;
 #endif
+		ret = (int*)paramInfo.ret;
+		memcpy_fromio(ret, (uint8_t*)svcodec->memaddr + size, sizeof(int));
+		
 	} else if (paramInfo.apiIndex == 20) {
-		AVCodecContext *ctx;
+		AVCodecContext *avctx;
 		AVFrame *frame;
-		ctx = (AVCodecContext*)paramInfo.in_args[0];
+		int size, *got_picture_ptr, *ret, buf_size;
+		avctx = (AVCodecContext*)paramInfo.in_args[0];
 		frame = (AVFrame*)paramInfo.in_args[1];
-		ctx->coded_frame = frame;
+		got_picture_ptr = (int*)paramInfo.in_args[2];
+		buf_size = *(int*)paramInfo.in_args[4];
+		ret = (int*)paramInfo.ret;
+
+		if (buf_size > 0) {
+			size = sizeof(AVCodecContext);
+			memcpy_fromio(avctx, svcodec->memaddr, size);
+			memcpy_fromio(frame, (uint8_t*)svcodec->memaddr + size, sizeof(AVFrame));
+			size += sizeof(AVFrame);
+
+			memcpy_fromio(got_picture_ptr, (uint8_t*)svcodec->memaddr + size, sizeof(int));
+			size += sizeof(int);
+			memcpy_fromio(ret, (uint8_t*)svcodec->memaddr + size , sizeof(int));
+		} else {
+			*got_picture_ptr = 0;
+			memcpy_fromio(ret, svcodec->memaddr, sizeof(int));
+		}
+#if 1
+		avctx->coded_frame = frame;
+		avctx->av_class = tempCtx.av_class;
+		avctx->codec = (AVCodec*)paramInfo.in_args[1];
+		avctx->extradata = tempCtx.extradata;
+		avctx->opaque = tempCtx.opaque;
+		avctx->get_buffer = tempCtx.get_buffer;
+		avctx->release_buffer = tempCtx.release_buffer;
+		avctx->stats_out = tempCtx.stats_out;
+		avctx->stats_in = tempCtx.stats_in;
+		avctx->rc_override = tempCtx.rc_override;
+		avctx->rc_eq = tempCtx.rc_eq;
+		avctx->slice_offset = tempCtx.slice_offset;
+		avctx->get_format = tempCtx.get_format;
+		avctx->internal_buffer = tempCtx.internal_buffer;
+		avctx->intra_matrix = tempCtx.intra_matrix;
+		avctx->inter_matrix = tempCtx.inter_matrix;
+		avctx->reget_buffer = tempCtx.reget_buffer;
+		avctx->execute = tempCtx.execute;
+		avctx->thread_opaque = tempCtx.thread_opaque;
+		avctx->execute2 = tempCtx.execute2;
+#endif
 	} else if (paramInfo.apiIndex == 22) {
+//		AVCodecContext *ctx;
 		uint32_t buf_size;
+
+		int *ret;
+//		ctx = (AVCodecContext*)paramInfo.in_args[0];
 		buf_size = *(uint32_t*)paramInfo.in_args[2];
+		ret = (int*)paramInfo.ret;
+
+		memcpy_fromio(ptr, svcodec->memaddr, buf_size);
 		copy_to_user(paramInfo.in_args[1], ptr, buf_size);
+
+		memcpy_fromio(ret, (uint8_t*)svcodec->memaddr + buf_size , sizeof(int));
 		kfree(ptr);
     } else if (paramInfo.apiIndex == 24) {
 		int width, height;
@@ -210,6 +324,7 @@ static ssize_t slpcodec_write (struct file *file, const char __user *buf,
 		height = *(int*)paramInfo.in_args[3];
 		size = width * height;
 		size2 = size / 4;
+		memcpy_fromio(ptr, svcodec->memaddr, (size * 3 / 2));
 		copy_to_user(paramInfo.in_args[4], ptr, size + size2 * 2);
 		kfree(ptr);
 	} 
@@ -217,28 +332,65 @@ static ssize_t slpcodec_write (struct file *file, const char __user *buf,
 	return 0;
 }
 
-static ssize_t slpcodec_read (struct file *file, char __user *buf,
+// FIX ME
+/* static int get_image_size (int pixelFormat)
+{
+	int size;
+	int width;
+	int height;
+
+	switch (pixelFormat) {
+		case PIX_FMT_YUV420P:
+		case PIX_FMT_YUV422P:
+		case PIX_FMT_YUV444P:
+		case PIX_FMT_YUV410P:
+		case PIX_FMT_YUV411P:
+		case PIX_FMT_YUVJ420P:
+		case PIX_FMT_YUVJ422P:
+		case PIX_FMT_YUVJ444P:
+			size = (width * height * 3) / 2;
+			break;
+		case PIX_FMT_RGB24:
+		case PIX_FMT_BGR24:
+			size = width * height * 3;
+			break;
+		case PIX_FMT_RGB32:
+			size = width * height * 4;
+			break;
+		case PIX_FMT_RGB555:
+		case PIX_FMT_RGB565:
+		case PIX_FMT_YUYV422:
+		case PIX_FMT_UYVY422:
+			size = widht * height * 2;
+			break;
+		default:
+			size = -1;
+	}
+	return size;
+} */
+
+static ssize_t svcodec_read (struct file *file, char __user *buf,
 								size_t count, loff_t *fops)
 {
-	codec_log("\n");
-	if (!slpcodec) {
+	SVCODEC_LOG("\n");
+	if (!svcodec) {
 		printk(KERN_ERR "[%s] : Fail to get codec device info\n", __func__);
 	}
-//	readl(slpcodec->ioaddr);
+//	readl(svcodec->ioaddr);
 	return 0;
 }
 
-static int slpcodec_mmap (struct file *file, struct vm_area_struct *vm)
+static int svcodec_mmap (struct file *file, struct vm_area_struct *vm)
 {
 	unsigned long phys_addr;
 	unsigned long size;
 
-	codec_log("\n");
+	SVCODEC_LOG("\n");
 	phys_addr = vm->vm_pgoff << PAGE_SHIFT;
 	size = vm->vm_end - vm->vm_start;
 
-	if (!slpcodec && size > slpcodec->mem_size) {
-		codec_log("Over mapping size\n");
+	if (!svcodec && size > svcodec->mem_size) {
+		SVCODEC_LOG("Over mapping size\n");
 		return -EINVAL;
 	}
 
@@ -246,40 +398,40 @@ static int slpcodec_mmap (struct file *file, struct vm_area_struct *vm)
 	vm->vm_flags |= VM_RESERVED;
 
 	if (remap_pfn_range(vm, vm->vm_start, phys_addr, size, vm->vm_page_prot)) {
-		codec_log("Failed to remap page range\n");
+		SVCODEC_LOG("Failed to remap page range\n");
 		return -EAGAIN;
 	}
 
 	return 0;
 }
 
-static int slpcodec_release (struct inode *inode, struct file *file)
+static int svcodec_release (struct inode *inode, struct file *file)
 {
-	if (slpcodec->dev->irq >= 0) {
-		free_irq(slpcodec->dev->irq, slpcodec);
+	if (svcodec->dev->irq >= 0) {
+		free_irq(svcodec->dev->irq, svcodec);
 	}
 
-/*	if (slpcodec->img_buf) {
-		kfree(slpcodec->img_buf);
-		slpcodec->img_buf = NULL;
+/*	if (svcodec->img_buf) {
+		kfree(svcodec->img_buf);
+		svcodec->img_buf = NULL;
 	} */
 
 	module_put(THIS_MODULE);
-	codec_log("\n");		
+	SVCODEC_LOG("\n");		
 	return 0;
 }
 
 // static void call_workqueue(void *data)
 //{
-//	codec_log("\n");
+//	SVCODEC_LOG("\n");
 //}
 
 /*
  *  Interrupt handler
  */
-static irqreturn_t slpcodec_interrupt (int irq, void *dev_id)
+static irqreturn_t svcodec_interrupt (int irq, void *dev_id)
 {
-//	codec_log("\n");
+//	SVCODEC_LOG("\n");
 	// schedule_work(&work_queue);
 
 	/* need more implementation */
@@ -289,99 +441,154 @@ static irqreturn_t slpcodec_interrupt (int irq, void *dev_id)
 
 struct file_operations codec_fops = {
 	.owner		= THIS_MODULE,
-	.read		= slpcodec_read,
-	.write		= slpcodec_write,
-	.open		= slpcodec_open,
-	.mmap		= slpcodec_mmap,
-	.release	= slpcodec_release,
-//	.ioctl		= slpcodec_ioctl,
+	.read		= svcodec_read,
+	.write		= svcodec_write,
+	.open		= svcodec_open,
+	.mmap		= svcodec_mmap,
+	.release	= svcodec_release,
+//	.ioctl		= svcodec_ioctl,
 };
 
-static void __devinit slpcodec_remove (struct pci_dev *pci_dev)
+static void __devinit svcodec_remove (struct pci_dev *pci_dev)
 {
-	if (slpcodec) {
-		iounmap(slpcodec->ioaddr);
-		kfree(slpcodec);
+	if (svcodec) {
+
+		if (svcodec->ioaddr) {
+			iounmap(svcodec->ioaddr);
+			svcodec->ioaddr = 0;
+		}
+
+		if (svcodec->memaddr) {
+			iounmap(svcodec->memaddr);
+			svcodec->memaddr = 0;
+		}
+
+		if (svcodec->io_start) {
+			release_mem_region(svcodec->io_start, svcodec->io_size);
+			svcodec->io_start = 0;
+		}
+
+		if (svcodec->mem_start) {
+			release_mem_region(svcodec->mem_start, svcodec->mem_size);
+			svcodec->mem_start = 0;
+		}
+
+		kfree(svcodec);
 	}
-	pci_release_regions(pci_dev);
+//	pci_release_regions(pci_dev);
+
 	pci_disable_device(pci_dev);
 }
 
-static int __devinit slpcodec_probe (struct pci_dev *pci_dev,
+static int __devinit svcodec_probe (struct pci_dev *pci_dev,
 									const struct pci_device_id *pci_id)
 {
 	int ret;
 
-	slpcodec = (struct codec_dev*)kmalloc(sizeof(struct codec_dev), GFP_KERNEL);
-	memset(slpcodec, 0x00, sizeof(struct codec_dev));
+	svcodec = (struct svcodec_dev*)kmalloc(sizeof(struct svcodec_dev), GFP_KERNEL);
+	memset(svcodec, 0x00, sizeof(struct svcodec_dev));
 
-	slpcodec->dev = pci_dev;	
+	svcodec->dev = pci_dev;	
 
-	ret = -EIO;	
 	if (pci_enable_device(pci_dev)) {
 		printk(KERN_ERR "[%s] : pci_enable_device failed\n", __func__);
-		return ret;
+		goto err_rel;
 	}
 
-	ret = pci_request_regions(pci_dev, DRIVER_NAME);
+	pci_set_master(pci_dev);
+
+	ret = -EIO;	
+/*	ret = pci_request_regions(pci_dev, DRIVER_NAME);
 	if (ret) {
 		printk(KERN_ERR "[%s] : pci_request_regions failed\n", __func__);
 		goto err_out;
+	} */
+
+	svcodec->mem_start = pci_resource_start(pci_dev, 0);
+	svcodec->mem_size = pci_resource_len(pci_dev, 0);
+
+	if (!svcodec->mem_start) {
+		printk(KERN_ERR "[%s] : pci_resource_start failed\n", __func__);
+		goto err_out;
 	}
 
-	slpcodec->mem_start = pci_resource_start(pci_dev, 1);
-	slpcodec->mem_size = pci_resource_len(pci_dev, 1);
+	SVCODEC_LOG("mem_start:0x%x, mem_size:0x%x\n", svcodec->mem_start, svcodec->mem_size);
 	
-	slpcodec->ioaddr = ioremap(slpcodec->mem_start, slpcodec->mem_size);
-	if (!slpcodec->ioaddr) {
-		printk(KERN_ERR "[%s] : ioremap failed\n", __func__);
-		goto err_regions;
+	if (!request_mem_region(svcodec->mem_start, svcodec->mem_size, DRIVER_NAME)) {
+		printk(KERN_ERR "[%s] : request_mem_region failed\n", __func__);
+		goto err_out;
 	}
 
-	// pci_set_drvdata(pci_dev, codec);
-	pci_set_master(pci_dev);
+	svcodec->io_start = pci_resource_start(pci_dev, 1);
+	svcodec->io_size = pci_resource_len(pci_dev, 1);
+
+	if (!svcodec->io_start) {
+		printk(KERN_ERR "[%s] : pci_resource_start failed\n", __func__);
+		goto err_mem_region;
+	}
+
+	SVCODEC_LOG("io_start:0x%x, io_size:0x%x\n", svcodec->io_start, svcodec->io_size);
+
+	if (!request_mem_region(svcodec->io_start, svcodec->io_size, DRIVER_NAME)) {
+		printk(KERN_ERR "[%s] : request_io_region failed\n", __func__);
+		goto err_mem_region;
+	}
+
+	svcodec->memaddr = ioremap(svcodec->mem_start, svcodec->mem_size);
+	if (!svcodec->memaddr) {
+		printk(KERN_ERR "[%s] : ioremap failed\n", __func__);
+		goto err_io_region;
+	}
+
+	svcodec->ioaddr = ioremap(svcodec->io_start, svcodec->io_size);
+	if (!svcodec->ioaddr) {
+		printk(KERN_ERR "[%s] : ioremap failed\n", __func__);
+		goto err_mem_unmap;
+	}
+	SVCODEC_LOG("MEM_ADDR:0x%x, IO_ADDR:0x%x\n", svcodec->memaddr, svcodec->ioaddr);
+//	pci_set_drvdata(pci_dev, svcodec);
 
 	if (register_chrdev(CODEC_MAJOR, DRIVER_NAME, &codec_fops)) {
 		printk(KERN_ERR "[%s] : register_chrdev failed\n", __func__);
-		goto err_map;
+		goto err_io_unmap;
 	}
 
 	return 0;
 
-err_map:
-	iounmap(slpcodec->ioaddr);
-err_regions:
-	pci_release_regions(pci_dev) ;
+err_io_unmap:
+	iounmap(svcodec->ioaddr);
+err_mem_unmap:
+	iounmap(svcodec->memaddr);
+err_io_region:
+	release_mem_region(svcodec->io_start, svcodec->io_size);
+err_mem_region:
+	release_mem_region(svcodec->mem_start, svcodec->mem_size);
 err_out:
 	pci_disable_device(pci_dev);
+err_rel:
 	return ret;
 }
 
 static struct pci_driver driver = {
 	.name		= DRIVER_NAME,
-	.id_table	= slpcodec_pci_table,
-	.probe		= slpcodec_probe,
-	.remove		= slpcodec_remove,
+	.id_table	= svcodec_pci_table,
+	.probe		= svcodec_probe,
+	.remove		= svcodec_remove,
 #ifdef CONFIG_PM
-//	.suspend	= slpcodec_suspend,
-//	.resume		= slpcodec_resume,
+//	.suspend	= svcodec_suspend,
+//	.resume		= svcodec_resume,
 #endif
 };
 
-static int __init slpcodec_init (void)
+static int __init svcodec_init (void)
 {
-	codec_log("Codec accelerator initialized\n");
+	SVCODEC_LOG("Codec accelerator initialized\n");
 	return pci_register_driver(&driver);
 }
 
-static void __exit slpcodec_exit (void)
+static void __exit svcodec_exit (void)
 {
 	pci_unregister_driver(&driver);
 }
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
-MODULE_DESCRIPTION("Virtual Codec Driver for Emulator");
-
-module_init(slpcodec_init);
-module_exit(slpcodec_exit);
+module_init(svcodec_init);
+module_exit(svcodec_exit);

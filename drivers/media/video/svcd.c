@@ -824,7 +824,7 @@ static struct video_device svcd_video_dev = {
 static struct pci_device_id svcd_pci_id_tbl[] = {
 	{
 		.vendor		= PCI_VENDOR_ID_SAMSUNG,
-		.device		= 0x1018,
+		.device		= PCI_DEVICE_ID_VIRTUAL_CAMERA,
 		.subvendor	= PCI_ANY_ID,
 		.subdevice	= PCI_ANY_ID,
 	}
