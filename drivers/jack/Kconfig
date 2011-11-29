@@ -1,0 +1,13 @@
+#
+# Character device configuration
+#
+
+menu "Character devices"
+
+source "drivers/jack/Kconfig"
+
+config JACK
+	"jack"
+
+
+endmenu

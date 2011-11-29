@@ -1008,24 +1008,6 @@ config SENSORS_APPLESMC
 	  Say Y here if you have an applicable laptop and want to experience
 	  the awesome power of applesmc.
 
-config SENSORS_SMB380
-	tristate "SMB380 Triaxial acceleration sensor"
-	depends on HWMON && I2C
-	help
-	  This driver provides support for the Bosche Sensortec Triaxial
-	  Acceleration Sensor IC, which provides measurements of acceleration
-	  in prependicular axes as well as absolute temperature measurement.
-
-config SENSORS_AK8973
-	tristate "AK8973 3-axis electronic compass"
-	depends on HWMON && I2C
-	help
-	  The small package of AK8973 integrates magnetic sensors for
-	  detecting geomagnetism in the X-axis, Y-axis, and Z-axis, and
-	  arithmetic circuit for processing the signal from each sensor.
-	  AK8973 outputs four data in total as 8-bit digital values
-	  respectively: 3-axismagnetic sensor measured values and
-	  temperature sensor read value.
 if ACPI
 
 comment "ACPI drivers"

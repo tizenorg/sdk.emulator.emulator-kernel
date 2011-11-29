@@ -1,0 +1,14 @@
+#
+# Character device configuration
+#
+
+menu "Character devices"
+
+source "drivers/power_supply/Kconfig"
+
+config POWER_SUPPLY
+	"power supply"
+
+
+endmenu
+

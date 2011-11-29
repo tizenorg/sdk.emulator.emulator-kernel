@@ -270,16 +270,56 @@ static struct uvesafb_ktask *uvesafb_prep(void)
 	return task;
 }
 
+static int my_atoi(const char *name)
+{
+    int val = 0;
+
+    for (;; name++) {
+        switch (*name) {
+            case '0' ... '9':
+                val = 10*val+(*name-'0');
+                break;
+            default:
+                return val;
+        }
+    }
+}
+
+extern char *saved_command_line;
+#define DPI_DEF_VALUE		3200
+#define DPI_MIN_VALUE		1000
+#define DPI_MAX_VALUE		4800
+
 static void uvesafb_setup_var(struct fb_var_screeninfo *var,
 		struct fb_info *info, struct vbe_mode_ib *mode)
 {
 	struct uvesafb_par *par = info->par;
+	char *ps;
+	char dpi_info[16];
+	int dpi = DPI_DEF_VALUE;		/* default value */
 
 	var->vmode = FB_VMODE_NONINTERLACED;
 	var->sync = FB_SYNC_VERT_HIGH_ACT;
 
 	var->xres = mode->x_res;
 	var->yres = mode->y_res;
+
+	/* panel physical width/height(mm) */
+	ps = strstr(saved_command_line, "dpi=");
+	if (ps != NULL) {
+		ps += 4;
+		strncpy(dpi_info, ps, 4);
+		dpi = my_atoi(dpi_info);
+		if (dpi < DPI_MIN_VALUE || dpi > DPI_MAX_VALUE)
+			dpi = DPI_DEF_VALUE;
+	}
+
+	var->height = (var->yres * 254 / dpi);
+	var->width = (var->xres * 254 / dpi);
+	//printk(KERN_INFO "dpi value = %d\n", dpi);
+	//printk(KERN_INFO "var->yres = %d, var->xres = %d\n", var->yres, var->xres);
+	//printk(KERN_INFO "var->height = %d, var->width = %d\n", var->height, var->width);
+
 	var->xres_virtual = mode->x_res;
 	var->yres_virtual = (par->ypan) ?
 			info->fix.smem_len / mode->bytes_per_scan_line :

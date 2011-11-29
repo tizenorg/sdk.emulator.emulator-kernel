@@ -27,14 +27,6 @@ config LOGO_LINUX_CLUT224
 	bool "Standard 224-color Linux logo"
 	default y
 
-config LOGO_SAMSUNG_PHONE_MIRAGE
-       bool "320x320 samsung phone logo(MIRAGE)"
-       default y
-
-config LOGO_SAMSUNG_PHONE_VODA
-       bool "480x800 samsung phone logo(VODA)"
-       default y
-
 config LOGO_BLACKFIN_VGA16
 	bool "16-colour Blackfin Processor Linux logo"
 	depends on BLACKFIN

@@ -2,7 +2,7 @@ menu "Android"
 
 config ANDROID
 	bool "Android Drivers"
-	default y
+	default y 
 	---help---
 	  Enable support for various drivers needed on the Android platform
 
