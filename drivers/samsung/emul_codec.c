@@ -37,6 +37,7 @@ MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_DESCRIPTION("Virtual Codec Driver for Emulator");
 
 #define CODEC_DEBUG
+
 #ifdef CODEC_DEBUG
 #define SVCODEC_LOG(fmt, ...) \
     printk(KERN_INFO "[%s][%s][%d]" fmt, DRIVER_NAME, __func__, __LINE__, ##__VA_ARGS__)
@@ -109,13 +110,16 @@ static int svcodec_open (struct inode *inode, struct file *file)
 	try_module_get(THIS_MODULE);
 
 	/* register interrupt handler */
-	if (request_irq(svcodec->dev->irq, svcodec_interrupt, IRQF_SHARED,
+/*	if (request_irq(svcodec->dev->irq, svcodec_interrupt, IRQF_SHARED,
 					DRIVER_NAME, svcodec)) {
 		printk(KERN_ERR "[%s] : request_irq failed\n", __func__);
-	}		
+	} */
 
+	SVCODEC_LOG("\n");
 	return 0;
 }
+
+static tempCnt = 0;
 
 static ssize_t svcodec_write (struct file *file, const char __user *buf,
 								size_t count, loff_t *fops)
@@ -139,8 +143,8 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		AVCodecContext *ctx;
 		AVCodec *codec;
 		int size, size1;
-		int *id;
-		char *bEncode;;
+//		int *id;
+//		char *bEncode;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
 		codec = (AVCodec*)paramInfo.in_args[1];
 /*		id = (int*)paramInfo.in_args[2];
@@ -158,7 +162,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 //		memcpy_toio(svcodec->memaddr + size + 4, bEncode, sizeof(char));
 //		writel((uint32_t)ctx->extradata, svcodec->ioaddr + CODEC_IN_PARAM);
 	} else if (paramInfo.apiIndex == 6) {
-		int value;
+		int value = -1;
 		value = *(int*)paramInfo.ret;
 		memcpy_toio(svcodec->memaddr, &value, sizeof(int));
 	} else if (paramInfo.apiIndex == 20) {
@@ -170,6 +174,8 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		frame = (AVFrame*)paramInfo.in_args[1];
 		buf = (uint8_t*)paramInfo.in_args[3];
 		buf_size = *(int*)paramInfo.in_args[4];
+
+		SVCODEC_LOG("AVCODEC_DECODE_VIDEO\n");
 
 		size = sizeof(AVCodecContext);
 		memcpy(&tempCtx, ctx, size);
@@ -188,17 +194,21 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		writel((uint32_t)&ctx->sample_aspect_ratio, svcodec->ioaddr + CODEC_IN_PARAM);
 		writel((uint32_t)&ctx->reordered_opaque, svcodec->ioaddr + CODEC_IN_PARAM); */
 	} else if (paramInfo.apiIndex == 22) {
-		AVCodecContext *ctx;
-		AVFrame *pict;
-		int buf_size, size, pict_buf_size;
-		uint8_t *buf, *pict_buf;
-		ctx = (AVCodecContext*)paramInfo.in_args[0];
-		pict_buf = (uint8_t*)paramInfo.in_args[4];
-		pict_buf_size = (ctx->height * ctx->width) * 3 / 2;
+		AVCodecContext *ctx = NULL;
+		AVFrame *pict = NULL;
+		int buf_size = 0;
+		int size = 0;
+		int pict_buf_size = 0;
+		uint8_t *buf = NULL;
+		uint8_t *pict_buf = NULL;
 
+		ctx = (AVCodecContext*)paramInfo.in_args[0];
 		buf = (uint8_t*)paramInfo.in_args[1];
 		buf_size = *(int*)paramInfo.in_args[2];
 		pict = (AVFrame*)paramInfo.in_args[3];
+		pict_buf = (uint8_t*)paramInfo.in_args[4];
+		pict_buf_size = (ctx->height * ctx->width) * 3 / 2;
+		
 //		writel((uint32_t)ctx->coded_frame, svcodec->ioaddr + CODEC_IN_PARAM);
 		ptr = kmalloc(buf_size, GFP_KERNEL);
 //		writel((uint32_t)ptr, svcodec->ioaddr + CODEC_IN_PARAM);
@@ -206,9 +216,21 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		memcpy_toio(svcodec->memaddr, &buf_size, sizeof(int));
 		memcpy_toio((uint8_t*)svcodec->memaddr + 4, buf, buf_size);
 		size = buf_size + 4;
-		memcpy_toio((uint8_t*)svcodec->memaddr + size, pict, sizeof(AVFrame));
-		size += sizeof(AVFrame);
-		memcpy_toio((uint8_t*)svcodec->memaddr + size, pict_buf, pict_buf_size);
+
+		if (pict) {
+			int pict_temp = 1;
+			memcpy_toio((uint8_t*)svcodec->memaddr + size, &pict_temp, sizeof(int));
+			size += 4;
+			memcpy_toio((uint8_t*)svcodec->memaddr + size, pict, sizeof(AVFrame));
+			size += sizeof(AVFrame);
+			SVCODEC_LOG("AVCODEC_ENCODE_VIDEO 1\n");
+			memcpy_toio((uint8_t*)svcodec->memaddr + size, pict_buf, pict_buf_size);
+			SVCODEC_LOG("ENCODE Count :%d\n", ++tempCnt);
+		} else {
+			int pict_temp = 0;
+			memcpy_toio((uint8_t*)svcodec->memaddr + size, &pict_temp, sizeof(int));
+			SVCODEC_LOG("AVCODEC_ENCODE_VIDEO 2\n");
+		}
 	} else if (paramInfo.apiIndex == 24) {
 		int width, height;
 		int size, size2;
@@ -258,6 +280,10 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		ret = (int*)paramInfo.ret;
 		memcpy_fromio(ret, (uint8_t*)svcodec->memaddr + size, sizeof(int));
 		
+	} else if (paramInfo.apiIndex == 3) {
+		int *ret;
+		ret = (int*)paramInfo.ret;
+		memcpy_fromio(ret, svcodec->memaddr, sizeof(int));
 	} else if (paramInfo.apiIndex == 20) {
 		AVCodecContext *avctx;
 		AVFrame *frame;
@@ -311,11 +337,13 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 //		ctx = (AVCodecContext*)paramInfo.in_args[0];
 		buf_size = *(uint32_t*)paramInfo.in_args[2];
 		ret = (int*)paramInfo.ret;
-
-		memcpy_fromio(ptr, svcodec->memaddr, buf_size);
-		copy_to_user(paramInfo.in_args[1], ptr, buf_size);
-
-		memcpy_fromio(ret, (uint8_t*)svcodec->memaddr + buf_size , sizeof(int));
+		if (buf_size > 0) {
+			memcpy_fromio(ptr, svcodec->memaddr, buf_size);
+			copy_to_user(paramInfo.in_args[1], ptr, buf_size);
+			memcpy_fromio(ret, (uint8_t*)svcodec->memaddr + buf_size , sizeof(int));
+		} else {
+			memcpy_fromio(ret, svcodec->memaddr , sizeof(int));
+		}
 		kfree(ptr);
     } else if (paramInfo.apiIndex == 24) {
 		int width, height;
@@ -407,15 +435,15 @@ static int svcodec_mmap (struct file *file, struct vm_area_struct *vm)
 
 static int svcodec_release (struct inode *inode, struct file *file)
 {
-	if (svcodec->dev->irq >= 0) {
+/*	if (svcodec->dev->irq > 0) {
 		free_irq(svcodec->dev->irq, svcodec);
-	}
+	} */
 
 /*	if (svcodec->img_buf) {
 		kfree(svcodec->img_buf);
 		svcodec->img_buf = NULL;
 	} */
-
+	tempCnt = 0;	
 	module_put(THIS_MODULE);
 	SVCODEC_LOG("\n");		
 	return 0;
