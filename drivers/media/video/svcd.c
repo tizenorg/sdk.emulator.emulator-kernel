@@ -223,6 +223,12 @@ static int vidioc_g_fmt_vid_cap(struct file *file, void *priv,
 	f->fmt.pix.sizeimage 	= ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 	f->fmt.pix.colorspace = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
 	f->fmt.pix.priv = ioread32(dev->mmregs + SVCAM_CMD_G_DATA);
+	
+	dev->pixelformat = f->fmt.pix.pixelformat;
+	dev->width = f->fmt.pix.width;
+	dev->height = f->fmt.pix.height;
+	dev->vb_vidq.field = f->fmt.pix.field;
+	dev->type = f->type;
 
 	return 0;
 }
