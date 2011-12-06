@@ -7,5 +7,10 @@ config HW_ACCELERATOR
 config EMUL_LCD
 	tristate "Samsung emulator LCD driver"
 	default n
+
+config EMUL_CODEC
+	tristate "Samsung virtual codec driver for emulator"
+	default n
+
 endmenu
 
