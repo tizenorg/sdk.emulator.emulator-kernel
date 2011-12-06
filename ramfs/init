@@ -157,12 +157,13 @@ echo "create device filesystem"
 
 /bin/mkdir -p /new_root/dev/input
 
-/bin/mkdir -p /new_root/dev/snd 
-/bin/mknod -m 660 /new_root/dev/snd/controlC0 c 116 7 
-/bin/mknod -m 660 /new_root/dev/snd/pcmC0D0c c 116 6 
-/bin/mknod -m 660 /new_root/dev/snd/pcmC0D0p c 116 5 
-/bin/mknod -m 660 /new_root/dev/snd/pcmC0D1p c 116 4 
-/bin/mknod -m 660 /new_root/dev/snd/timer c 116 2
+# commented out by caramis...
+#/bin/mkdir -p /new_root/dev/snd 
+#/bin/mknod -m 660 /new_root/dev/snd/controlC0 c 116 7 
+#/bin/mknod -m 660 /new_root/dev/snd/pcmC0D0c c 116 6 
+#/bin/mknod -m 660 /new_root/dev/snd/pcmC0D0p c 116 5 
+#/bin/mknod -m 660 /new_root/dev/snd/pcmC0D1p c 116 4 
+#/bin/mknod -m 660 /new_root/dev/snd/timer c 116 2
 
 /bin/mknod /new_root/dev/vda b 254 0
 /bin/mknod /new_root/dev/vdb b 254 16
