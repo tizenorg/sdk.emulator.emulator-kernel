@@ -423,9 +423,8 @@ static unsigned int vdpram_poll(struct file *filp, poll_table *wait)
 {
 	struct vdpram_dev *dev = filp->private_data;
 	unsigned int mask = 0;
-	int index = dev->index ;
 
-//	printk("%s:%d:index:%d\n", __FUNCTION__,current->pid,index);
+//	printk("%s:%d:index:%d\n", __FUNCTION__,current->pid,dev->index);
 	/*
 	 * The buffer is circular; it is considered full
 	 * if "wp" is right behind "rp" and empty if the
