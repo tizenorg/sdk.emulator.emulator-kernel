@@ -149,6 +149,11 @@ void wacom_input_sync(void *wcombo)
 	input_sync(get_input_dev((struct wacom_combo *)wcombo));
 }
 
+void wacom_input_mt_sync(void *wcombo)
+{
+	input_mt_sync(get_input_dev((struct wacom_combo *)wcombo));
+}
+
 static int wacom_open(struct input_dev *dev)
 {
 	struct wacom *wacom = input_get_drvdata(dev);
@@ -487,8 +492,12 @@ static int wacom_probe(struct usb_interface *intf, const struct usb_device_id *i
 	}
 
 	input_dev->evbit[0] |= BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
+	input_dev->keybit[BIT_WORD(BTN_TOUCH)] |= BIT_MASK(BTN_TOUCH);
+#if 0 //convert device type for emulator
 	input_dev->keybit[BIT_WORD(BTN_DIGI)] |= BIT_MASK(BTN_TOOL_PEN) |
 		BIT_MASK(BTN_TOUCH) | BIT_MASK(BTN_STYLUS);
+#endif
+
 	input_set_abs_params(input_dev, ABS_X, 0, features->x_max, 4, 0);
 	input_set_abs_params(input_dev, ABS_Y, 0, features->y_max, 4, 0);
 	input_set_abs_params(input_dev, ABS_PRESSURE, 0, features->pressure_max, 0, 0);
@@ -498,6 +507,12 @@ static int wacom_probe(struct usb_interface *intf, const struct usb_device_id *i
 		input_set_abs_params(input_dev, ABS_RY, 0, features->touch_y_max, 4, 0);
 	}
 	input_dev->absbit[BIT_WORD(ABS_MISC)] |= BIT_MASK(ABS_MISC);
+
+	/* for multitouch */
+	input_set_abs_params(input_dev, ABS_MT_TRACKING_ID, 0, 1, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, features->pressure_max, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0, features->touch_x_max, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0, features->touch_y_max, 0, 0);
 
 	wacom_init_input_dev(input_dev, wacom_wac);
 

@@ -36,7 +36,7 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_DESCRIPTION("Virtual Codec Driver for Emulator");
 
-#define CODEC_DEBUG
+// #define CODEC_DEBUG
 
 #ifdef CODEC_DEBUG
 #define SVCODEC_LOG(fmt, ...) \
