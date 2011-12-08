@@ -92,11 +92,13 @@ static ssize_t bl_max_brightness_show(struct device *dev,
 	return sprintf(buf, "%d\n", max_brightness);
 }
 
+#if 0
 static ssize_t bl_max_brightness_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	return 0;
 }
+#endif
 
 static DEVICE_ATTR(brightness, 0664, bl_brightness_show, bl_brightness_store);
 static DEVICE_ATTR(max_brightness, 0664, bl_max_brightness_show, NULL);
@@ -206,7 +208,7 @@ static int __init emul_backlight_class_init(void)
 		return PTR_ERR(emul_backlight_class);
 	}
 
-	emul_backlight_dev = device_create(emul_backlight_class, NULL, NULL, NULL, "emulator");
+	emul_backlight_dev = device_create(emul_backlight_class, NULL, 0, NULL, "emulator");
 
 	for (i=0; i < ARRAY_SIZE(emul_bl_device_attrib); i++) {
 		ret = device_create_file(emul_backlight_dev, emul_bl_device_attrib[i]);

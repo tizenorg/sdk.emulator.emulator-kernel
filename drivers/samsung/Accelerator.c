@@ -178,19 +178,21 @@ static int accel_open(struct inode *inode, struct file *file)
     return 0;
 }
 
-static ssize_t accel_write(struct file *file, char __user *buf, size_t count, loff_t *fops)
+static ssize_t accel_write(struct file *file, const char __user *buf, size_t count, loff_t *fops)
 {
     void __iomem *ioaddr;
 
     struct accel_param accel_param;
-    struct accel_param *test;
     unsigned long *args, *args_size;
     char *args_temp = NULL;
     int loop;
 
     ioaddr = base_addr;
 
-    copy_from_user((void *)&accel_param, (void *)buf, sizeof(struct accel_param));
+    if(copy_from_user((void *)&accel_param, (void *)buf, sizeof(struct accel_param)))
+    {
+    	// error
+    }
     
     args = (unsigned long *)accel_param.args;
     args_size = (unsigned long *)accel_param.args_size;
@@ -227,9 +229,9 @@ static ssize_t accel_write(struct file *file, char __user *buf, size_t count, lo
 
     writew(accel_param.function_number, ioaddr);
     writew(accel_param.pid, ioaddr);
-    writel((uint32_t)v2p(accel_param.ret_string), ioaddr);
-    writel((uint32_t)v2p(args), ioaddr);
-    writel((uint32_t)v2p(accel_param.args_size), ioaddr);
+    writel((uint32_t)v2p((unsigned long)(accel_param.ret_string)), ioaddr);
+    writel((uint32_t)v2p((unsigned long)args), ioaddr);
+    writel((uint32_t)v2p((unsigned long)(accel_param.args_size)), ioaddr);
 
     return 0;
 }

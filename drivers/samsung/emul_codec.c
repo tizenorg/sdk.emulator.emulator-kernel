@@ -102,8 +102,6 @@ static struct svcodec_dev *svcodec;
 // DECLARE_WAIT_QUEUE_HEAD(waitqueue_read);
 // DECLARE_WORK(work_queue, call_workqueue);
 
-static irqreturn_t svcodec_interrupt (int irq, void *dev_id);
-
 static int svcodec_open (struct inode *inode, struct file *file)
 {
 	SVCODEC_LOG("\n");
@@ -119,7 +117,7 @@ static int svcodec_open (struct inode *inode, struct file *file)
 	return 0;
 }
 
-static tempCnt = 0;
+static long tempCnt = 0;
 
 static ssize_t svcodec_write (struct file *file, const char __user *buf,
 								size_t count, loff_t *fops)
@@ -133,7 +131,10 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		printk(KERN_ERR "[%s] : Fail to get codec device info\n", __func__);
 	}
 
-	copy_from_user(&paramInfo, buf, sizeof(struct _param));
+	if(copy_from_user(&paramInfo, buf, sizeof(struct _param)))
+	{
+		// error handling !!!
+	}
 
 	for (i = 0; i < paramInfo.in_args_num; i++) {
 		writel(paramInfo.in_args[i], svcodec->ioaddr + CODEC_IN_PARAM);
@@ -225,7 +226,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 			size += sizeof(AVFrame);
 			SVCODEC_LOG("AVCODEC_ENCODE_VIDEO 1\n");
 			memcpy_toio((uint8_t*)svcodec->memaddr + size, pict_buf, pict_buf_size);
-			SVCODEC_LOG("ENCODE Count :%d\n", ++tempCnt);
+			SVCODEC_LOG("ENCODE Count :%ld\n", ++tempCnt);
 		} else {
 			int pict_temp = 0;
 			memcpy_toio((uint8_t*)svcodec->memaddr + size, &pict_temp, sizeof(int));
@@ -339,7 +340,10 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		ret = (int*)paramInfo.ret;
 		if (buf_size > 0) {
 			memcpy_fromio(ptr, svcodec->memaddr, buf_size);
-			copy_to_user(paramInfo.in_args[1], ptr, buf_size);
+			if(copy_to_user((void *)(paramInfo.in_args[1]), ptr, buf_size))
+			{
+				// error handling !!!
+			}
 			memcpy_fromio(ret, (uint8_t*)svcodec->memaddr + buf_size , sizeof(int));
 		} else {
 			memcpy_fromio(ret, svcodec->memaddr , sizeof(int));
@@ -353,7 +357,10 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		size = width * height;
 		size2 = size / 4;
 		memcpy_fromio(ptr, svcodec->memaddr, (size * 3 / 2));
-		copy_to_user(paramInfo.in_args[4], ptr, size + size2 * 2);
+		if(copy_to_user((void *)(paramInfo.in_args[4]), ptr, size + size2 * 2))
+		{
+			// error handling !!!
+		}
 		kfree(ptr);
 	} 
 
@@ -457,6 +464,9 @@ static int svcodec_release (struct inode *inode, struct file *file)
 /*
  *  Interrupt handler
  */
+#if 0
+static irqreturn_t svcodec_interrupt (int irq, void *dev_id);
+
 static irqreturn_t svcodec_interrupt (int irq, void *dev_id)
 {
 //	SVCODEC_LOG("\n");
@@ -466,6 +476,7 @@ static irqreturn_t svcodec_interrupt (int irq, void *dev_id)
 //	return IRQ_HANDLED;
 	return IRQ_NONE;
 }
+#endif
 
 struct file_operations codec_fops = {
 	.owner		= THIS_MODULE,
@@ -573,7 +584,7 @@ static int __devinit svcodec_probe (struct pci_dev *pci_dev,
 		printk(KERN_ERR "[%s] : ioremap failed\n", __func__);
 		goto err_mem_unmap;
 	}
-	SVCODEC_LOG("MEM_ADDR:0x%x, IO_ADDR:0x%x\n", svcodec->memaddr, svcodec->ioaddr);
+	SVCODEC_LOG("MEM_ADDR:0x%lx, IO_ADDR:0x%lx\n", (unsigned long)svcodec->memaddr, (unsigned long)svcodec->ioaddr);
 //	pci_set_drvdata(pci_dev, svcodec);
 
 	if (register_chrdev(CODEC_MAJOR, DRIVER_NAME, &codec_fops)) {

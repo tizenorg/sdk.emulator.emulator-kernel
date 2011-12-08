@@ -41,7 +41,7 @@ static int __init emul_lcd_class_init(void)
 		return PTR_ERR(emul_lcd_class);
 	}
 
-	emul_lcd_dev = device_create(emul_lcd_class, NULL, NULL, NULL, "emulator");
+	emul_lcd_dev = device_create(emul_lcd_class, NULL, 0, NULL, "emulator");
 
 	for (i=0; i < ARRAY_SIZE(emul_lcd_device_attrib); i++) {
 		ret = device_create_file(emul_lcd_dev, emul_lcd_device_attrib[i]);
