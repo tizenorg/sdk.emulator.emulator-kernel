@@ -38,6 +38,7 @@ static int wacom_penpartner_irq(struct wacom_wac *wacom, void *wcombo)
 			}
 			break;
 		case 2:
+#if 0
 			wacom_report_key(wcombo, BTN_TOOL_PEN, 1);
 			wacom_report_abs(wcombo, ABS_MISC, STYLUS_DEVICE_ID); /* report tool id */
 			wacom_report_abs(wcombo, ABS_X, wacom_le16_to_cpu(&data[1]));
@@ -45,6 +46,24 @@ static int wacom_penpartner_irq(struct wacom_wac *wacom, void *wcombo)
 			wacom_report_abs(wcombo, ABS_PRESSURE, (signed char)data[6] + 127);
 			wacom_report_key(wcombo, BTN_TOUCH, ((signed char)data[6] > -80) && !(data[5] & 0x20));
 			wacom_report_key(wcombo, BTN_STYLUS, (data[5] & 0x40));
+#else
+			if ((signed char)data[6] > -127) { //pressed
+				wacom_report_abs(wcombo, ABS_MT_TRACKING_ID, data[5]);
+				wacom_report_abs(wcombo, ABS_MT_TOUCH_MAJOR, 5);
+				wacom_report_abs(wcombo, ABS_MT_POSITION_X, wacom_le16_to_cpu(&data[1]));
+				wacom_report_abs(wcombo, ABS_MT_POSITION_Y, wacom_le16_to_cpu(&data[3]));
+				wacom_input_mt_sync(wcombo);
+			} else { //release
+				if (data[5] == 1) {
+					wacom_report_abs(wcombo, ABS_MT_TRACKING_ID, 1);
+					wacom_report_abs(wcombo, ABS_MT_TOUCH_MAJOR, 0);
+					wacom_input_mt_sync(wcombo);
+				}
+				wacom_report_abs(wcombo, ABS_MT_TRACKING_ID, 0);
+				wacom_report_abs(wcombo, ABS_MT_TOUCH_MAJOR, 0);
+				wacom_input_mt_sync(wcombo);
+			}
+#endif
 			break;
 		default:
 			printk(KERN_INFO "wacom_penpartner_irq: received unknown report #%d\n", data[0]);
@@ -797,7 +816,7 @@ void wacom_init_input_dev(struct input_dev *input_dev, struct wacom_wac *wacom_w
 			input_dev_pl(input_dev, wacom_wac);
 			/* fall through */
 		case PENPARTNER:
-			input_dev_pt(input_dev, wacom_wac);
+			//input_dev_pt(input_dev, wacom_wac);
 			break;
 	}
 	return;
