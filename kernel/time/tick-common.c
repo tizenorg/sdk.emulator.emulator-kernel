@@ -74,7 +74,7 @@ void tick_periodic(int cpu)
 			static unsigned short rt_jiffies = 0;
 			static unsigned short rt_ticks = 0;
 			static unsigned short rt_count = 1;
-			static unsigned short rt_log[11] = {0};
+//			static unsigned short rt_log[11] = {0};
 
 			unsigned long tick = rt_jiffies_sec * ++rt_ticks / rt_ticks_sec - rt_jiffies;
 			if (rt_jiffies + tick > rt_jiffies_sec + (HZ/4) )
@@ -90,14 +90,14 @@ void tick_periodic(int cpu)
 				read_persistent_clock(&ts);
 
 				if (rt_sec != ts.tv_sec) {
-					rt_log[++rt_log[0]] = rt_ticks;
+/*					rt_log[++rt_log[0]] = rt_ticks;
 					if (rt_log[0] == 10) {
 						rt_log[0] = 0;
 						printk(KERN_ERR "tick_count : %d %d %d %d %d %d %d %d %d %d\n",
 								rt_log[1], rt_log[2], rt_log[3], rt_log[4], rt_log[5],
 								rt_log[6], rt_log[7], rt_log[8], rt_log[9], rt_log[10]);
 					}
-
+*/
 					if (!first) {
 						rt_jiffies_sec = HZ + rt_jiffies_sec - rt_jiffies;
 						rt_ticks_sec = rt_ticks ;
