@@ -1,4 +1,4 @@
-menu "Virtual_3D_Accelerator"
+menu "Virtual device drivers for emulator"
 
 config HW_ACCELERATOR
 	tristate "Samsung Virtual 3D Accelerator driver"
