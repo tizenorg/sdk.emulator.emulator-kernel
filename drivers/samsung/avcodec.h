@@ -1179,6 +1179,11 @@ typedef struct AVCodecContext {
      */
     int frame_size;
     int frame_number;   ///< audio or video frame number
+
+	/* add i_frame_number and stts_count because gstreamer plugin has been updated */
+	int i_frame_number;
+	int stts_count;
+
 #if LIBAVCODEC_VERSION_MAJOR < 53
     int real_pict_num;  ///< Returns the real picture number of previous encoded frame.
 #endif
