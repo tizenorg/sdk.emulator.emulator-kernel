@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.32.9
-# Mon Dec 12 12:31:35 2011
+# Wed Dec 14 10:09:11 2011
 #
 # CONFIG_64BIT is not set
 CONFIG_X86_32=y
@@ -1225,9 +1225,6 @@ CONFIG_NVRAM=y
 # CONFIG_RAW_DRIVER is not set
 # CONFIG_HANGCHECK_TIMER is not set
 # CONFIG_TCG_TPM is not set
-# CONFIG_DPRAM is not set
-# CONFIG_MULTIPDP is not set
-# CONFIG_IPCMUX is not set
 # CONFIG_TELCLOCK is not set
 CONFIG_VDPRAM_DEVICE=y
 CONFIG_DEVPORT=y
@@ -2105,7 +2102,7 @@ CONFIG_ANDROID_TIMED_OUTPUT=y
 # CONFIG_IIO is not set
 
 #
-# Virtual_3D_Accelerator
+# Virtual device drivers for emulator
 #
 CONFIG_HW_ACCELERATOR=y
 CONFIG_EMUL_LCD=y
