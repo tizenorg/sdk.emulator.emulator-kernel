@@ -1097,8 +1097,6 @@ config UV_MMTIMER
 
 source "drivers/char/tpm/Kconfig"
 
-source "drivers/char/dpram/Kconfig"
-
 config TELCLOCK
 	tristate "Telecom clock driver for ATCA SBC"
 	depends on EXPERIMENTAL && X86
