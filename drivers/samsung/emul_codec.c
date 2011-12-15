@@ -1,14 +1,31 @@
 /*
- * Virtual Codec driver
+ * Virtual Codec PCI device driver
  *
- * Copyright (c) 2011 Samsung Electronics Co., Ltd All Rights Reserved
+ * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact : Kitae KIM <kt920.kim@samsung.com>
+ * Contact: 
+ *  Kitae KIM <kt920.kim@samsung.com>
+ *  SeokYeon Hwang <syeon.hwang@samsung.com>
+ *  DongKyun Yun <dk77.yun@samsung.com>
+ *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the BSD Licence, GNU General Public License
- * as published by the Free Software Foundation; either version 2 of the
- * License, or (at your option) any later version
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ * Contributors:
+ * - S-Core Co., Ltd
+ *
  */
 
 #include <linux/init.h>
@@ -33,9 +50,9 @@
 #define DRIVER_NAME		"svcodec"
 #define CODEC_MAJOR		240
 
-MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Virtual Codec Device Driver");
 MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
-MODULE_DESCRIPTION("Virtual Codec Driver for Emulator");
+MODULE_LICENSE("GPL2");
 
 // #define CODEC_DEBUG
 
@@ -62,7 +79,7 @@ enum svodec_param_offset {
 };
 
 typedef struct _svcodec_dev {
-	struct pci_dev *dev;				/* pci device */
+	struct pci_dev *dev;
 
 	volatile unsigned int *ioaddr;
 	volatile unsigned int *memaddr;
@@ -130,15 +147,6 @@ static int get_picture_size (int pix_fmt, int width, int height)
 		case PIX_FMT_BGR24:
 			size = width * height * 3;
 			break;
-/*		case PIX_FMT_RGB32:
-			size = width * height * 4;
-			break;
-		case PIX_FMT_RGB555:
-		case PIX_FMT_RGB565:
-		case PIX_FMT_YUYV422:
-		case PIX_FMT_UYVY422:
-			size = widht * height * 2;
-			break; */
 		default:
 			size = -1;
 	}
@@ -516,11 +524,6 @@ static int __devinit svcodec_probe (struct pci_dev *pci_dev,
 	pci_set_master(pci_dev);
 
 	ret = -EIO;	
-/*	ret = pci_request_regions(pci_dev, DRIVER_NAME);
-	if (ret) {
-		printk(KERN_ERR "[%s] : pci_request_regions failed\n", __func__);
-		goto err_out;
-	} */
 
 	svcodec->mem_start = pci_resource_start(pci_dev, 0);
 	svcodec->mem_size = pci_resource_len(pci_dev, 0);
@@ -587,10 +590,6 @@ static struct pci_driver driver = {
 	.id_table	= svcodec_pci_table,
 	.probe		= svcodec_probe,
 	.remove		= svcodec_remove,
-#ifdef CONFIG_PM
-//	.suspend	= svcodec_suspend,
-//	.resume		= svcodec_resume,
-#endif
 };
 
 static int __init svcodec_init (void)
