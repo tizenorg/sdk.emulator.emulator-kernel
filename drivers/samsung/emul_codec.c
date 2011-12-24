@@ -55,6 +55,7 @@ MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_LICENSE("GPL2");
 
 // #define CODEC_DEBUG
+// #define CODEC_KVM
 
 #ifdef CODEC_DEBUG
 #define SVCODEC_LOG(fmt, ...) \
@@ -66,7 +67,7 @@ MODULE_LICENSE("GPL2");
 struct _param {
 	uint32_t apiIndex;
 	uint32_t in_args_num;
-	uint32_t in_args[10];
+	uint32_t in_args[20];
 	uint32_t ret;
 };
 
@@ -147,18 +148,187 @@ static int get_picture_size (int pix_fmt, int width, int height)
 		case PIX_FMT_BGR24:
 			size = width * height * 3;
 			break;
+/*		case PIX_FMT_RGB32:
+			size = width * height * 4;
+			break;
+		case PIX_FMT_RGB555:
+		case PIX_FMT_RGB565:
+		case PIX_FMT_YUYV422:
+		case PIX_FMT_UYVY422:
+			size = widht * height * 2;
+			break; */
 		default:
 			size = -1;
 	}
 	return size;
 }
 
+void restore_codec_context(AVCodecContext *dstctx,
+						   AVCodecContext *srcctx) {
+	dstctx->av_class = srcctx->av_class;
+	dstctx->codec = srcctx->codec;
+	dstctx->extradata = srcctx->extradata;
+	dstctx->opaque = srcctx->opaque;
+	dstctx->get_buffer = srcctx->get_buffer;
+	dstctx->release_buffer = srcctx->release_buffer;
+	dstctx->stats_out = srcctx->stats_out;
+	dstctx->stats_in = srcctx->stats_in;
+	dstctx->rc_override = srcctx->rc_override;
+	dstctx->rc_eq = srcctx->rc_eq;
+	dstctx->slice_offset = srcctx->slice_offset;
+	dstctx->get_format = srcctx->get_format;
+	dstctx->internal_buffer = srcctx->internal_buffer;
+	dstctx->intra_matrix = srcctx->intra_matrix;
+	dstctx->inter_matrix = srcctx->inter_matrix;
+	dstctx->reget_buffer = srcctx->reget_buffer;
+	dstctx->execute = srcctx->execute;
+	dstctx->thread_opaque = srcctx->thread_opaque;
+	dstctx->execute2 = srcctx->execute2;
+}
 
+#ifdef CODEC_KVM
+static ssize_t svcodec_write (struct file *file, const char __user *buf,
+							  size_t count, loff_t *fops)
+{
+	struct _param paramInfo;
+	AVCodecParserContext tempParserCtx;
+	AVCodecContext tempCtx;
+	int i;
+	
+	if (!svcodec) {
+		printk(KERN_ERR "[%s] : Fail to get codec device info\n", __func__);
+	}
+
+	if (copy_from_user(&paramInfo, buf, sizeof(struct _param))) {
+		printk(KERN_ERR "[%s]:Fail to copy\n", __func__);
+	}
+
+	for (i = 0; i < paramInfo.in_args_num; i++) {
+		writel(paramInfo.in_args[i], svcodec->ioaddr + CODEC_IN_PARAM);
+	}
+
+	/* guest to host */
+	if (paramInfo.apiIndex == 2) {
+		AVCodecContext *ctx;
+		ctx = (AVCodecContext*)paramInfo.in_args[0];
+		memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
+		writel((uint32_t)ctx->extradata, svcodec->ioaddr + CODEC_IN_PARAM);
+	}/* else if (paramInfo.apiIndex == 6) {
+		int value = -1;
+		value = *(int*)paramInfo.ret;
+		memcpy_toio(svcodec->memaddr, &value, sizeof(int));
+	} */ else if (paramInfo.apiIndex == 20) {
+		AVCodecContext *ctx;
+		ctx = (AVCodecContext*)paramInfo.in_args[0];
+		memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
+/*		writel((uint32_t)&ctx->frame_number, svcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->pix_fmt, svcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->coded_frame, svcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->sample_aspect_ratio, svcodec->ioaddr + CODEC_IN_PARAM);
+		writel((uint32_t)&ctx->reordered_opaque, svcodec->ioaddr + CODEC_IN_PARAM); */
+	} else if (paramInfo.apiIndex == 22) {
+		AVCodecContext *ctx;
+		uint32_t buf_size;
+		ctx = (AVCodecContext*)paramInfo.in_args[0];
+		buf_size = *(uint32_t*)paramInfo.in_args[2];
+		writel((uint32_t)ctx->coded_frame, svcodec->ioaddr + CODEC_IN_PARAM);
+		svcodec->imgBuf = kmalloc(buf_size, GFP_KERNEL);
+		writel((uint32_t)svcodec->imgBuf, svcodec->ioaddr + CODEC_IN_PARAM);
+	} else if (paramInfo.apiIndex == 24) {
+		int pix_fmt;
+		int width, height;
+		int size;
+		pix_fmt = *(int*)paramInfo.in_args[1];
+		width = *(int*)paramInfo.in_args[2];
+		height = *(int*)paramInfo.in_args[3];
+		size = get_picture_size(pix_fmt, width, height);
+		svcodec->imgBuf = kmalloc(size, GFP_KERNEL);
+		writel((uint32_t)svcodec->imgBuf, svcodec->ioaddr + CODEC_IN_PARAM);
+	} else if (paramInfo.apiIndex == 31) {
+		AVCodecParserContext *parserctx;
+		AVCodecContext *ctx;
+		parserctx = (AVCodecParserContext*)paramInfo.in_args[0];
+		ctx = (AVCodecContext*)paramInfo.in_args[1];
+		memcpy(&tempParserCtx, parserctx, sizeof(AVCodecParserContext));
+		memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
+	} 
+
+	// return value
+	writel(paramInfo.ret, svcodec->ioaddr + CODEC_RETURN_VALUE);
+
+	// api index	
+	writel((uint32_t)paramInfo.apiIndex, svcodec->ioaddr + CODEC_API_INDEX);
+	
+	/* host to guest */
+	if (paramInfo.apiIndex == 2) {
+		AVCodecContext *avctx;
+		AVCodec *codec;
+		avctx = (AVCodecContext*)paramInfo.in_args[0];
+		codec = (AVCodec*)paramInfo.in_args[1];
+		restore_codec_context(avctx, &tempCtx);
+		avctx->codec = codec;
+	} else if (paramInfo.apiIndex == 20) {
+		AVCodecContext *ctx;
+		AVFrame *frame;
+		ctx = (AVCodecContext*)paramInfo.in_args[0];
+		frame = (AVFrame*)paramInfo.in_args[1];
+		restore_codec_context(ctx, &tempCtx);
+		ctx->coded_frame = frame;
+	} else if (paramInfo.apiIndex == 22) {
+		uint32_t buf_size;
+		buf_size = *(uint32_t*)paramInfo.in_args[2];
+		if (copy_to_user((void*)paramInfo.in_args[1], svcodec->imgBuf, buf_size)) {
+			printk(KERN_ERR "[%s]:Fail to copy_to_user\n", __func__);
+		}
+		kfree(svcodec->imgBuf);
+		svcodec->imgBuf = NULL;
+    } else if (paramInfo.apiIndex == 24) {
+		int pix_fmt;
+		int width, height;
+		int size;
+		pix_fmt = *(int*)paramInfo.in_args[1];
+		width = *(int*)paramInfo.in_args[2];
+		height = *(int*)paramInfo.in_args[3];
+		size = get_picture_size(pix_fmt, width, height);
+		if (copy_to_user((void*)paramInfo.in_args[4], svcodec->imgBuf, size)) {
+			printk(KERN_ERR "[%s]:Fail to copy_to_user\n", __func__);
+		}
+		kfree(svcodec->imgBuf);
+		svcodec->imgBuf = NULL;
+	} else if (paramInfo.apiIndex == 31) {
+		AVCodecParserContext *parserctx;
+		AVCodecContext *ctx;
+		uint8_t *outbuf;
+		int *outbuf_size;
+
+		parserctx = (AVCodecParserContext*)paramInfo.in_args[0];
+		ctx = (AVCodecContext*)paramInfo.in_args[1];
+		outbuf_size = (int*)paramInfo.in_args[3];
+		parserctx->priv_data = tempParserCtx.priv_data;
+		parserctx->parser = tempParserCtx.parser;
+		restore_codec_context(ctx, &tempCtx);
+
+//		printk(KERN_INFO "before copy outbuf_size :%d\n", *outbuf_size);
+//		memcpy_fromio(outbuf_size, svcodec->memaddr, sizeof(int));
+/*		if (*outbuf_size > 0) {
+			outbuf = kmalloc(*outbuf_size, GFP_KERNEL);
+			memcpy_fromio(outbuf, (uint8_t*)svcodec->memaddr + 4, *outbuf_size);
+			if (copy_to_user((void*)(paramInfo.in_args[2]), outbuf, *outbuf_size)) {
+				printk(KERN_ERR "[%s]:Failed to copy_to_user\n", __func__);
+			}
+			kfree(outbuf);
+		} */
+	}
+
+	return 0;
+}
+
+#else 
 static ssize_t svcodec_write (struct file *file, const char __user *buf,
 								size_t count, loff_t *fops)
 {
 	struct _param paramInfo;
-	AVCodecContext tempCtx;
+	AVCodecContext tmpCtx;
 	
 	if (!svcodec) {
 		printk(KERN_ERR "[%s]:Fail to get codec device info\n", __func__);
@@ -172,19 +342,19 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 	if (paramInfo.apiIndex == 2) {
 		AVCodecContext *ctx;
 		AVCodec *codec;
-		int size, size1;
+		int size;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
 		codec = (AVCodec*)paramInfo.in_args[1];
 
 		size = sizeof(AVCodecContext);
-		printk(KERN_DEBUG "[%s]:AVCodecContext size:%d\n", sizeof(AVCodecContext));
-		memcpy(&tempCtx, ctx, size);
+		printk(KERN_DEBUG "AVCodecContext size:%d\n", sizeof(AVCodecContext));
+		memcpy(&tmpCtx, ctx, size);
 
 		memcpy_toio(svcodec->memaddr, ctx, size);
 		memcpy_toio((uint8_t*)svcodec->memaddr + size, codec, sizeof(AVCodec));
+		size += sizeof(AVCodec);
 
-		size1 = size + sizeof(AVCodec);
-		memcpy_toio((uint8_t*)svcodec->memaddr + size1, ctx->extradata, ctx->extradata_size);
+		memcpy_toio((uint8_t*)svcodec->memaddr + size, ctx->extradata, ctx->extradata_size);
 	} else if (paramInfo.apiIndex == 6) {
 		int value = -1;
 		value = *(int*)paramInfo.ret;
@@ -202,7 +372,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		SVCODEC_LOG("AVCODEC_DECODE_VIDEO\n");
 
 		size = sizeof(AVCodecContext);
-		memcpy(&tempCtx, ctx, size);
+		memcpy(&tmpCtx, ctx, size);
 	
 //		memcpy_toio(svcodec->memaddr, ctx, size);
 		memcpy_toio((uint8_t*)svcodec->memaddr + size, &buf_size, sizeof(int));
@@ -261,6 +431,39 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		if (!svcodec->imgBuf) {
 			printk(KERN_ERR "[%s]Failed to allocate image buffer\n", __func__);
 		}
+	} else if (paramInfo.apiIndex == 30) {
+		int codec_id;
+		codec_id = *(int*)paramInfo.in_args[0];
+		memcpy_toio(svcodec->memaddr, &codec_id, sizeof(int));
+	} else if (paramInfo.apiIndex == 31) {
+		AVCodecParserContext *pctx;
+		AVCodecContext *avctx;
+		uint8_t *inbuf;
+		int inbuf_size;
+		int64_t pts;
+		int64_t dts;
+		int size;
+
+		pctx = (AVCodecParserContext*)paramInfo.in_args[0];
+		avctx = (AVCodecContext*)paramInfo.in_args[1];
+		inbuf = (uint8_t*)paramInfo.in_args[4];
+		inbuf_size = *(int*)paramInfo.in_args[5];
+		pts = *(int64_t*)paramInfo.in_args[6];
+		dts = *(int64_t*)paramInfo.in_args[7];
+
+		SVCODEC_LOG("AVCodecParserContext Size : %d\n", sizeof(AVCodecParserContext));
+		size = sizeof(AVCodecParserContext);
+//		memcpy_toio(svcodec->memaddr, pctx, size);
+		memcpy_toio((uint8_t*)svcodec->memaddr + size, avctx, sizeof(AVCodecContext));
+		size += sizeof(AVCodecContext);
+
+		memcpy_toio((uint8_t*)svcodec->memaddr + size, &inbuf_size, sizeof(int));
+		size += sizeof(int);
+		memcpy_toio((uint8_t*)svcodec->memaddr + size, inbuf, inbuf_size);
+		size += inbuf_size;
+		memcpy_toio((uint8_t*)svcodec->memaddr + size, &pts, sizeof(int64_t));
+		size += sizeof(int64_t);
+		memcpy_toio((uint8_t*)svcodec->memaddr + size, &dts, sizeof(int64_t));
 	} 
 
 	// api index	
@@ -275,29 +478,12 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		codec = (AVCodec*)paramInfo.in_args[1];
 		ret = (int*)paramInfo.ret;
 		size = sizeof(AVCodecContext);
+
 		memcpy_fromio(avctx, svcodec->memaddr, size);
 		memcpy_fromio(ret, (uint8_t*)svcodec->memaddr + size, sizeof(int));
 
-		avctx->av_class = tempCtx.av_class;
+		restore_codec_context(avctx, &tmpCtx);
 		avctx->codec = codec;
-//		avctx->priv_data = tempCtx.priv_data;
-		avctx->extradata = tempCtx.extradata;
-		avctx->opaque = tempCtx.opaque;
-		avctx->get_buffer = tempCtx.get_buffer;
-		avctx->release_buffer = tempCtx.release_buffer;
-		avctx->stats_out = tempCtx.stats_out;
-		avctx->stats_in = tempCtx.stats_in;
-		avctx->rc_override = tempCtx.rc_override;
-		avctx->rc_eq = tempCtx.rc_eq;
-		avctx->slice_offset = tempCtx.slice_offset;
-		avctx->get_format = tempCtx.get_format;
-		avctx->internal_buffer = tempCtx.internal_buffer;
-		avctx->intra_matrix = tempCtx.intra_matrix;
-		avctx->inter_matrix = tempCtx.inter_matrix;
-		avctx->reget_buffer = tempCtx.reget_buffer;
-		avctx->execute = tempCtx.execute;
-		avctx->thread_opaque = tempCtx.thread_opaque;
-		avctx->execute2 = tempCtx.execute2;
 
 		if (copy_to_user((void*)(paramInfo.in_args[0]), avctx, sizeof(AVCodecContext))) {
 			printk(KERN_ERR "[%s]:Fail to copy AVCodecContext to user\n", __func__);
@@ -333,26 +519,10 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 			*got_picture_ptr = 0;
 			memcpy_fromio(ret, svcodec->memaddr, sizeof(int));
 		}
+
+		restore_codec_context(avctx, &tmpCtx);
 		avctx->coded_frame = frame;
-		avctx->av_class = tempCtx.av_class;
-		avctx->codec = tempCtx.codec;
-		avctx->extradata = tempCtx.extradata;
-		avctx->opaque = tempCtx.opaque;
-		avctx->get_buffer = tempCtx.get_buffer;
-		avctx->release_buffer = tempCtx.release_buffer;
-		avctx->stats_out = tempCtx.stats_out;
-		avctx->stats_in = tempCtx.stats_in;
-		avctx->rc_override = tempCtx.rc_override;
-		avctx->rc_eq = tempCtx.rc_eq;
-		avctx->slice_offset = tempCtx.slice_offset;
-		avctx->get_format = tempCtx.get_format;
-		avctx->internal_buffer = tempCtx.internal_buffer;
-		avctx->intra_matrix = tempCtx.intra_matrix;
-		avctx->inter_matrix = tempCtx.inter_matrix;
-		avctx->reget_buffer = tempCtx.reget_buffer;
-		avctx->execute = tempCtx.execute;
-		avctx->thread_opaque = tempCtx.thread_opaque;
-		avctx->execute2 = tempCtx.execute2;
+
 		if (copy_to_user((void*)(paramInfo.in_args[0]), avctx, sizeof(AVCodecContext))) {
 			printk(KERN_ERR "[%s]:Fail to copy AVCodecContext to user\n", __func__);
 		}
@@ -386,10 +556,52 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		}
 		kfree(svcodec->imgBuf);
 		svcodec->imgBuf = NULL;
-	} 
+	} else if (paramInfo.apiIndex == 31) {
+		AVCodecParserContext *pctx;
+		AVCodecParserContext tmp_pctx;
+		AVCodecContext *avctx;
+		AVCodecContext tmp_ctx;
+		uint8_t *outbuf;
+		int *outbuf_size;
+		int size, *ret;
+
+		pctx = (AVCodecParserContext*)paramInfo.in_args[0];
+		avctx = (AVCodecContext*)paramInfo.in_args[1];
+//		outbuf = (uint8_t*)paramInfo.in_args[2];
+		outbuf_size = (int*)paramInfo.in_args[3];
+		ret = (int*)paramInfo.ret;
+
+		memcpy(&tmp_pctx, pctx, sizeof(AVCodecParserContext));
+		memcpy(&tmp_ctx, avctx, sizeof(AVCodecContext));
+
+		size = sizeof(AVCodecParserContext);
+		memcpy_fromio(pctx, svcodec->memaddr, size);
+		pctx->priv_data = tmp_pctx.priv_data;
+		pctx->parser = tmp_pctx.parser;
+
+		memcpy_fromio(avctx, (uint8_t*)svcodec->memaddr + size, sizeof(AVCodecContext));
+		restore_codec_context(avctx, &tmp_ctx);
+		size += sizeof(AVCodecContext);
+
+		memcpy_fromio(outbuf_size, (uint8_t*)svcodec->memaddr + size, sizeof(int));
+		size += sizeof(int);
+
+		if (*outbuf_size != 0) {
+			outbuf = kmalloc(*outbuf_size, GFP_KERNEL);
+			memcpy_fromio(outbuf, (uint8_t*)svcodec->memaddr + size, *outbuf_size);
+			if (copy_to_user((void*)(paramInfo.in_args[2]), outbuf, *outbuf_size)) {
+				printk(KERN_ERR "[%s]:Failed to copy the output buffer of"
+					   " av_parser_parse to user\n", __func__);
+			}
+			kfree(outbuf);
+			size += *outbuf_size;
+		}
+		memcpy_fromio(ret, (uint8_t*)svcodec->memaddr + size, sizeof(int));
+	}
 
 	return 0;
 }
+#endif
 
 static ssize_t svcodec_read (struct file *file, char __user *buf,
 								size_t count, loff_t *fops)
