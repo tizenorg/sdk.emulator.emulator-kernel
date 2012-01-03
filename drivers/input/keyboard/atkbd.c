@@ -17,6 +17,11 @@
  * converter.
  */
 
+/*
+ * 2011-08-19 Dohyung Hong <don.hong@samsung.com> Changed device name as HardKeys from keyboard
+ * 2011-11-23 DongKyun Yun <dk77.yun@samsung.com> Modified some keycodes to support hardware key of mobile platform
+ */
+
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/slab.h>
