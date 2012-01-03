@@ -11,6 +11,11 @@
  * This code is licenced under the GPL version 2. For details see
  * kernel-base/COPYING.
  */
+
+/*
+ * 2011-12-09 Dohyung Hong <don.hong@samsung.com> Add time compensation logic for emulator's system time
+ */
+
 #include <linux/cpu.h>
 #include <linux/err.h>
 #include <linux/hrtimer.h>

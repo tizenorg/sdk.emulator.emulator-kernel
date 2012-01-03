@@ -11,6 +11,11 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  */
+
+/*
+ * 2011-12-08 GiWoong Kim <giwoong.kim@samsung.com> Add multi-touch function
+ */
+
 #include "wacom.h"
 #include "wacom_wac.h"
 

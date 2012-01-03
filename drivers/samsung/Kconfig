@@ -1,9 +1,5 @@
 menu "Virtual device drivers for emulator"
 
-config HW_ACCELERATOR
-	tristate "Samsung Virtual 3D Accelerator driver"
-	default n
-
 config EMUL_LCD
 	tristate "Samsung emulator LCD driver"
 	default n
