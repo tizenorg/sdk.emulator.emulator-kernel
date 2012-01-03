@@ -1,7 +1,7 @@
 /*
  * Samsung Virtual Camera Driver
  *
- * Copyright (c) 2000 - 2011 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2011 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
  * Jinhyung Jo <jinhyung.jo@samsung.com>

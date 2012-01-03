@@ -1,7 +1,7 @@
 /*
  * Virtual Codec PCI device driver
  *
- * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2011-2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact: 
  *  Kitae KIM <kt920.kim@samsung.com>
