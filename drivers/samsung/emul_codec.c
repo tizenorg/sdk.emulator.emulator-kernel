@@ -806,7 +806,7 @@ static struct pci_driver driver = {
 
 static int __init svcodec_init (void)
 {
-	SVCODEC_LOG("SVCODEC initialized\n");
+	printk(KERN_INFO "svcodec device is initialized.\n");
 	return pci_register_driver(&driver);
 }
 
