@@ -4,6 +4,8 @@
  * (c) 2007 Michal Januszewski <spock@gentoo.org>
  *     Loosely based upon the vesafb driver.
  *
+ * 2010-08-18 fred <fredrick.kim@samsung.com> Get display physical dpi info.
+ *
  */
 #include <linux/init.h>
 #include <linux/module.h>
