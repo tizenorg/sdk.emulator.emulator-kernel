@@ -34,7 +34,7 @@ static struct device* mtd_device;
 
 static int capacity = 100;
 static int charge_full = 1;
-static int charge_now = 1;
+static int charge_now = 0;
 
 static ssize_t show_capacity(struct device *dev, struct device_attribute *attr, char *buf) 
 {
