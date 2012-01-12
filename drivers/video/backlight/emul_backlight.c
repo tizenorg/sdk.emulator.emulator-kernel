@@ -4,10 +4,7 @@
  * Copyright (c) 2011 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
- * Hyunjun Son <hj79.son@samsung.com>
- * GiWoong Kim <giwoong.kim@samsung.com>
- * DongKyun Yun <dk77.yun@samsung.com>
- * YeongKyoon Lee <yeongkyoon.lee@samsung.com>
+ * Dohyung Hong <don.hong@samsung.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -35,6 +32,8 @@
 #include <linux/notifier.h>
 #include <linux/ctype.h>
 #include <linux/err.h>
+#include <linux/fb.h>
+#include <linux/backlight.h>
 
 #include <asm/uaccess.h>
 
@@ -54,12 +53,9 @@ MODULE_DEVICE_TABLE(pci, svb_pci_table);
 
 /* samsung virtual brightness(backlight) device structure */
 struct svb {
-	struct pci_dev *pci_dev;
-	unsigned int brightness_level;
-
-	resource_size_t mem_start, reg_start;
-	resource_size_t mem_size, reg_size;
-
+	struct backlight_device *bl_dev;
+	unsigned int brightness;
+	resource_size_t reg_start, reg_size;
 	unsigned char __iomem *svb_mmreg;	/* svb: memory mapped registers */
 };
 
@@ -67,68 +63,37 @@ struct svb {
 static struct svb *svb_device;
 /* ============================================================================== */
 
-static struct class *emul_backlight_class;
-static struct device *emul_backlight_dev;
-
-static int brightness;
 static int max_brightness = 24;
 
-static ssize_t bl_brightness_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
+static int emulbl_get_intensity(struct backlight_device *bd)
 {
-	/* handover to qemu layer */
-	brightness = (unsigned int)readl(svb_device->svb_mmreg);
-	printk(KERN_INFO "%s: brightness = %d\n", __FUNCTION__, brightness);
-
-	return sprintf(buf, "%d\n", brightness);
+	return svb_device->brightness;
+	//	return svb_device->brightness = (unsigned int)readl(svb_device->svb_mmreg);
 }
 
-static ssize_t bl_brightness_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
+static int emulbl_send_intensity(struct backlight_device *bd)
 {
-	int rc;
-	unsigned long brightness_level;
+	int intensity = bd->props.brightness;
 
-	rc = strict_strtoul(buf, 0, &brightness_level);
-	if (rc)
-		return rc;
+	if (bd->props.power != FB_BLANK_UNBLANK)
+		intensity = 0;
+	if (bd->props.state & BL_CORE_FBBLANK)
+		intensity = 0;
+	if (bd->props.state & BL_CORE_SUSPENDED)
+		intensity = 0;
+//	if (bd->props.state & GENERICBL_BATTLOW)
+//		intensity &= bl_machinfo->limit_mask;
 
-	rc = -ENXIO;
+	writel(intensity, svb_device->svb_mmreg);
+	svb_device->brightness = intensity;
 
-	if (brightness_level > max_brightness) {
-		rc = -EINVAL;
-	} else {
-		printk(KERN_INFO "backlight: set brightness to %lu\n", brightness_level);
-		brightness = brightness_level;
-
-		/* handover to qemu layer */
-		writel(brightness, svb_device->svb_mmreg);
-
-		rc = count;
-	}
-	return rc;
-}
-
-static ssize_t bl_max_brightness_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%d\n", max_brightness);
-}
-
-#if 0
-static ssize_t bl_max_brightness_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
 	return 0;
 }
-#endif
 
-static DEVICE_ATTR(brightness, 0664, bl_brightness_show, bl_brightness_store);
-static DEVICE_ATTR(max_brightness, 0664, bl_max_brightness_show, NULL);
-
-static struct device_attribute *emul_bl_device_attrib[] = {
-		&dev_attr_brightness,
-		&dev_attr_max_brightness,
+static struct backlight_ops emulbl_ops = {
+	.options = BL_CORE_SUSPENDRESUME,
+	.get_brightness = emulbl_get_intensity,
+	.update_status  = emulbl_send_intensity,
 };
 
 /* pci probe function
@@ -136,7 +101,8 @@ static struct device_attribute *emul_bl_device_attrib[] = {
 static int __devinit svb_probe(struct pci_dev *pci_dev,
 			const struct pci_device_id *ent)
 {
-	int ret = -EBUSY;
+	int ret;
+	struct backlight_device *bd;
 
 	svb_device = kmalloc(sizeof(struct svb), GFP_KERNEL);
 	if (svb_device == NULL) {
@@ -146,64 +112,80 @@ static int __devinit svb_probe(struct pci_dev *pci_dev,
 
 	memset(svb_device, 0, sizeof(struct svb));
 
-	if (svb_device->pci_dev != NULL) {
-		printk(KERN_ERR "[svb] Only one device is allowed.\n");
-		goto outnotdev;
-	}
-
-	svb_device->pci_dev = pci_dev;
-
-	ret = -EIO;
-	if ((ret = pci_enable_device(svb_device->pci_dev)) < 0) {
+	if ((ret = pci_enable_device(pci_dev)) < 0) {
 		printk(KERN_ERR "svb: pci_enable_device is failed.\n");
 		goto outnotdev;
 	}
 
-	/* 0 : IORESOURCE_IO */
-	svb_device->mem_start = pci_resource_start(svb_device->pci_dev, 0);
-	svb_device->mem_size = pci_resource_len(svb_device->pci_dev, 0);
-
-	if (!request_mem_region(pci_resource_start(svb_device->pci_dev, 0),
-				pci_resource_len(svb_device->pci_dev, 0),
-				SVB_DRIVER_NAME)) {
-	}
+	ret = -EIO;
 
 	/* 1 : IORESOURCE_MEM */
-	svb_device->reg_start = pci_resource_start(svb_device->pci_dev, 1);
-	svb_device->reg_size = pci_resource_len(svb_device->pci_dev, 1);
-
-	if (!request_mem_region(pci_resource_start(svb_device->pci_dev, 1),
-				pci_resource_len(svb_device->pci_dev, 1),
-				SVB_DRIVER_NAME)) {
+	if (!request_mem_region(svb_device->reg_start = pci_resource_start(pci_dev, 1),
+							svb_device->reg_size  = pci_resource_len(pci_dev, 1),
+							SVB_DRIVER_NAME)) {
+		goto outnotdev;
 	}
 
 	/* memory areas mapped kernel space */
 	svb_device->svb_mmreg = ioremap(svb_device->reg_start, svb_device->reg_size);
 	if (!svb_device->svb_mmreg) {
+		goto outnotdev;
 	}
 
-	//pci_write_config_byte(svb_device->pci_dev, PCI_CACHE_LINE_SIZE, 8);
-	pci_write_config_byte(svb_device->pci_dev, PCI_LATENCY_TIMER, 64);
-	pci_set_master(svb_device->pci_dev);
+	//pci_write_config_byte(pci_dev, PCI_CACHE_LINE_SIZE, 8);
+	pci_write_config_byte(pci_dev, PCI_LATENCY_TIMER, 64);
+	pci_set_master(pci_dev);
+
+	/*
+	 * register backlight device
+	 */
+	bd = backlight_device_register ("emulator",	&pci_dev->dev, NULL, &emulbl_ops);
+	if (IS_ERR (bd)) {
+		ret = PTR_ERR (bd);
+		goto outnotdev;
+	}
+
+	bd->props.brightness = (unsigned int)readl(svb_device->svb_mmreg);;
+	bd->props.max_brightness = max_brightness;
+	bd->props.power = FB_BLANK_UNBLANK;
+	backlight_update_status(bd);
+
+	svb_device->bl_dev = bd;
 
 	printk(KERN_INFO "svb: Samsung Virtual Backlight driver.\n");
 	return 0;
 
 outnotdev:
+	if (svb_device->svb_mmreg)
+		iounmap(svb_device->svb_mmreg);
 	kfree(svb_device);
 	return ret;
 }
 
 static void __devexit svb_exit(struct pci_dev *pcidev)
 {
+	/*
+	 * Unregister backlight device
+	 */
+	struct backlight_device *bd = svb_device->bl_dev;
+
+	bd->props.power = 0;
+	bd->props.brightness = 0;
+	backlight_update_status(bd);
+
+	backlight_device_unregister(bd);
+
+	/*
+	 * Unregister pci device & delete device
+	 */
 	iounmap(svb_device->svb_mmreg);
 	pci_disable_device(pcidev);
 	kfree(svb_device);
 }
 
-/* register pci driver
-*/
-
+/*
+ * register pci driver
+ */
 static struct pci_driver svb_pci_driver = {
 	.name 	  = SVB_DRIVER_NAME,
 	.id_table = svb_pci_table,
@@ -215,50 +197,22 @@ static struct pci_driver svb_pci_driver = {
 #endif
 };
 
-static int backlight_svb_init(void)
+static int __init emulbl_init(void)
 {
 	return pci_register_driver(&svb_pci_driver);
 }
 
-static int __init emul_backlight_class_init(void)
+static void __exit emulbl_exit(void)
 {
-	int i, ret;
-
-	emul_backlight_class = class_create(THIS_MODULE, "backlight");
-	if (IS_ERR(emul_backlight_class)) {
-		printk(KERN_WARNING "Unable to create backlight class; errno = %ld\n",
-				PTR_ERR(emul_backlight_class));
-		return PTR_ERR(emul_backlight_class);
-	}
-
-	emul_backlight_dev = device_create(emul_backlight_class, NULL, 0, NULL, "emulator");
-
-	for (i=0; i < ARRAY_SIZE(emul_bl_device_attrib); i++) {
-		ret = device_create_file(emul_backlight_dev, emul_bl_device_attrib[i]);
-		if (ret != 0) {
-			printk(KERN_ERR "emul_bl: Failed to create attr %d: %d\n", i, ret);
-			return ret;
-		}
-	}
-
-	/* related to virtual pci device */
-	backlight_svb_init();
-
-	return 0;
-}
-
-static void __exit emul_backlight_class_exit(void)
-{
-	class_destroy(emul_backlight_class);
+	pci_unregister_driver(&svb_pci_driver);
 }
 
 /*
  * if this is compiled into the kernel, we need to ensure that the
  * class is registered before users of the class try to register lcd's
  */
-//postcore_initcall(emul_backlight_class_init);
-module_init(emul_backlight_class_init);
-module_exit(emul_backlight_class_exit);
+module_init(emulbl_init);
+module_exit(emulbl_exit);
 
 MODULE_LICENSE("GPL2");
 MODULE_DESCRIPTION("Emulator Virtual Backlight Driver for x86");
