@@ -264,6 +264,7 @@ config BACKLIGHT_ADP5520
 
 config BACKLIGHT_EMUL
 	tristate "Virtual Emulator Backlight Driver"
+	depends on BACKLIGHT_CLASS_DEVICE
 	default y
 	help
 	  Say Y to enable the backlight driver on Emulator.
