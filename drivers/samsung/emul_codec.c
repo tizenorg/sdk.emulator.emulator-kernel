@@ -55,7 +55,7 @@ MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_LICENSE("GPL2");
 
 // #define CODEC_DEBUG
-// #define CODEC_KVM
+#define CODEC_KVM
 
 #ifdef CODEC_DEBUG
 #define SVCODEC_LOG(fmt, ...) \
@@ -347,7 +347,6 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		codec = (AVCodec*)paramInfo.in_args[1];
 
 		size = sizeof(AVCodecContext);
-		printk(KERN_DEBUG "AVCodecContext size:%d\n", sizeof(AVCodecContext));
 		memcpy(&tmpCtx, ctx, size);
 
 		memcpy_toio(svcodec->memaddr, ctx, size);
