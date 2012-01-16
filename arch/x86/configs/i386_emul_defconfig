@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.32.9
-# Wed Jan 11 20:07:48 2012
+# Fri Jan 13 22:53:12 2012
 #
 # CONFIG_64BIT is not set
 CONFIG_X86_32=y
@@ -365,10 +365,13 @@ CONFIG_ARCH_ENABLE_MEMORY_HOTPLUG=y
 #
 CONFIG_PM=y
 # CONFIG_PM_DEBUG is not set
-# CONFIG_SUSPEND is not set
+CONFIG_PM_SLEEP=y
+CONFIG_SUSPEND=y
+CONFIG_SUSPEND_FREEZER=y
 # CONFIG_HIBERNATION is not set
 # CONFIG_PM_RUNTIME is not set
 CONFIG_ACPI=y
+CONFIG_ACPI_SLEEP=y
 # CONFIG_ACPI_PROCFS is not set
 # CONFIG_ACPI_PROCFS_POWER is not set
 # CONFIG_ACPI_POWER_METER is not set
@@ -389,6 +392,7 @@ CONFIG_X86_PM_TIMER=y
 # CONFIG_ACPI_CONTAINER is not set
 # CONFIG_ACPI_SBS is not set
 # CONFIG_SFI is not set
+# CONFIG_APM is not set
 
 #
 # CPU Frequency scaling
