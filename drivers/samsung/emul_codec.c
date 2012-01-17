@@ -254,7 +254,8 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 	} 
 
 	// return value
-	writel(paramInfo.ret, svcodec->ioaddr + CODEC_RETURN_VALUE);
+	if (paramInfo.ret != 0)
+		writel((uint32_t)paramInfo.ret, svcodec->ioaddr + CODEC_RETURN_VALUE);
 
 	// api index	
 	writel((uint32_t)paramInfo.apiIndex, svcodec->ioaddr + CODEC_API_INDEX);
