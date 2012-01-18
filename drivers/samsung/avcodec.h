@@ -999,6 +999,7 @@ typedef struct AVPacket {
     void  (*destruct)(struct AVPacket *);
     void  *priv;
     int64_t pos;                            ///< byte position in stream, -1 if unknown
+	int is_mux;
 
     /**
      * Time difference in AVStream->time_base units from the pts of this
