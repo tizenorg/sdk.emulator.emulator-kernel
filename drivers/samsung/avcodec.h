@@ -837,6 +837,11 @@ typedef struct AVPanScan{
      */\
     void *opaque;\
 \
+	/*
+	 * dummy variable for tizen in Windows.
+	 */\
+	int dummy_a;\
+\
     /**\
      * error\
      * - encoding: Set by libavcodec. if flags&CODEC_FLAG_PSNR.\
@@ -915,6 +920,11 @@ typedef struct AVPanScan{
      */\
     int8_t *ref_index[2];\
 \
+	/*
+	 * dummy variable for tizen in Windows.
+	 */\
+	int dummy_b;\
+\
     /**\
      * reordered opaque 64bit number (generally a PTS) from AVCodecContext.reordered_opaque\
      * output in AVFrame.reordered_opaque\
@@ -929,6 +939,11 @@ typedef struct AVPanScan{
      * - decoding: Set by libavcodec\
      */\
     void *hwaccel_picture_private;\
+\
+	/*
+	 * dummy variable for tizen in Windows.
+	 */\
+	int dummy_c;\
 
 
 #define FF_QSCALE_TYPE_MPEG1 0
@@ -984,6 +999,7 @@ typedef struct AVPacket {
     void  (*destruct)(struct AVPacket *);
     void  *priv;
     int64_t pos;                            ///< byte position in stream, -1 if unknown
+	int is_mux;
 
     /**
      * Time difference in AVStream->time_base units from the pts of this
@@ -1716,6 +1732,11 @@ typedef struct AVCodecContext {
      * - decoding: Set by user.
      */
     int debug_mv;
+
+    /*
+     * dummy variable for tizen in Windows.
+     */
+    int dummy_a;
 #define FF_DEBUG_VIS_MV_P_FOR  0x00000001 //visualize forward predicted MVs of P frames
 #define FF_DEBUG_VIS_MV_B_FOR  0x00000002 //visualize forward predicted MVs of B frames
 #define FF_DEBUG_VIS_MV_B_BACK 0x00000004 //visualize backward predicted MVs of B frames
@@ -2502,6 +2523,11 @@ typedef struct AVCodecContext {
      */
     int bits_per_raw_sample;
 
+    /*
+     * dummy variable for tizen in Windows.
+     */
+    int dummy_b;
+
     /**
      * Audio channel layout.
      * - encoding: set by user.
@@ -2664,6 +2690,11 @@ typedef struct AVCodecContext {
      * - decoding: unused
      */
     int rc_lookahead;
+
+    /*
+     * dummy variable for tizen in Windows.
+     */
+    int dummy_c;
 } AVCodecContext;
 
 /**
@@ -2928,6 +2959,11 @@ typedef struct AVCodecParserContext {
 #define PARSER_FLAG_COMPLETE_FRAMES           0x0001
 
     int64_t offset;      ///< byte offset from starting packet start
+	/*
+	 * dummy variable for tizen in Windows.
+	 */
+	int dummy_a;
+
     int64_t cur_frame_end[AV_PARSER_PTS_NB];
 
     /*!
@@ -2937,6 +2973,11 @@ typedef struct AVCodecParserContext {
      * will be used.
      */
     int key_frame;
+
+	/*
+	 * dummy variable for tizen in Windows.
+	 */
+	int dummy_b;
 
     /**
      * Time difference in stream time base units from the pts of this
@@ -2995,6 +3036,11 @@ typedef struct AVCodecParserContext {
      * For example, this corresponds to H.264 dpb_output_delay.
      */
     int pts_dts_delta;
+
+	/*
+	 * dummy variable for tizen in Windows.
+	 */
+	int dummy_c;
 
     /**
      * Position of the packet in file.
