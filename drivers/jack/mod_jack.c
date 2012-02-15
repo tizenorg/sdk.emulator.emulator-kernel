@@ -29,7 +29,7 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 
-int charger_online = 1;
+int charger_online = 0;
 int earjack_online = 0;
 int earkey_online = 0;
 int hdmi_online = 0;
