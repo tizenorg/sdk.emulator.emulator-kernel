@@ -1,4 +1,4 @@
-obj-$(CONFIG_MARU_LCD) += MARU_lcd.o
-obj-$(CONFIG_MARU_CODEC) += MARU_codec.o
-obj-$(CONFIG_MARU_TOUCHSCREEN) += MARU_touchscreen.o
+obj-$(CONFIG_MARU_LCD) += maru_lcd.o
+obj-$(CONFIG_MARU_CODEC) += maru_codec.o
+obj-$(CONFIG_MARU_TOUCHSCREEN) += maru_touchscreen.o
 

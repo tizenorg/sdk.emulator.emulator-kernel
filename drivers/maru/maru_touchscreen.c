@@ -1,5 +1,5 @@
 /*
- * Virtual USB Touchscreen device driver
+ * Maru Virtual USB Touchscreen device driver
  * Based on drivers/input/tablet/wacom_sys.c:
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
@@ -39,7 +39,6 @@ MODULE_AUTHOR("s-core");
 MODULE_DESCRIPTION("Emulator Touchscreen driver for x86");
 
 /* touchscreen device features */
-#define USB_VENDOR_ID_SAMSUNG 0x0419
 #define EMUL_TOUCHSCREEN_PACKET_LEN 7
 #define TOUCHSCREEN_RESOLUTION_X 5040
 #define TOUCHSCREEN_RESOLUTION_Y 3780
@@ -182,7 +181,7 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
     usb_make_path(usb_ts->usbdev, usb_ts->phys, sizeof(usb_ts->phys));
     strlcat(usb_ts->phys, "/input0", sizeof(usb_ts->phys));
 
-    usb_ts->emuldev->name = "Tizen Touchscreen";
+    usb_ts->emuldev->name = "Maru Touchscreen";
     usb_to_input_id(usb_ts->usbdev, &usb_ts->emuldev->id);
 
     usb_ts->emuldev->dev.parent = &intf->dev;
@@ -271,14 +270,14 @@ static int emul_touchscreen_resume(struct usb_interface *intf)
 }
 
 static struct usb_device_id emul_usb_touchscreen_table[] = {
-    { USB_DEVICE(USB_VENDOR_ID_SAMSUNG, 0x00) },
+    { USB_DEVICE(0x056a, 0x00) },
     { } /* Terminating entry */
 };
 
 MODULE_DEVICE_TABLE(usb, emul_usb_touchscreen_table);
 
 static struct usb_driver emul_touchscreen_driver = {
-    .name                 = "usb_emul_touchscreen",
+    .name                 = "usb-emul-touchscreen",
     .id_table             = emul_usb_touchscreen_table,
     .probe                = emul_touchscreen_probe,
     .disconnect           = emul_touchscreen_disconnect,
