@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.32.9
-# Fri Jan 13 22:53:12 2012
+# Thu Feb 16 15:57:36 2012
 #
 # CONFIG_64BIT is not set
 CONFIG_X86_32=y
@@ -721,7 +721,9 @@ CONFIG_MAC80211_LEDS=y
 # CONFIG_MAC80211_DEBUG_MENU is not set
 # CONFIG_WIMAX is not set
 # CONFIG_RFKILL is not set
-# CONFIG_NET_9P is not set
+CONFIG_NET_9P=y
+CONFIG_NET_9P_VIRTIO=y
+# CONFIG_NET_9P_DEBUG is not set
 
 #
 # Device Drivers
@@ -2317,6 +2319,7 @@ CONFIG_RPCSEC_GSS_KRB5=y
 # CONFIG_NCP_FS is not set
 # CONFIG_CODA_FS is not set
 # CONFIG_AFS_FS is not set
+CONFIG_9P_FS=y
 
 #
 # Partition Types
