@@ -56,7 +56,7 @@ struct emul_touchscreen {
     char phys[32];
 };
 
-/* These structure must match the qemu definitions */
+/* This structure must match the qemu definitions */
 typedef struct USBEmulTouchscreenPacket {
     uint16_t x, y, z;
     uint8_t state;
