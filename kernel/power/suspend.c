@@ -253,9 +253,6 @@ static void suspend_finish(void)
  */
 int enter_state(suspend_state_t state)
 {
-	//XXX reject a suspend request temporarily in x86 Emulator until fix a suspend problem.
-	return 0;
-
 	int error;
 
 	if (!valid_state(state))
