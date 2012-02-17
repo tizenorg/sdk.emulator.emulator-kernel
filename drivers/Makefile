@@ -115,4 +115,4 @@ obj-y				+= jack/
 obj-y				+= usb_mode/
 obj-y				+= usb_mass_storage/
 
-obj-$(CONFIG_EMUL_LCD)    += samsung/
+obj-$(CONFIG_MARU)		+= maru/

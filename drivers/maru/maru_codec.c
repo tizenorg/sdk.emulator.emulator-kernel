@@ -97,7 +97,7 @@ typedef struct _svcodec_dev {
 
 static struct pci_device_id svcodec_pci_table[] __devinitdata = {
 	{
-	.vendor 	= PCI_VENDOR_ID_SAMSUNG,
+	.vendor 	= PCI_VENDOR_ID_TIZEN,
 	.device		= PCI_DEVICE_ID_VIRTUAL_CODEC,
 	.subvendor	= PCI_ANY_ID,
 	.subdevice	= PCI_ANY_ID,
