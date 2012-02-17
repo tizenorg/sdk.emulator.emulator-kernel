@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.32.9
-# Thu Feb 16 15:57:36 2012
+# Fri Feb 17 13:23:24 2012
 #
 # CONFIG_64BIT is not set
 CONFIG_X86_32=y
@@ -1708,7 +1708,6 @@ CONFIG_BACKLIGHT_CLASS_DEVICE=y
 # CONFIG_BACKLIGHT_PROGEAR is not set
 # CONFIG_BACKLIGHT_MBP_NVIDIA is not set
 # CONFIG_BACKLIGHT_SAHARA is not set
-CONFIG_BACKLIGHT_EMUL=y
 
 #
 # Display device support
@@ -2164,17 +2163,13 @@ CONFIG_ANDROID_TIMED_OUTPUT=y
 #
 # CONFIG_RAR_REGISTER is not set
 # CONFIG_IIO is not set
-
-#
-# Virtual device drivers for emulator
-#
 CONFIG_MARU=y
 CONFIG_MARU_LCD=y
 CONFIG_MARU_CODEC=y
 CONFIG_MARU_TOUCHSCREEN=y
 CONFIG_MARU_FB=y
 CONFIG_MARU_CAMERA=y
-
+CONFIG_MARU_BACKLIGHT=y
 CONFIG_X86_PLATFORM_DEVICES=y
 # CONFIG_ACER_WMI is not set
 # CONFIG_ASUS_LAPTOP is not set

@@ -24,3 +24,10 @@ config MARU_CAMERA
         ---help---
           Enables a MARU Virtual Camera driver.
 
+config MARU_BACKLIGHT
+        tristate "MARU Backlight Driver"
+        depends on MARU && BACKLIGHT_CLASS_DEVICE
+        default y
+        help
+          Say Y to enable the backlight driver of MARU.
+
