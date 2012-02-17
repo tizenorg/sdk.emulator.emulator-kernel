@@ -17,3 +17,10 @@ config MARU_TOUCHSCREEN
 config MARU_FB
 	tristate "MARU framebuffer driver"
 	depends on MARU != n
+
+config MARU_CAMERA
+        tristate "MARU Camera Driver"
+        depends on MARU != n && VIDEO_DEV && VIDEO_V4L2 && VIDEOBUF_GEN
+        ---help---
+          Enables a MARU Virtual Camera driver.
+
