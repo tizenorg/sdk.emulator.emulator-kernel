@@ -47,7 +47,7 @@
 
 #include "avformat.h" 
 
-#define DRIVER_NAME		"svcodec"
+#define DRIVER_NAME		"codec"
 #define CODEC_MAJOR		240
 
 MODULE_DESCRIPTION("Virtual Codec Device Driver");
@@ -115,7 +115,7 @@ DECLARE_WORK(work_queue, call_workqueue);
 
 static int svcodec_open (struct inode *inode, struct file *file)
 {
-	SVCODEC_LOG("\n");
+	printk(KERN_DEBUG "[%s]\n", __func__);
 	try_module_get(THIS_MODULE);
 
 	/* register interrupt handler */
@@ -187,7 +187,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 	int i;
 	
 	if (!svcodec) {
-		printk(KERN_ERR "[%s] : Fail to get codec device info\n", __func__);
+		printk(KERN_ERR "[%s]:Fail to get codec device info\n", __func__);
 	}
 
 	if (copy_from_user(&paramInfo, buf, sizeof(struct _param))) {
@@ -435,19 +435,6 @@ static ssize_t svcodec_read (struct file *file, char __user *buf,
 	return 0;
 }
 
-static void svcodec_vm_open(struct vm_area_struct *vm)
-{
-}
-
-static void svcodec_vm_close(struct vm_area_struct *vm)
-{
-}
-
-static const struct vm_operations_struct svcodec_vm_ops = {
-	.open	= svcodec_vm_open,
-	.close	= svcodec_vm_close,
-};
-
 static int svcodec_mmap (struct file *file, struct vm_area_struct *vm)
 {
 	unsigned long off;
@@ -471,7 +458,6 @@ static int svcodec_mmap (struct file *file, struct vm_area_struct *vm)
 		return -EAGAIN;
 	}
 
-	vm->vm_ops = &svcodec_vm_ops;
 	vm->vm_flags |= VM_IO;
 	vm->vm_flags |= VM_RESERVED;
 
@@ -520,7 +506,7 @@ static irqreturn_t svcodec_irq_handler (int irq, void *dev_id)
 }
 #endif
 
-struct file_operations codec_fops = {
+struct file_operations svcodec_fops = {
 	.owner		= THIS_MODULE,
 	.read		= svcodec_read,
 	.write		= svcodec_write,
@@ -617,7 +603,7 @@ static int __devinit svcodec_probe (struct pci_dev *pci_dev,
 	}
 //	pci_set_drvdata(pci_dev, svcodec);
 
-	if (register_chrdev(CODEC_MAJOR, DRIVER_NAME, &codec_fops)) {
+	if (register_chrdev(CODEC_MAJOR, DRIVER_NAME, &svcodec_fops)) {
 		printk(KERN_ERR "[%s] : register_chrdev failed\n", __func__);
 		goto err_io_unmap;
 	}
