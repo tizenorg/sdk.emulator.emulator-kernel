@@ -1,12 +1,11 @@
 /*
- * Samsung Virtual Overlay Driver
+ * Maru Virtual Overlay Driver
  *
  * Copyright (c) 2011 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
  * Hyunjun Son <hj79.son@samsung.com>
  * GiWoong Kim <giwoong.kim@samsung.com>
- * DongKyun Yun <dk77.yun@samsung.com>
  * YeongKyoon Lee <yeongkyoon.lee@samsung.com>
  *
  * This program is free software; you can redistribute it and/or
@@ -27,6 +26,7 @@
  * - S-Core Co., Ltd
  *
  */
+
 #include <linux/init.h>
 #include <linux/pci.h>
 #include <media/v4l2-common.h>
@@ -43,7 +43,7 @@ enum {
 
 static struct pci_device_id svo_pci_tbl[] = {
 	{
-		.vendor       = PCI_VENDOR_ID_SAMSUNG,
+		.vendor       = PCI_VENDOR_ID_TIZEN,
 		.device       = 0x1010,
 		.subvendor    = PCI_ANY_ID,
 		.subdevice    = PCI_ANY_ID,
@@ -444,7 +444,7 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 		goto outreqirq;
 	}
 
-	printk(KERN_INFO "svo: Samsung Virtual Overlay Driver v%d.%d\n",
+	printk(KERN_INFO "svo: Tizen Virtual Overlay Driver v%d.%d\n",
 		SVO_DRIVER_MAJORVERSION, SVO_DRIVER_MINORVERSION);
 
 	return 0;
@@ -477,7 +477,7 @@ static struct pci_driver svo_pci_driver = {
 
 static int __init svo_init(void)
 {
-	printk(KERN_INFO "svo: samsung virtual overlay driver version %d.%d loaded\n",
+	printk(KERN_INFO "svo: Tizen virtual overlay driver version %d.%d loaded\n",
 		SVO_DRIVER_MAJORVERSION, SVO_DRIVER_MINORVERSION);
 
 	return pci_register_driver(&svo_pci_driver);
