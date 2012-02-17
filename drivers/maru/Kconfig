@@ -31,3 +31,18 @@ config MARU_BACKLIGHT
         help
           Say Y to enable the backlight driver of MARU.
 
+config MARU_JACK
+	tristate "MARU Jack Driver"
+	depends on MARU != n
+
+config MARU_POWER_SUPPLY
+	tristate "MARU Power supply Driver"
+	depends on MARU != n
+
+config MARU_USB_MASS_STORAGE
+	tristate "MARU Usb mass storage Driver"
+	depends on MARU != n
+
+config MARU_USB_MODE
+	tristate "MARU Usb mode Driver"
+	depends on MARU != n
