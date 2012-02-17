@@ -1065,7 +1065,7 @@ static struct video_device marucam_video_dev = {
 
 static struct pci_device_id marucam_pci_id_tbl[] = {
 	{
-		.vendor		= PCI_VENDOR_ID_SAMSUNG,
+		.vendor		= PCI_VENDOR_ID_TIZEN,
 		.device		= PCI_DEVICE_ID_VIRTUAL_CAMERA,
 		.subvendor	= PCI_ANY_ID,
 		.subdevice	= PCI_ANY_ID,
