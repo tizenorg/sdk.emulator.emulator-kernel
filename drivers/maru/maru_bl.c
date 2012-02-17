@@ -1,5 +1,5 @@
 /*
- * Samsung Virtual Backlight Driver
+ * MARU Virtual Backlight Driver
  *
  * Copyright (c) 2011 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
@@ -43,7 +43,7 @@
 static struct pci_device_id svb_pci_table[] __devinitdata =
 {
 	{
-		.vendor		= PCI_VENDOR_ID_SAMSUNG,
+		.vendor		= PCI_VENDOR_ID_TIZEN,
 		.device     = PCI_DEVICE_ID_VIRTIO_SVB,
 		.subvendor	= PCI_ANY_ID,
 		.subdevice	= PCI_ANY_ID,
