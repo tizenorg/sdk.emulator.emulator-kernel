@@ -20,7 +20,8 @@ config MARU_FB
 
 config MARU_CAMERA
         tristate "MARU Camera Driver"
-        depends on MARU != n && VIDEO_DEV && VIDEO_V4L2 && VIDEOBUF_GEN
+        depends on MARU != n && VIDEO_DEV && VIDEO_V4L2
+	select VIDEOBUF_VMALLOC
         ---help---
           Enables a MARU Virtual Camera driver.
 
