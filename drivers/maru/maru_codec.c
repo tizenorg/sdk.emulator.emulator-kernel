@@ -55,7 +55,7 @@ MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_LICENSE("GPL2");
 
 // #define CODEC_DEBUG
-#define CODEC_HOST
+// #define CODEC_HOST
 
 #ifdef CODEC_DEBUG
 #define SVCODEC_LOG(fmt, ...) \
@@ -77,6 +77,25 @@ enum svodec_param_offset {
 	CODEC_RETURN_VALUE,
 	CODEC_READY_TO_GET_DATA,
 	CODEC_GET_RESULT_DATA,
+};
+
+enum svcodec_param_apiindex {
+    EMUL_AV_REGISTER_ALL = 1,
+    EMUL_AVCODEC_OPEN,
+    EMUL_AVCODEC_CLOSE,
+    EMUL_AVCODEC_ALLOC_CONTEXT,
+    EMUL_AVCODEC_ALLOC_FRAME,
+    EMUL_AV_FREE_CONTEXT,
+    EMUL_AV_FREE_PICTURE,
+    EMUL_AV_FREE_PALCTRL,
+    EMUL_AV_FREE_EXTRADATA,
+    EMUL_AVCODEC_FLUSH_BUFFERS,
+    EMUL_AVCODEC_DECODE_VIDEO,
+    EMUL_AVCODEC_ENCODE_VIDEO,
+    EMUL_AV_PICTURE_COPY,
+    EMUL_AV_PARSER_INIT,
+    EMUL_AV_PARSER_PARSE,
+    EMUL_AV_PARSER_CLOSE,
 };
 
 typedef struct _svcodec_dev {
@@ -129,6 +148,7 @@ static int svcodec_open (struct inode *inode, struct file *file)
 	return 0;
 }
 
+#ifdef CODEC_HOST
 static int get_picture_size (int pix_fmt, int width, int height)
 {
 	int size;
@@ -176,6 +196,7 @@ void restore_codec_context(AVCodecContext *dstctx,
 	dstctx->thread_opaque = srcctx->thread_opaque;
 	dstctx->execute2 = srcctx->execute2;
 }
+#endif
 
 #ifdef CODEC_HOST
 static ssize_t svcodec_write (struct file *file, const char __user *buf,
@@ -199,14 +220,14 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 	}
 
 	/* guest to host */
-	if (paramInfo.apiIndex == 2) {
+	if (paramInfo.apiIndex == EMUL_AVCODEC_OPEN) {
 		AVCodecContext *ctx;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
 		if (ctx) {
 			memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
 			writel((uint32_t)ctx->extradata, svcodec->ioaddr + CODEC_IN_PARAM);
 		}
-	} else if (paramInfo.apiIndex == 20) {
+	} else if (paramInfo.apiIndex == EMUL_AVCODEC_DECODE_VIDEO) {
 		AVCodecContext *ctx;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
 		memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
@@ -215,7 +236,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		writel((uint32_t)&ctx->coded_frame, svcodec->ioaddr + CODEC_IN_PARAM);
 		writel((uint32_t)&ctx->sample_aspect_ratio, svcodec->ioaddr + CODEC_IN_PARAM);
 		writel((uint32_t)&ctx->reordered_opaque, svcodec->ioaddr + CODEC_IN_PARAM); */
-	} else if (paramInfo.apiIndex == 22) {
+	} else if (paramInfo.apiIndex == EMUL_AVCODEC_ENCODE_VIDEO) {
 		AVCodecContext *ctx;
 		uint32_t buf_size;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
@@ -223,7 +244,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		writel((uint32_t)ctx->coded_frame, svcodec->ioaddr + CODEC_IN_PARAM);
 		svcodec->imgBuf = kmalloc(buf_size, GFP_KERNEL);
 		writel((uint32_t)svcodec->imgBuf, svcodec->ioaddr + CODEC_IN_PARAM);
-	} else if (paramInfo.apiIndex == 24) {
+	} else if (paramInfo.apiIndex == EMUL_AV_PICTURE_COPY) {
 		int pix_fmt;
 		int width, height;
 		int size;
@@ -233,7 +254,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		size = get_picture_size(pix_fmt, width, height);
 		svcodec->imgBuf = kmalloc(size, GFP_KERNEL);
 		writel((uint32_t)svcodec->imgBuf, svcodec->ioaddr + CODEC_IN_PARAM);
-	} else if (paramInfo.apiIndex == 31) {
+	} else if (paramInfo.apiIndex == EMUL_AV_PARSER_PARSE) {
 		AVCodecParserContext *parserctx;
 		AVCodecContext *ctx;
 		parserctx = (AVCodecParserContext*)paramInfo.in_args[0];
@@ -250,7 +271,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 	writel((uint32_t)paramInfo.apiIndex, svcodec->ioaddr + CODEC_API_INDEX);
 	
 	/* host to guest */
-	if (paramInfo.apiIndex == 2) {
+	if (paramInfo.apiIndex == EMUL_AVCODEC_OPEN) {
 		AVCodecContext *ctx;
 		AVCodec *codec;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
@@ -259,14 +280,14 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 			restore_codec_context(ctx, &tempCtx);
 			ctx->codec = codec;
 		} 
-	} else if (paramInfo.apiIndex == 20) {
+	} else if (paramInfo.apiIndex == EMUL_AVCODEC_DECODE_VIDEO) {
 		AVCodecContext *ctx;
 		AVFrame *frame;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
 		frame = (AVFrame*)paramInfo.in_args[1];
 		restore_codec_context(ctx, &tempCtx);
 		ctx->coded_frame = frame;
-	} else if (paramInfo.apiIndex == 22) {
+	} else if (paramInfo.apiIndex == EMUL_AVCODEC_ENCODE_VIDEO) {
 		uint32_t buf_size;
 		buf_size = *(uint32_t*)paramInfo.in_args[2];
 		if (copy_to_user((void*)paramInfo.in_args[1], svcodec->imgBuf, buf_size)) {
@@ -274,7 +295,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		}
 		kfree(svcodec->imgBuf);
 		svcodec->imgBuf = NULL;
-    } else if (paramInfo.apiIndex == 24) {
+    } else if (paramInfo.apiIndex == EMUL_AV_PICTURE_COPY) {
 		int pix_fmt;
 		int width, height;
 		int size;
@@ -287,7 +308,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		}
 		kfree(svcodec->imgBuf);
 		svcodec->imgBuf = NULL;
-	} else if (paramInfo.apiIndex == 31) {
+	} else if (paramInfo.apiIndex == EMUL_AV_PARSER_PARSE) {
 		AVCodecParserContext *parserctx;
 		AVCodecContext *ctx;
 		uint8_t *outbuf;
@@ -320,8 +341,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 								size_t count, loff_t *fops)
 {
 	struct _param paramInfo;
-	AVCodecContext tmpCtx;
-	
+
 	if (!svcodec) {
 		printk(KERN_ERR "[%s]:Fail to get codec device info\n", __func__);
 	}
@@ -330,96 +350,8 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		printk(KERN_ERR "[%s]:Fail to get codec parameter info from user\n", __func__);
 	}
 
-	/* guest to host */
-	if (paramInfo.apiIndex == 6) {
-		int value = -1;
-		value = *(int*)paramInfo.ret;
-		memcpy_toio(svcodec->memaddr, &value, sizeof(int));
-	} else if (paramInfo.apiIndex == 30) {
-		int codec_id;
-		codec_id = *(int*)paramInfo.in_args[0];
-		memcpy_toio(svcodec->memaddr, &codec_id, sizeof(int));
-	} else if (paramInfo.apiIndex == 31) {
-		AVCodecParserContext *pctx;
-		AVCodecContext *avctx;
-		uint8_t *inbuf;
-		int inbuf_size;
-		int64_t pts;
-		int64_t dts;
-		int size;
-
-		pctx = (AVCodecParserContext*)paramInfo.in_args[0];
-		avctx = (AVCodecContext*)paramInfo.in_args[1];
-		inbuf = (uint8_t*)paramInfo.in_args[4];
-		inbuf_size = *(int*)paramInfo.in_args[5];
-		pts = *(int64_t*)paramInfo.in_args[6];
-		dts = *(int64_t*)paramInfo.in_args[7];
-
-		SVCODEC_LOG("AVCodecParserContext Size : %d\n", sizeof(AVCodecParserContext));
-		size = sizeof(AVCodecParserContext);
-//		memcpy_toio(svcodec->memaddr, pctx, size);
-		memcpy_toio((uint8_t*)svcodec->memaddr + size, avctx, sizeof(AVCodecContext));
-		size += sizeof(AVCodecContext);
-
-		memcpy_toio((uint8_t*)svcodec->memaddr + size, &inbuf_size, sizeof(int));
-		size += sizeof(int);
-		memcpy_toio((uint8_t*)svcodec->memaddr + size, inbuf, inbuf_size);
-		size += inbuf_size;
-		memcpy_toio((uint8_t*)svcodec->memaddr + size, &pts, sizeof(int64_t));
-		size += sizeof(int64_t);
-		memcpy_toio((uint8_t*)svcodec->memaddr + size, &dts, sizeof(int64_t));
-	} 
-
 	// api index	
 	writel((uint32_t)paramInfo.apiIndex, svcodec->ioaddr + CODEC_API_INDEX);
-	
-	/* host to guest */
-	if (paramInfo.apiIndex == 3) {
-		int *ret;
-		ret = (int*)paramInfo.ret;
-		memcpy_fromio(ret, svcodec->memaddr, sizeof(int));
-	} else if (paramInfo.apiIndex == 31) {
-		AVCodecParserContext *pctx;
-		AVCodecParserContext tmp_pctx;
-		AVCodecContext *avctx;
-		AVCodecContext tmp_ctx;
-		uint8_t *outbuf;
-		int *outbuf_size;
-		int size, *ret;
-
-		pctx = (AVCodecParserContext*)paramInfo.in_args[0];
-		avctx = (AVCodecContext*)paramInfo.in_args[1];
-//		outbuf = (uint8_t*)paramInfo.in_args[2];
-		outbuf_size = (int*)paramInfo.in_args[3];
-		ret = (int*)paramInfo.ret;
-
-		memcpy(&tmp_pctx, pctx, sizeof(AVCodecParserContext));
-		memcpy(&tmp_ctx, avctx, sizeof(AVCodecContext));
-
-		size = sizeof(AVCodecParserContext);
-		memcpy_fromio(pctx, svcodec->memaddr, size);
-		pctx->priv_data = tmp_pctx.priv_data;
-		pctx->parser = tmp_pctx.parser;
-
-		memcpy_fromio(avctx, (uint8_t*)svcodec->memaddr + size, sizeof(AVCodecContext));
-		restore_codec_context(avctx, &tmp_ctx);
-		size += sizeof(AVCodecContext);
-
-		memcpy_fromio(outbuf_size, (uint8_t*)svcodec->memaddr + size, sizeof(int));
-		size += sizeof(int);
-
-		if (*outbuf_size != 0) {
-			outbuf = kmalloc(*outbuf_size, GFP_KERNEL);
-			memcpy_fromio(outbuf, (uint8_t*)svcodec->memaddr + size, *outbuf_size);
-			if (copy_to_user((void*)(paramInfo.in_args[2]), outbuf, *outbuf_size)) {
-				printk(KERN_ERR "[%s]:Failed to copy the output buffer of"
-					   " av_parser_parse to user\n", __func__);
-			}
-			kfree(outbuf);
-			size += *outbuf_size;
-		}
-		memcpy_fromio(ret, (uint8_t*)svcodec->memaddr + size, sizeof(int));
-	}
 
 	return 0;
 }
