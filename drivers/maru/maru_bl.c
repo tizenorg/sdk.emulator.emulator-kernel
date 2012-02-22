@@ -37,41 +37,41 @@
 
 #include <asm/uaccess.h>
 
-#define SVB_DRIVER_NAME "svb"
-#define PCI_DEVICE_ID_VIRTIO_SVB	0x1014
+#define MARUBL_DRIVER_NAME "svb"
+#define PCI_DEVICE_ID_VIRTUAL_BRIGHTNESS	0x1014
 
-static struct pci_device_id svb_pci_table[] __devinitdata =
+static struct pci_device_id marubl_pci_table[] __devinitdata =
 {
 	{
 		.vendor		= PCI_VENDOR_ID_TIZEN,
-		.device     = PCI_DEVICE_ID_VIRTIO_SVB,
+		.device     = PCI_DEVICE_ID_VIRTUAL_BRIGHTNESS,
 		.subvendor	= PCI_ANY_ID,
 		.subdevice	= PCI_ANY_ID,
 	}
 };
-MODULE_DEVICE_TABLE(pci, svb_pci_table);
+MODULE_DEVICE_TABLE(pci, marubl_pci_table);
 
-/* samsung virtual brightness(backlight) device structure */
-struct svb {
+/* MARU virtual brightness(backlight) device structure */
+struct marubl {
 	struct backlight_device *bl_dev;
 	unsigned int brightness;
 	resource_size_t reg_start, reg_size;
-	unsigned char __iomem *svb_mmreg;	/* svb: memory mapped registers */
+	unsigned char __iomem *marubl_mmreg;	/* marubl: memory mapped registers */
 };
 
 /* ============================================================================== */
-static struct svb *svb_device;
+static struct marubl *marubl_device;
 /* ============================================================================== */
 
 static int max_brightness = 24;
 
-static int emulbl_get_intensity(struct backlight_device *bd)
+static int marubl_get_intensity(struct backlight_device *bd)
 {
-	return svb_device->brightness;
-	//	return svb_device->brightness = (unsigned int)readl(svb_device->svb_mmreg);
+	return marubl_device->brightness;
+	//	return marubl_device->brightness = (unsigned int)readl(marubl_device->marubl_mmreg);
 }
 
-static int emulbl_send_intensity(struct backlight_device *bd)
+static int marubl_send_intensity(struct backlight_device *bd)
 {
 	int intensity = bd->props.brightness;
 
@@ -84,51 +84,51 @@ static int emulbl_send_intensity(struct backlight_device *bd)
 //	if (bd->props.state & GENERICBL_BATTLOW)
 //		intensity &= bl_machinfo->limit_mask;
 
-	writel(intensity, svb_device->svb_mmreg);
-	svb_device->brightness = intensity;
+	writel(intensity, marubl_device->marubl_mmreg);
+	marubl_device->brightness = intensity;
 
 	return 0;
 }
 
-static struct backlight_ops emulbl_ops = {
+static struct backlight_ops marubl_ops = {
 	.options = BL_CORE_SUSPENDRESUME,
-	.get_brightness = emulbl_get_intensity,
-	.update_status  = emulbl_send_intensity,
+	.get_brightness = marubl_get_intensity,
+	.update_status  = marubl_send_intensity,
 };
 
 /* pci probe function
 */
-static int __devinit svb_probe(struct pci_dev *pci_dev,
+static int __devinit marubl_probe(struct pci_dev *pci_dev,
 			const struct pci_device_id *ent)
 {
 	int ret;
 	struct backlight_device *bd;
 
-	svb_device = kmalloc(sizeof(struct svb), GFP_KERNEL);
-	if (svb_device == NULL) {
-		printk(KERN_ERR "svb: kmalloc() is failed.\n");
+	marubl_device = kmalloc(sizeof(struct marubl), GFP_KERNEL);
+	if (marubl_device == NULL) {
+		printk(KERN_ERR "marubl: kmalloc() is failed.\n");
 		return -1;
 	}
 
-	memset(svb_device, 0, sizeof(struct svb));
+	memset(marubl_device, 0, sizeof(struct marubl));
 
 	if ((ret = pci_enable_device(pci_dev)) < 0) {
-		printk(KERN_ERR "svb: pci_enable_device is failed.\n");
+		printk(KERN_ERR "marubl: pci_enable_device is failed.\n");
 		goto outnotdev;
 	}
 
 	ret = -EIO;
 
 	/* 1 : IORESOURCE_MEM */
-	if (!request_mem_region(svb_device->reg_start = pci_resource_start(pci_dev, 1),
-							svb_device->reg_size  = pci_resource_len(pci_dev, 1),
-							SVB_DRIVER_NAME)) {
+	if (!request_mem_region(marubl_device->reg_start = pci_resource_start(pci_dev, 1),
+							marubl_device->reg_size  = pci_resource_len(pci_dev, 1),
+							MARUBL_DRIVER_NAME)) {
 		goto outnotdev;
 	}
 
 	/* memory areas mapped kernel space */
-	svb_device->svb_mmreg = ioremap(svb_device->reg_start, svb_device->reg_size);
-	if (!svb_device->svb_mmreg) {
+	marubl_device->marubl_mmreg = ioremap(marubl_device->reg_start, marubl_device->reg_size);
+	if (!marubl_device->marubl_mmreg) {
 		goto outnotdev;
 	}
 
@@ -139,35 +139,35 @@ static int __devinit svb_probe(struct pci_dev *pci_dev,
 	/*
 	 * register backlight device
 	 */
-	bd = backlight_device_register ("emulator",	&pci_dev->dev, NULL, &emulbl_ops);
+	bd = backlight_device_register ("emulator",	&pci_dev->dev, NULL, &marubl_ops);
 	if (IS_ERR (bd)) {
 		ret = PTR_ERR (bd);
 		goto outnotdev;
 	}
 
-	bd->props.brightness = (unsigned int)readl(svb_device->svb_mmreg);;
+	bd->props.brightness = (unsigned int)readl(marubl_device->marubl_mmreg);;
 	bd->props.max_brightness = max_brightness;
 	bd->props.power = FB_BLANK_UNBLANK;
 	backlight_update_status(bd);
 
-	svb_device->bl_dev = bd;
+	marubl_device->bl_dev = bd;
 
-	printk(KERN_INFO "svb: Samsung Virtual Backlight driver.\n");
+	printk(KERN_INFO "marubl: MARU Virtual Backlight driver.\n");
 	return 0;
 
 outnotdev:
-	if (svb_device->svb_mmreg)
-		iounmap(svb_device->svb_mmreg);
-	kfree(svb_device);
+	if (marubl_device->marubl_mmreg)
+		iounmap(marubl_device->marubl_mmreg);
+	kfree(marubl_device);
 	return ret;
 }
 
-static void __devexit svb_exit(struct pci_dev *pcidev)
+static void __devexit marubl_exit(struct pci_dev *pcidev)
 {
 	/*
 	 * Unregister backlight device
 	 */
-	struct backlight_device *bd = svb_device->bl_dev;
+	struct backlight_device *bd = marubl_device->bl_dev;
 
 	bd->props.power = 0;
 	bd->props.brightness = 0;
@@ -178,41 +178,42 @@ static void __devexit svb_exit(struct pci_dev *pcidev)
 	/*
 	 * Unregister pci device & delete device
 	 */
-	iounmap(svb_device->svb_mmreg);
+	iounmap(marubl_device->marubl_mmreg);
 	pci_disable_device(pcidev);
-	kfree(svb_device);
+	kfree(marubl_device);
 }
 
 /*
  * register pci driver
  */
-static struct pci_driver svb_pci_driver = {
-	.name 	  = SVB_DRIVER_NAME,
-	.id_table = svb_pci_table,
-	.probe	  = svb_probe,
-	.remove   = __devexit_p(svb_exit),
+static struct pci_driver marubl_pci_driver = {
+	.name 	  = MARUBL_DRIVER_NAME,
+	.id_table = marubl_pci_table,
+	.probe	  = marubl_probe,
+	.remove   = __devexit_p(marubl_exit),
 #ifdef CONFIG_PM
-	//.suspend  = svb_suspend,
-	//.resume   = svb_resume,
+	//.suspend  = marubl_suspend,
+	//.resume   = marubl_resume,
 #endif
 };
 
-static int __init emulbl_init(void)
+static int __init marubl_module_init(void)
 {
-	return pci_register_driver(&svb_pci_driver);
+	return pci_register_driver(&marubl_pci_driver);
 }
 
-static void __exit emulbl_exit(void)
+static void __exit marubl_module_exit(void)
 {
-	pci_unregister_driver(&svb_pci_driver);
+	pci_unregister_driver(&marubl_pci_driver);
 }
 
 /*
  * if this is compiled into the kernel, we need to ensure that the
  * class is registered before users of the class try to register lcd's
  */
-module_init(emulbl_init);
-module_exit(emulbl_exit);
+module_init(marubl_module_init);
+module_exit(marubl_module_exit);
 
 MODULE_LICENSE("GPL2");
-MODULE_DESCRIPTION("Emulator Virtual Backlight Driver for x86");
+MODULE_AUTHOR("Dohyung Hong <don.hong@samsung.com>");
+MODULE_DESCRIPTION("MARU Virtual Backlight Driver for x86");
