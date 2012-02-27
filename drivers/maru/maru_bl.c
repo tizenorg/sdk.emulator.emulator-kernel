@@ -74,17 +74,25 @@ static int marubl_get_intensity(struct backlight_device *bd)
 static int marubl_send_intensity(struct backlight_device *bd)
 {
 	int intensity = bd->props.brightness;
+	unsigned int off = 0;
 
-	if (bd->props.power != FB_BLANK_UNBLANK)
+	if (bd->props.power != FB_BLANK_UNBLANK) {
 		intensity = 0;
-	if (bd->props.state & BL_CORE_FBBLANK)
+		off = 1;
+	}
+	if (bd->props.state & BL_CORE_FBBLANK) {
 		intensity = 0;
-	if (bd->props.state & BL_CORE_SUSPENDED)
+		off = 1;
+	}
+	if (bd->props.state & BL_CORE_SUSPENDED) {
 		intensity = 0;
+		off = 1;
+	}
 //	if (bd->props.state & GENERICBL_BATTLOW)
 //		intensity &= bl_machinfo->limit_mask;
 
 	writel(intensity, marubl_device->marubl_mmreg);
+	writel(off, marubl_device->marubl_mmreg + 0x04);
 	marubl_device->brightness = intensity;
 
 	return 0;
