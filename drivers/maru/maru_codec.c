@@ -75,8 +75,6 @@ enum svodec_param_offset {
 	CODEC_API_INDEX = 0,
 	CODEC_IN_PARAM,
 	CODEC_RETURN_VALUE,
-	CODEC_READY_TO_GET_DATA,
-	CODEC_GET_RESULT_DATA,
 };
 
 enum svcodec_param_apiindex {
@@ -110,9 +108,9 @@ typedef struct _svcodec_dev {
 	resource_size_t mem_size;
 
 	uint8_t *imgBuf;
-/*	struct semaphore sem;
-	int wake_up; */
 } svcodec_dev;
+
+static svcodec_dev *svcodec;
 
 static struct pci_device_id svcodec_pci_table[] __devinitdata = {
 	{
@@ -124,26 +122,10 @@ static struct pci_device_id svcodec_pci_table[] __devinitdata = {
 };
 MODULE_DEVICE_TABLE(pci, svcodec_pci_table);
 
-static svcodec_dev *svcodec;
-
-#if 0
-static void call_workqueue(void *data);
-DECLARE_WAIT_QUEUE_HEAD(waitqueue_read);
-DECLARE_WORK(work_queue, call_workqueue);
-#endif
-
 static int svcodec_open (struct inode *inode, struct file *file)
 {
 	printk(KERN_DEBUG "[%s]\n", __func__);
 	try_module_get(THIS_MODULE);
-
-	/* register interrupt handler */
-/*	if (request_irq(svcodec->dev->irq, svcodec_irq_handler, IRQF_SHARED,
-					DRIVER_NAME, svcodec)) {
-		printk(KERN_ERR "[%s] : request_irq failed\n", __func__);
-		return -EBUSY;
-	}
-	init_MUTEX(&svcodec->sem); */
 
 	return 0;
 }
@@ -231,11 +213,6 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		AVCodecContext *ctx;
 		ctx = (AVCodecContext*)paramInfo.in_args[0];
 		memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
-/*		writel((uint32_t)&ctx->frame_number, svcodec->ioaddr + CODEC_IN_PARAM);
-		writel((uint32_t)&ctx->pix_fmt, svcodec->ioaddr + CODEC_IN_PARAM);
-		writel((uint32_t)&ctx->coded_frame, svcodec->ioaddr + CODEC_IN_PARAM);
-		writel((uint32_t)&ctx->sample_aspect_ratio, svcodec->ioaddr + CODEC_IN_PARAM);
-		writel((uint32_t)&ctx->reordered_opaque, svcodec->ioaddr + CODEC_IN_PARAM); */
 	} else if (paramInfo.apiIndex == EMUL_AVCODEC_ENCODE_VIDEO) {
 		AVCodecContext *ctx;
 		uint32_t buf_size;
@@ -320,17 +297,6 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		parserctx->priv_data = tempParserCtx.priv_data;
 		parserctx->parser = tempParserCtx.parser;
 		restore_codec_context(ctx, &tempCtx);
-
-//		printk(KERN_INFO "before copy outbuf_size :%d\n", *outbuf_size);
-//		memcpy_fromio(outbuf_size, svcodec->memaddr, sizeof(int));
-/*		if (*outbuf_size > 0) {
-			outbuf = kmalloc(*outbuf_size, GFP_KERNEL);
-			memcpy_fromio(outbuf, (uint8_t*)svcodec->memaddr + 4, *outbuf_size);
-			if (copy_to_user((void*)(paramInfo.in_args[2]), outbuf, *outbuf_size)) {
-				printk(KERN_ERR "[%s]:Failed to copy_to_user\n", __func__);
-			}
-			kfree(outbuf);
-		} */
 	}
 
 	return 0;
@@ -350,7 +316,6 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 		printk(KERN_ERR "[%s]:Fail to get codec parameter info from user\n", __func__);
 	}
 
-	// api index	
 	writel((uint32_t)paramInfo.apiIndex, svcodec->ioaddr + CODEC_API_INDEX);
 
 	return 0;
@@ -398,10 +363,6 @@ static int svcodec_mmap (struct file *file, struct vm_area_struct *vm)
 
 static int svcodec_release (struct inode *inode, struct file *file)
 {
-/*	if (svcodec->dev->irq > 0) {
-		free_irq(svcodec->dev->irq, svcodec);
-	} */
-
 	printk(KERN_DEBUG "[%s]\n", __func__);
 	if (svcodec->imgBuf) {
 		kfree(svcodec->imgBuf);
@@ -411,32 +372,6 @@ static int svcodec_release (struct inode *inode, struct file *file)
 	module_put(THIS_MODULE);
 	return 0;
 }
-
-#if 0
-static void call_workqueue(void *data)
-{
-	SVCODEC_LOG("\n");
-}
-
-static irqreturn_t svcodec_irq_handler (int irq, void *dev_id)
-{
-	int ret = -1;
-	svcodec_dev *dev = (svcodec_dev*)dev_id;
-	
-	ret = ioread32(dev->ioaddr + CODEC_READY_TO_GET_DATA);
-	if (ret == 0) {
-		return IRQ_NONE;
-	}
-
-	SVCODEC_LOG("\n");
-	dev->wake_up = ret;
-	wake_up_interruptible(&waitqueue);
-	schedule_work(&work_queue);
-	iowrite32(0, dev->ioaddr + CODEC_GET_RESULT_DATA);
-	/* need more implementation */
-	return IRQ_HANDLED;
-}
-#endif
 
 struct file_operations svcodec_fops = {
 	.owner		= THIS_MODULE,
@@ -472,8 +407,6 @@ static void __devinit svcodec_remove (struct pci_dev *pci_dev)
 
 		kfree(svcodec);
 	}
-//	pci_release_regions(pci_dev);
-
 	pci_disable_device(pci_dev);
 }
 
@@ -533,8 +466,6 @@ static int __devinit svcodec_probe (struct pci_dev *pci_dev,
 		printk(KERN_ERR "[%s] : ioremap failed\n", __func__);
 		goto err_mem_unmap;
 	}
-//	pci_set_drvdata(pci_dev, svcodec);
-
 	if (register_chrdev(CODEC_MAJOR, DRIVER_NAME, &svcodec_fops)) {
 		printk(KERN_ERR "[%s] : register_chrdev failed\n", __func__);
 		goto err_io_unmap;
