@@ -191,6 +191,8 @@ static struct p9_req_t *p9_tag_alloc(struct p9_client *c, u16 tag)
 			req->wq = NULL;
 			return ERR_PTR(-ENOMEM);
 		}
+		memset(req->tc, 0, sizeof(struct p9_fcall));
+		memset(req->rc, 0, sizeof(struct p9_fcall));
 		req->tc->sdata = (char *) req->tc + sizeof(struct p9_fcall);
 		req->tc->capacity = c->msize;
 		req->rc->sdata = (char *) req->rc + sizeof(struct p9_fcall);
@@ -663,6 +665,7 @@ struct p9_client *p9_client_create(const char *dev_name, char *options)
 	if (!clnt)
 		return ERR_PTR(-ENOMEM);
 
+	memset(clnt, 0, sizeof(struct p9_client));
 	clnt->trans_mod = NULL;
 	clnt->trans = NULL;
 	spin_lock_init(&clnt->lock);
