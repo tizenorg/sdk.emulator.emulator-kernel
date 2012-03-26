@@ -1097,6 +1097,7 @@ config UV_MMTIMER
 
 source "drivers/char/tpm/Kconfig"
 
+
 config TELCLOCK
 	tristate "Telecom clock driver for ATCA SBC"
 	depends on EXPERIMENTAL && X86
@@ -1114,6 +1115,14 @@ config VDPRAM_DEVICE
         tristate "vdpram kernel driver for Telephony simulation"
 	---help---
 	  vdpram is telephony simulator works with the event injector.
+
+config VIRTIOGL
+       tristate "Virtio userspace memory transport"
+       depends on VIRTIO_PCI
+       default n
+       help
+         A Driver to facilitate transferring data from userspace to a
+         hypervisor (eg. qemu)
 
 config DEVPORT
 	bool
