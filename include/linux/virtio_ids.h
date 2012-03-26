@@ -12,6 +12,7 @@
 #define VIRTIO_ID_CONSOLE	3 /* virtio console */
 #define VIRTIO_ID_RNG		4 /* virtio ring */
 #define VIRTIO_ID_BALLOON	5 /* virtio balloon */
+#define VIRTIO_ID_GL            6 /* virtio usermem */
 #define VIRTIO_ID_9P		9 /* 9p virtio console */
 #define VIRTIO_ID_GPI		20 /* virtio general purpose interface */
 
