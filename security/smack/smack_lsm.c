@@ -5,12 +5,13 @@
  *
  *  Authors:
  *	Casey Schaufler <casey@schaufler-ca.com>
- *	Jarkko Sakkinen <ext-jarkko.2.sakkinen@nokia.com>
+ *	Jarkko Sakkinen <jarkko.sakkinen@intel.com>
  *
  *  Copyright (C) 2007 Casey Schaufler <casey@schaufler-ca.com>
  *  Copyright (C) 2009 Hewlett-Packard Development Company, L.P.
  *                Paul Moore <paul@paul-moore.com>
  *  Copyright (C) 2010 Nokia Corporation
+ *  Copyright (C) 2011 Intel Corporation.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License version 2,
@@ -34,6 +35,7 @@
 #include <linux/audit.h>
 #include <linux/magic.h>
 #include <linux/dcache.h>
+#include <linux/personality.h>
 #include "smack.h"
 
 #define task_security(task)	(task_cred_xxx((task), security))
@@ -441,11 +443,17 @@ static int smack_sb_umount(struct vfsmount *mnt, int flags)
  * BPRM hooks
  */
 
+/**
+ * smack_bprm_set_creds - set creds for exec
+ * @bprm: the exec information
+ *
+ * Returns 0 if it gets a blob, -ENOMEM otherwise
+ */
 static int smack_bprm_set_creds(struct linux_binprm *bprm)
 {
-	struct task_smack *tsp = bprm->cred->security;
+	struct inode *inode = bprm->file->f_path.dentry->d_inode;
+	struct task_smack *bsp = bprm->cred->security;
 	struct inode_smack *isp;
-	struct dentry *dp;
 	int rc;
 
 	rc = cap_bprm_set_creds(bprm);
@@ -455,20 +463,48 @@ static int smack_bprm_set_creds(struct linux_binprm *bprm)
 	if (bprm->cred_prepared)
 		return 0;
 
-	if (bprm->file == NULL || bprm->file->f_dentry == NULL)
+	isp = inode->i_security;
+	if (isp->smk_task == NULL || isp->smk_task == bsp->smk_task)
 		return 0;
 
-	dp = bprm->file->f_dentry;
+	if (bprm->unsafe)
+		return -EPERM;
 
-	if (dp->d_inode == NULL)
-		return 0;
-
-	isp = dp->d_inode->i_security;
-
-	if (isp->smk_task != NULL)
-		tsp->smk_task = isp->smk_task;
+	bsp->smk_task = isp->smk_task;
+	bprm->per_clear |= PER_CLEAR_ON_SETID;
 
 	return 0;
+}
+
+/**
+ * smack_bprm_committing_creds - Prepare to install the new credentials
+ * from bprm.
+ *
+ * @bprm: binprm for exec
+ */
+static void smack_bprm_committing_creds(struct linux_binprm *bprm)
+{
+	struct task_smack *bsp = bprm->cred->security;
+
+	if (bsp->smk_task != bsp->smk_forked)
+		current->pdeath_signal = 0;
+}
+
+/**
+ * smack_bprm_secureexec - Return the decision to use secureexec.
+ * @bprm: binprm for exec
+ *
+ * Returns 0 on success.
+ */
+static int smack_bprm_secureexec(struct linux_binprm *bprm)
+{
+	struct task_smack *tsp = current_security();
+	int ret = cap_bprm_secureexec(bprm);
+
+	if (!ret && (tsp->smk_task != tsp->smk_forked))
+		ret = 1;
+
+	return ret;
 }
 
 /*
@@ -517,6 +553,7 @@ static int smack_inode_init_security(struct inode *inode, struct inode *dir,
 
 {
 	struct smack_known *skp;
+	struct inode_smack *issp = inode->i_security;
 	char *csp = smk_of_current();
 	char *isp = smk_of_inode(inode);
 	char *dsp = smk_of_inode(dir);
@@ -538,10 +575,13 @@ static int smack_inode_init_security(struct inode *inode, struct inode *dir,
 		 * If the access rule allows transmutation and
 		 * the directory requests transmutation then
 		 * by all means transmute.
+		 * Mark the inode as changed.
 		 */
 		if (may > 0 && ((may & MAY_TRANSMUTE) != 0) &&
-		    smk_inode_transmutable(dir))
-			isp = dsp;
+		    smk_inode_transmutable(dir)) {
+				isp = dsp;
+				issp->smk_flags |= SMK_INODE_CHANGED;
+		}
 
 		*value = kstrdup(isp, GFP_KERNEL);
 		if (*value == NULL)
@@ -687,6 +727,7 @@ static int smack_inode_rename(struct inode *old_inode,
  * smack_inode_permission - Smack version of permission()
  * @inode: the inode in question
  * @mask: the access requested
+ * @flags: special case
  *
  * This is the important Smack hook.
  *
@@ -702,6 +743,10 @@ static int smack_inode_permission(struct inode *inode, int mask)
 	 */
 	if (mask == 0)
 		return 0;
+
+ 	/* May be droppable after audit
+ 	if (flags & IPERM_FLAG_RCU)
+ 		return -ECHILD;*/
 
 	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_FS);
 	smk_ad_setfield_u_fs_inode(&ad, inode);
@@ -857,7 +902,7 @@ static int smack_inode_getxattr(struct dentry *dentry, const char *name)
 	return smk_curacc(smk_of_inode(dentry->d_inode), MAY_READ, &ad);
 }
 
-/*
+/**
  * smack_inode_removexattr - Smack check on removexattr
  * @dentry: the object
  * @name: name of the attribute
@@ -2508,6 +2553,7 @@ static void smack_d_instantiate(struct dentry *opt_dentry, struct inode *inode)
 	char *final;
 	char trattr[TRANS_TRUE_SIZE];
 	int transflag = 0;
+	int rc;
 	struct dentry *dp;
 
 	if (inode == NULL)
@@ -2626,15 +2672,36 @@ static void smack_d_instantiate(struct dentry *opt_dentry, struct inode *inode)
 		 */
 		dp = dget(opt_dentry);
 		fetched = smk_fetch(XATTR_NAME_SMACK, inode, dp);
-		if (fetched != NULL) {
+		if (fetched != NULL)
 			final = fetched;
-			if (S_ISDIR(inode->i_mode)) {
-				trattr[0] = '\0';
-				inode->i_op->getxattr(dp,
+
+		/*
+		 * Transmuting directory
+		 */
+		if (S_ISDIR(inode->i_mode)) {
+			/*
+			 * If there is a transmute attribute on the
+			 * directory mark the inode.
+			 */
+			rc = inode->i_op->getxattr(dp,
+				XATTR_NAME_SMACKTRANSMUTE, trattr,
+				TRANS_TRUE_SIZE);
+			if (rc >= 0 &&
+			    strncmp(trattr, TRANS_TRUE, TRANS_TRUE_SIZE) == 0)
+				transflag = SMK_INODE_TRANSMUTE;
+			/*
+			 * If this is a new directory and the label was
+			 * transmuted when the inode was initialized
+			 * set the transmute attribute on the directory
+			 * and mark the inode.
+			 */
+			if (isp->smk_flags & SMK_INODE_CHANGED) {
+				isp->smk_flags &= ~SMK_INODE_CHANGED;
+				rc = inode->i_op->setxattr(dp,
 					XATTR_NAME_SMACKTRANSMUTE,
-					trattr, TRANS_TRUE_SIZE);
-				if (strncmp(trattr, TRANS_TRUE,
-					    TRANS_TRUE_SIZE) == 0)
+					TRANS_TRUE, TRANS_TRUE_SIZE,
+					0);
+				if (rc >= 0)
 					transflag = SMK_INODE_TRANSMUTE;
 			}
 		}
@@ -3449,6 +3516,8 @@ struct security_operations smack_ops = {
 	.sb_umount = 			smack_sb_umount,
 
 	.bprm_set_creds =		smack_bprm_set_creds,
+	.bprm_committing_creds =	smack_bprm_committing_creds,
+	.bprm_secureexec =		smack_bprm_secureexec,
 
 	.inode_alloc_security = 	smack_inode_alloc_security,
 	.inode_free_security = 		smack_inode_free_security,

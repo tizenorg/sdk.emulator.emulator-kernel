@@ -66,6 +66,7 @@ struct task_smack {
 
 #define	SMK_INODE_INSTANT	0x01	/* inode is instantiated */
 #define	SMK_INODE_TRANSMUTE	0x02	/* directory is transmuting */
+#define	SMK_INODE_CHANGED	0x04	/* smack was transmuted */
 
 /*
  * A label access rule.
@@ -139,19 +140,6 @@ struct smack_known {
 #define SMK_FSHAT	"smackfshat="
 #define SMK_FSROOT	"smackfsroot="
 
-#define	XATTR_SMACK_SUFFIX	"SMACK64"
-#define	XATTR_SMACK_IPIN	"SMACK64IPIN"
-#define	XATTR_SMACK_IPOUT	"SMACK64IPOUT"
-#define	XATTR_SMACK_EXEC	"SMACK64EXEC"
-#define	XATTR_SMACK_TRANSMUTE	"SMACK64TRANSMUTE"
-#define	XATTR_SMACK_MMAP	"SMACK64MMAP"
-#define	XATTR_NAME_SMACK	XATTR_SECURITY_PREFIX	XATTR_SMACK_SUFFIX
-#define	XATTR_NAME_SMACKIPIN	XATTR_SECURITY_PREFIX	XATTR_SMACK_IPIN
-#define	XATTR_NAME_SMACKIPOUT	XATTR_SECURITY_PREFIX	XATTR_SMACK_IPOUT
-#define	XATTR_NAME_SMACKEXEC	XATTR_SECURITY_PREFIX	XATTR_SMACK_EXEC
-#define	XATTR_NAME_SMACKTRANSMUTE XATTR_SECURITY_PREFIX	XATTR_SMACK_TRANSMUTE
-#define	XATTR_NAME_SMACKMMAP	XATTR_SECURITY_PREFIX	XATTR_SMACK_MMAP
-
 #define SMACK_CIPSO_OPTION 	"-CIPSO"
 
 /*
@@ -169,7 +157,6 @@ struct smack_known {
 
 /*
  * smackfs magic number
- * smackfs macic number
  */
 #define SMACK_MAGIC	0x43415d53 /* "SMAC" */
 
@@ -195,9 +182,9 @@ struct smack_known {
 #define MAY_NOT		0
 
 /*
- * Number of access types used by Smack (rwxa)
+ * Number of access types used by Smack (rwxat)
  */
-#define SMK_NUM_ACCESS_TYPE 4
+#define SMK_NUM_ACCESS_TYPE 5
 
 /*
  * Smack audit data; is empty if CONFIG_AUDIT not set
@@ -222,6 +209,7 @@ int smk_curacc(char *, u32, struct smk_audit_info *);
 int smack_to_cipso(const char *, struct smack_cipso *);
 char *smack_from_cipso(u32, char *);
 char *smack_from_secid(const u32);
+void smk_parse_smack(const char *string, int len, char *smack);
 char *smk_import(const char *, int);
 struct smack_known *smk_import_entry(const char *, int);
 struct smack_known *smk_find_entry(const char *);
