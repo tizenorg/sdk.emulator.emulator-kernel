@@ -194,19 +194,37 @@ static int smk_set_access(struct smack_rule *srp, struct list_head *rule_list,
 }
 
 /**
- * smk_parse_rule - parse subject, object and access type
+ * smk_parse_rule - parse Smack rule from load string
  * @data: string to be parsed whose size is SMK_LOADLEN
- * @rule: parsed entities are stored in here
+ * @rule: Smack rule
+ * @import: if non-zero, import labels
  */
-static int smk_parse_rule(const char *data, struct smack_rule *rule)
+static int smk_parse_rule(const char *data, struct smack_rule *rule, int import)
 {
-	rule->smk_subject = smk_import(data, 0);
-	if (rule->smk_subject == NULL)
-		return -1;
+	char smack[SMK_LABELLEN];
+	struct smack_known *skp;
 
-	rule->smk_object = smk_import(data + SMK_LABELLEN, 0);
-	if (rule->smk_object == NULL)
-		return -1;
+	if (import) {
+		rule->smk_subject = smk_import(data, 0);
+		if (rule->smk_subject == NULL)
+			return -1;
+
+		rule->smk_object = smk_import(data + SMK_LABELLEN, 0);
+		if (rule->smk_object == NULL)
+			return -1;
+	} else {
+		smk_parse_smack(data, 0, smack);
+		skp = smk_find_entry(smack);
+		if (skp == NULL)
+			return -1;
+		rule->smk_subject = skp->smk_known;
+
+		smk_parse_smack(data + SMK_LABELLEN, 0, smack);
+		skp = smk_find_entry(smack);
+		if (skp == NULL)
+			return -1;
+		rule->smk_object = skp->smk_known;
+	}
 
 	rule->smk_access = 0;
 
@@ -330,7 +348,7 @@ static ssize_t smk_write_load_list(struct file *file, const char __user *buf,
 		goto out;
 	}
 
-	if (smk_parse_rule(data, rule))
+	if (smk_parse_rule(data, rule, 1))
 		goto out_free_rule;
 
 	if (rule_list == NULL) {
@@ -342,10 +360,12 @@ static ssize_t smk_write_load_list(struct file *file, const char __user *buf,
 
 	rc = count;
 	/*
+	 * If this is "load" as opposed to "load-self" and a new rule
+	 * it needs to get added for reporting.
 	 * smk_set_access returns true if there was already a rule
 	 * for the subject/object pair, and false if it was new.
 	 */
-	if (!smk_set_access(rule, rule_list, rule_lock)) {
+	if (load && !smk_set_access(rule, rule_list, rule_lock)) {
 		smlp = kzalloc(sizeof(*smlp), GFP_KERNEL);
 		if (smlp != NULL) {
 			smlp->smk_rule = rule;
@@ -364,10 +384,11 @@ out:
 
 
 /*
- * Seq_file read operations for /smack/load
+ * Core logic for smackfs seq list operations.
  */
 
-static void *load_seq_start(struct seq_file *s, loff_t *pos)
+static void *smk_seq_start(struct seq_file *s, loff_t *pos,
+				struct list_head *head)
 {
 	struct list_head *list;
 
@@ -375,7 +396,7 @@ static void *load_seq_start(struct seq_file *s, loff_t *pos)
 	 * This is 0 the first time through.
 	 */
 	if (s->index == 0)
-		s->private = &smack_rule_list;
+		s->private = head;
 
 	if (s->private == NULL)
 		return NULL;
@@ -389,16 +410,36 @@ static void *load_seq_start(struct seq_file *s, loff_t *pos)
 	return list;
 }
 
-static void *load_seq_next(struct seq_file *s, void *v, loff_t *pos)
+static void *smk_seq_next(struct seq_file *s, void *v, loff_t *pos,
+				struct list_head *head)
 {
 	struct list_head *list = v;
 
-	if (list_is_last(list, &smack_rule_list)) {
+	if (list_is_last(list, head)) {
 		s->private = NULL;
 		return NULL;
 	}
 	s->private = list->next;
 	return list->next;
+}
+
+static void smk_seq_stop(struct seq_file *s, void *v)
+{
+	/* No-op */
+}
+
+/*
+ * Seq_file read operations for /smack/load
+ */
+
+static void *load_seq_start(struct seq_file *s, loff_t *pos)
+{
+	return smk_seq_start(s, pos, &smack_rule_list);
+}
+
+static void *load_seq_next(struct seq_file *s, void *v, loff_t *pos)
+{
+	return smk_seq_next(s, v, pos, &smack_rule_list);
 }
 
 static int load_seq_show(struct seq_file *s, void *v)
@@ -431,16 +472,11 @@ static int load_seq_show(struct seq_file *s, void *v)
 	return 0;
 }
 
-static void load_seq_stop(struct seq_file *s, void *v)
-{
-	/* No-op */
-}
-
 static const struct seq_operations load_seq_ops = {
 	.start = load_seq_start,
 	.next  = load_seq_next,
 	.show  = load_seq_show,
-	.stop  = load_seq_stop,
+	.stop  = smk_seq_stop,
 };
 
 /**
@@ -475,10 +511,6 @@ static ssize_t smk_write_load(struct file *file, const char __user *buf,
 	if (!capable(CAP_MAC_ADMIN))
 		return -EPERM;
 
-/*
-	return smk_write_load_list(file, buf, count, ppos, &smack_rule_list,
-					&smack_list_lock);
-*/
 	return smk_write_load_list(file, buf, count, ppos, NULL, NULL);
 }
 
@@ -563,28 +595,12 @@ static void smk_unlbl_ambient(char *oldambient)
 
 static void *cipso_seq_start(struct seq_file *s, loff_t *pos)
 {
-	if (*pos == SEQ_READ_FINISHED)
-		return NULL;
-	if (list_empty(&smack_known_list))
-		return NULL;
-
-	return smack_known_list.next;
+	return smk_seq_start(s, pos, &smack_known_list);
 }
 
 static void *cipso_seq_next(struct seq_file *s, void *v, loff_t *pos)
 {
-	struct list_head  *list = v;
-
-	/*
-	 * labels with no associated cipso value wont be printed
-	 * in cipso_seq_show
-	 */
-	if (list_is_last(list, &smack_known_list)) {
-		*pos = SEQ_READ_FINISHED;
-		return NULL;
-	}
-
-	return list->next;
+	return smk_seq_next(s, v, pos, &smack_known_list);
 }
 
 /*
@@ -623,16 +639,11 @@ static int cipso_seq_show(struct seq_file *s, void *v)
 	return 0;
 }
 
-static void cipso_seq_stop(struct seq_file *s, void *v)
-{
-	/* No-op */
-}
-
 static const struct seq_operations cipso_seq_ops = {
 	.start = cipso_seq_start,
-	.stop  = cipso_seq_stop,
 	.next  = cipso_seq_next,
 	.show  = cipso_seq_show,
+	.stop  = smk_seq_stop,
 };
 
 /**
@@ -777,23 +788,12 @@ static const struct file_operations smk_cipso_ops = {
 
 static void *netlbladdr_seq_start(struct seq_file *s, loff_t *pos)
 {
-	if (*pos == SEQ_READ_FINISHED)
-		return NULL;
-	if (list_empty(&smk_netlbladdr_list))
-		return NULL;
-	return smk_netlbladdr_list.next;
+	return smk_seq_start(s, pos, &smk_netlbladdr_list);
 }
 
 static void *netlbladdr_seq_next(struct seq_file *s, void *v, loff_t *pos)
 {
-	struct list_head *list = v;
-
-	if (list_is_last(list, &smk_netlbladdr_list)) {
-		*pos = SEQ_READ_FINISHED;
-		return NULL;
-	}
-
-	return list->next;
+	return smk_seq_next(s, v, pos, &smk_netlbladdr_list);
 }
 #define BEBITS	(sizeof(__be32) * 8)
 
@@ -817,16 +817,11 @@ static int netlbladdr_seq_show(struct seq_file *s, void *v)
 	return 0;
 }
 
-static void netlbladdr_seq_stop(struct seq_file *s, void *v)
-{
-	/* No-op */
-}
-
 static const struct seq_operations netlbladdr_seq_ops = {
 	.start = netlbladdr_seq_start,
-	.stop  = netlbladdr_seq_stop,
 	.next  = netlbladdr_seq_next,
 	.show  = netlbladdr_seq_show,
+	.stop  = smk_seq_stop,
 };
 
 /**
@@ -1394,23 +1389,14 @@ static void *load_self_seq_start(struct seq_file *s, loff_t *pos)
 {
 	struct task_smack *tsp = current_security();
 
-	if (*pos == SEQ_READ_FINISHED)
-		return NULL;
-	if (list_empty(&tsp->smk_rules))
-		return NULL;
-	return tsp->smk_rules.next;
+	return smk_seq_start(s, pos, &tsp->smk_rules);
 }
 
 static void *load_self_seq_next(struct seq_file *s, void *v, loff_t *pos)
 {
 	struct task_smack *tsp = current_security();
-	struct list_head *list = v;
 
-	if (list_is_last(list, &tsp->smk_rules)) {
-		*pos = SEQ_READ_FINISHED;
-		return NULL;
-	}
-	return list->next;
+	return smk_seq_next(s, v, pos, &tsp->smk_rules);
 }
 
 static int load_self_seq_show(struct seq_file *s, void *v)
@@ -1442,16 +1428,12 @@ static int load_self_seq_show(struct seq_file *s, void *v)
 	return 0;
 }
 
-static void load_self_seq_stop(struct seq_file *s, void *v)
-{
-	/* No-op */
-}
 
 static const struct seq_operations load_self_seq_ops = {
 	.start = load_self_seq_start,
 	.next  = load_self_seq_next,
 	.show  = load_self_seq_show,
-	.stop  = load_self_seq_stop,
+	.stop  = smk_seq_stop,
 };
 
 
@@ -1504,6 +1486,7 @@ static ssize_t smk_write_access(struct file *file, const char __user *buf,
 {
 	struct smack_rule rule;
 	char *data;
+	int res;
 
 	if (!capable(CAP_MAC_ADMIN))
 		return -EPERM;
@@ -1512,13 +1495,15 @@ static ssize_t smk_write_access(struct file *file, const char __user *buf,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	if (count < SMK_LOADLEN || smk_parse_rule(data, &rule))
+	if (count < SMK_LOADLEN || smk_parse_rule(data, &rule, 0))
 		return -EINVAL;
 
-	data[0] = smk_access(rule.smk_subject, rule.smk_object,
-			     rule.smk_access, NULL) == 0;
+	res = smk_access(rule.smk_subject, rule.smk_object, rule.smk_access,
+			  NULL);
+	data[0] = res == 0 ? '1' : '0';
+	data[1] = '\0';
 
-	simple_transaction_set(file, 1);
+	simple_transaction_set(file, 2);
 	return SMK_LOADLEN;
 }
 
@@ -1564,7 +1549,7 @@ static int smk_fill_super(struct super_block *sb, void *data, int silent)
 		[SMK_LOAD_SELF] = {
 			"load-self", &smk_load_self_ops, S_IRUGO|S_IWUGO},
 		[SMK_ACCESSES] = {
-			"access", &smk_access_ops, S_IRUGO|S_IWUSR},
+			"access", &smk_access_ops, S_IRUGO|S_IWUGO},
 		/* last one */
 			{""}
 	};
