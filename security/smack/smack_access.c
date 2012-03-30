@@ -353,13 +353,17 @@ struct smack_known *smk_find_entry(const char *string)
 }
 
 /**
- * smk_parse_smack - parse smack label from a text string
- * @string: a text string that might contain a Smack label
+ * smk_import_entry - import a label, return the list entry
+ * @string: a text string that might be a Smack label
  * @len: the maximum size, or zero if it is NULL terminated.
- * @smack: parsed smack label, or NULL if parse error
+ *
+ * Returns a pointer to the entry in the label list that
+ * matches the passed string, adding it if necessary.
  */
-void smk_parse_smack(const char *string, int len, char *smack)
+struct smack_known *smk_import_entry(const char *string, int len)
 {
+	struct smack_known *skp;
+	char smack[SMK_LABELLEN];
 	int found;
 	int i;
 
@@ -377,22 +381,7 @@ void smk_parse_smack(const char *string, int len, char *smack)
 		} else
 			smack[i] = string[i];
 	}
-}
 
-/**
- * smk_import_entry - import a label, return the list entry
- * @string: a text string that might be a Smack label
- * @len: the maximum size, or zero if it is NULL terminated.
- *
- * Returns a pointer to the entry in the label list that
- * matches the passed string, adding it if necessary.
- */
-struct smack_known *smk_import_entry(const char *string, int len)
-{
-	struct smack_known *skp;
-	char smack[SMK_LABELLEN];
-
-	smk_parse_smack(string, len, smack);
 	if (smack[0] == '\0')
 		return NULL;
 
