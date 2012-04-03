@@ -201,7 +201,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
     int i;
 
 	mutex_lock(&codec_mutex);
-  
+
     if (!svcodec) {
         printk(KERN_ERR "[%s]:Fail to get codec device info\n", __func__);
     }
@@ -374,7 +374,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
             printk(KERN_DEBUG "available useMmap count:%d\n",
                    (USABLE_MMAP_MAX_SIZE - svcodec->useMmap[USABLE_MMAP_MAX_SIZE]));
         }
-    
+
         printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
 
         if (copy_to_user((void*)mmapIndex, &i, sizeof(int))) {
@@ -390,7 +390,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
         (svcodec->useMmap[USABLE_MMAP_MAX_SIZE])--;
         printk(KERN_DEBUG "useMmap[%d] is available from now\n", index);
         printk(KERN_DEBUG "Available useMmap count:%d\n", svcodec->useMmap[USABLE_MMAP_MAX_SIZE]);
-#ifdef CODEC_DEBUG 
+#ifdef CODEC_DEBUG
         for (i = 0; i < USABLE_MMAP_MAX_SIZE; i++) {
             printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
         }
@@ -415,7 +415,6 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 static ssize_t svcodec_read (struct file *file, char __user *buf,
                                 size_t count, loff_t *fops)
 {
-    SVCODEC_LOG("\n");
     if (!svcodec) {
         printk(KERN_ERR "[%s] : Fail to get codec device info\n", __func__);
     }
@@ -558,7 +557,7 @@ static int __devinit svcodec_probe (struct pci_dev *pci_dev,
     svcodec->ioaddr = ioremap_nocache(svcodec->io_start, svcodec->io_size);
     if (!svcodec->ioaddr) {
         printk(KERN_ERR "[%s] : ioremap failed\n", __func__);
-		goto err_io_io_region;
+		goto err_io_region;
     }
     if (register_chrdev(CODEC_MAJOR, DRIVER_NAME, &svcodec_fops)) {
         printk(KERN_ERR "[%s] : register_chrdev failed\n", __func__);
