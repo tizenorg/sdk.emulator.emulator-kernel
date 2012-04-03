@@ -54,17 +54,14 @@ MODULE_DESCRIPTION("Virtual Codec Device Driver");
 MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_LICENSE("GPL2");
 
-// #define CODEC_DEBUG
-// #define CODEC_HOST
-
 #ifdef CODEC_DEBUG
-#define SVCODEC_LOG(fmt, ...) \
+#define MARU_CODEC_LOG(fmt, ...) \
     printk(KERN_INFO "[%s][%s][%d]" fmt, DRIVER_NAME, __func__, __LINE__, ##__VA_ARGS__)
 #else
-#define SVCODEC_LOG(fmt, ...) ((void)0)
+#define MARU_CODEC_LOG(fmt, ...) ((void)0)
 #endif
 
-#define USEABLE_MMAP_MAX_SIZE 4
+#define USABLE_MMAP_MAX_SIZE 4
 
 struct _param {
     uint32_t apiIndex;
@@ -119,10 +116,11 @@ typedef struct _svcodec_dev {
     resource_size_t mem_size;
 
     uint8_t *imgBuf;
-    uint8_t useMmap[USEABLE_MMAP_MAX_SIZE + 1];
+    uint8_t useMmap[USABLE_MMAP_MAX_SIZE + 1];
 } svcodec_dev;
 
 static svcodec_dev *svcodec;
+DEFINE_MUTEX(codec_mutex);
 
 static struct pci_device_id svcodec_pci_table[] __devinitdata = {
     {
@@ -192,6 +190,7 @@ void restore_codec_context(AVCodecContext *dstctx,
 }
 #endif
 
+/* Another way to copy data between guest and host. */
 #ifdef CODEC_HOST
 static ssize_t svcodec_write (struct file *file, const char __user *buf,
                               size_t count, loff_t *fops)
@@ -200,7 +199,9 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
     AVCodecParserContext tempParserCtx;
     AVCodecContext tempCtx;
     int i;
-    
+
+	mutex_lock(&codec_mutex);
+
     if (!svcodec) {
         printk(KERN_ERR "[%s]:Fail to get codec device info\n", __func__);
     }
@@ -216,6 +217,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
     /* guest to host */
     if (paramInfo.apiIndex == EMUL_AVCODEC_OPEN) {
         AVCodecContext *ctx;
+
         ctx = (AVCodecContext*)paramInfo.inArgs[0];
         if (ctx) {
             memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
@@ -223,11 +225,13 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
         }
     } else if (paramInfo.apiIndex == EMUL_AVCODEC_DECODE_VIDEO) {
         AVCodecContext *ctx;
+
         ctx = (AVCodecContext*)paramInfo.inArgs[0];
         memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
     } else if (paramInfo.apiIndex == EMUL_AVCODEC_ENCODE_VIDEO) {
         AVCodecContext *ctx;
         uint32_t buf_size;
+
         ctx = (AVCodecContext*)paramInfo.inArgs[0];
         buf_size = *(uint32_t*)paramInfo.inArgs[2];
         writel((uint32_t)ctx->coded_frame, svcodec->ioaddr + CODEC_IN_PARAM);
@@ -237,6 +241,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
         int pix_fmt;
         int width, height;
         int size;
+
         pix_fmt = *(int*)paramInfo.inArgs[1];
         width = *(int*)paramInfo.inArgs[2];
         height = *(int*)paramInfo.inArgs[3];
@@ -246,20 +251,22 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
     } else if (paramInfo.apiIndex == EMUL_AV_PARSER_PARSE) {
         AVCodecParserContext *parserctx;
         AVCodecContext *ctx;
+
         parserctx = (AVCodecParserContext*)paramInfo.inArgs[0];
         ctx = (AVCodecContext*)paramInfo.inArgs[1];
         memcpy(&tempParserCtx, parserctx, sizeof(AVCodecParserContext));
         memcpy(&tempCtx, ctx, sizeof(AVCodecContext));
     } 
 
-    // return value
-    if (paramInfo.ret != 0)
+    /* return value */
+    if (paramInfo.ret != 0) {
         writel((uint32_t)paramInfo.ret, svcodec->ioaddr + CODEC_RETURN_VALUE);
+	}
 
-    // context index
+    /* context index */
     writel((uint32_t)paramInfo.ctxIndex, svcodec->ioaddr + CODEC_CONTEXT_INDEX);
 
-    // api index    
+    /* api index */
     writel((uint32_t)paramInfo.apiIndex, svcodec->ioaddr + CODEC_API_INDEX);
     
     /* host to guest */
@@ -314,14 +321,16 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
         restore_codec_context(ctx, &tempCtx);
     }
 
+	mutex_unlock(&codec_mutex);
+
     return 0;
 }
 
 #else
-DEFINE_MUTEX(codec_mutex);
+/* Copy data between guest and host using mmap operation. */
  
 static ssize_t svcodec_write (struct file *file, const char __user *buf,
-                                size_t count, loff_t *fops)
+                              size_t count, loff_t *fops)
 {
     struct _param paramInfo;
 
@@ -337,10 +346,10 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 
     if (paramInfo.apiIndex == EMUL_INIT_MMAP_INDEX) {
         int i;
-        if (svcodec->useMmap[4] == 0) {
-            for (i = 0; i < USEABLE_MMAP_MAX_SIZE; i++) {
+        if (svcodec->useMmap[USABLE_MMAP_MAX_SIZE] == 0) {
+            for (i = 0; i < USABLE_MMAP_MAX_SIZE; i++) {
                 svcodec->useMmap[i] = 1;
-                printk(KERN_DEBUG "reset useMmap!! useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
+                printk(KERN_DEBUG "Reset useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
             }
         }
     } else if (paramInfo.apiIndex == EMUL_GET_MMAP_INDEX) {
@@ -349,23 +358,24 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 
         mmapIndex = (int*)paramInfo.ret;
 
-        for (i = 0; i < USEABLE_MMAP_MAX_SIZE; i++) {
-            printk(KERN_DEBUG "[1] mmap:%d, index:%d\n", svcodec->useMmap[i], i);
+        for (i = 0; i < USABLE_MMAP_MAX_SIZE; i++) {
+            printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
             if (svcodec->useMmap[i] == 1) {
                 break;
             }
         }
 
-        if (i == 4) {
+        if (i == USABLE_MMAP_MAX_SIZE) {
             i = -1;
         } else {
             svcodec->useMmap[i] = 0;
-            (svcodec->useMmap[USEABLE_MMAP_MAX_SIZE])++;
+            (svcodec->useMmap[USABLE_MMAP_MAX_SIZE])++;
+
             printk(KERN_DEBUG "available useMmap count:%d\n",
-                   (USEABLE_MMAP_MAX_SIZE - svcodec->useMmap[USEABLE_MMAP_MAX_SIZE]));
+                   (USABLE_MMAP_MAX_SIZE - svcodec->useMmap[USABLE_MMAP_MAX_SIZE]));
         }
-    
-        printk(KERN_DEBUG "[2] mmap:%d, index:%d\n", svcodec->useMmap[i], i);
+
+        printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
 
         if (copy_to_user((void*)mmapIndex, &i, sizeof(int))) {
             printk(KERN_ERR "[%s]:Fail to copy_to_user\n", __func__);
@@ -377,12 +387,14 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
         int index, i;
         index = paramInfo.mmapOffset;
         svcodec->useMmap[index] = 1;
-        (svcodec->useMmap[USEABLE_MMAP_MAX_SIZE])--;
-        printk(KERN_DEBUG "useMmap[%d] is available\n", index);
-        printk(KERN_DEBUG "available useMmap count:%d\n", svcodec->useMmap[USEABLE_MMAP_MAX_SIZE]);
-        for (i = 0; i < USEABLE_MMAP_MAX_SIZE; i++) {
-            printk(KERN_DEBUG "[2] mmap:%d, index:%d\n", svcodec->useMmap[i], i);
+        (svcodec->useMmap[USABLE_MMAP_MAX_SIZE])--;
+        printk(KERN_DEBUG "useMmap[%d] is available from now\n", index);
+        printk(KERN_DEBUG "Available useMmap count:%d\n", svcodec->useMmap[USABLE_MMAP_MAX_SIZE]);
+#ifdef CODEC_DEBUG
+        for (i = 0; i < USABLE_MMAP_MAX_SIZE; i++) {
+            printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
         }
+#endif
         mutex_unlock(&codec_mutex);
 
         return 0;
@@ -403,7 +415,6 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 static ssize_t svcodec_read (struct file *file, char __user *buf,
                                 size_t count, loff_t *fops)
 {
-    SVCODEC_LOG("\n");
     if (!svcodec) {
         printk(KERN_ERR "[%s] : Fail to get codec device info\n", __func__);
     }
@@ -535,16 +546,18 @@ static int __devinit svcodec_probe (struct pci_dev *pci_dev,
         goto err_mem_region;
     }
 
-/*  svcodec->memaddr = ioremap(svcodec->mem_start, svcodec->mem_size);
+#if 0
+	svcodec->memaddr = ioremap(svcodec->mem_start, svcodec->mem_size);
     if (!svcodec->memaddr) {
         printk(KERN_ERR "[%s] : ioremap failed\n", __func__);
         goto err_io_region;
-    } */
+    }
+#endif
 
     svcodec->ioaddr = ioremap_nocache(svcodec->io_start, svcodec->io_size);
     if (!svcodec->ioaddr) {
         printk(KERN_ERR "[%s] : ioremap failed\n", __func__);
-//      goto err_mem_unmap;
+		goto err_io_region;
     }
     if (register_chrdev(CODEC_MAJOR, DRIVER_NAME, &svcodec_fops)) {
         printk(KERN_ERR "[%s] : register_chrdev failed\n", __func__);
@@ -555,8 +568,10 @@ static int __devinit svcodec_probe (struct pci_dev *pci_dev,
 
 err_io_unmap:
     iounmap(svcodec->ioaddr);
-//err_mem_unmap:
-//  iounmap(svcodec->memaddr);
+#if 0
+err_mem_unmap:
+	iounmap(svcodec->memaddr);
+#endif
 err_io_region:
     release_mem_region(svcodec->io_start, svcodec->io_size);
 err_mem_region:
