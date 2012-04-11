@@ -1352,6 +1352,36 @@ struct platform_device s5p_device_mixer = {
 };
 #endif /* CONFIG_S5P_DEV_TV */
 
+#ifdef CONFIG_VIRTIO_MMIO
+#ifdef CONFIG_VIRTIO_BLK
+static struct resource s5p_virtio_mmio_blk_resources[] = {
+	[0] = DEFINE_RES_MEM(0x10AD0000, SZ_4K),
+	[1] = DEFINE_RES_IRQ(IRQ_EINT(7)),
+};
+
+struct platform_device s5p_virtio_mmio_blk_device = {
+	.name		= "virtio-mmio",
+	.id		= 0,
+	.resource	= s5p_virtio_mmio_blk_resources,
+	.num_resources	= ARRAY_SIZE(s5p_virtio_mmio_blk_resources),
+};
+#endif /* CONFIG_VIRTIO_BLK */
+
+#ifdef CONFIG_VIRTIO_NET
+static struct resource s5p_virtio_mmio_net_resources[] = {
+	[0] = DEFINE_RES_MEM(0x10AC0000, SZ_4K),
+	[1] = DEFINE_RES_IRQ(IRQ_EINT(6)),
+};
+
+struct platform_device s5p_virtio_mmio_net_device = {
+	.name		= "virtio-mmio",
+	.id		= -1,
+	.resource	= s5p_virtio_mmio_net_resources,
+	.num_resources	= ARRAY_SIZE(s5p_virtio_mmio_net_resources),
+};
+#endif /* CONFIG_VIRTIO_NET */
+#endif /* CONFIG_VIRTIO_MMIO */
+
 /* USB */
 
 #ifdef CONFIG_S3C_DEV_USB_HOST
