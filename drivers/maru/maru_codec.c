@@ -336,12 +336,14 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 
     if (!svcodec) {
         printk(KERN_ERR "[%s]:Fail to get codec device info\n", __func__);
+        return -EINVAL;
     }
 
     if (copy_from_user(&paramInfo, buf, sizeof(struct _param))) {
         printk(KERN_ERR "[%s]:Fail to get codec parameter info from user\n", __func__);
     }
 
+#if 0
     if (paramInfo.apiIndex == EMUL_INIT_MMAP_INDEX) {
         int i;
         if (svcodec->useMmap[USABLE_MMAP_MAX_SIZE] == 0) {
@@ -350,29 +352,46 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
                 printk(KERN_DEBUG "Reset useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
             }
         }
-    } else if (paramInfo.apiIndex == EMUL_GET_MMAP_INDEX) {
+        return 0;
+    }
+#endif
+    if (paramInfo.apiIndex == EMUL_GET_MMAP_INDEX) {
         int i;
         int *mmapIndex;
 
         mmapIndex = (int*)paramInfo.ret;
 
+        printk(KERN_DEBUG "[%s] before available useMmap count:%d\n",
+                __func__, (USABLE_MMAP_MAX_SIZE - svcodec->useMmap[USABLE_MMAP_MAX_SIZE]));
+
         for (i = 0; i < USABLE_MMAP_MAX_SIZE; i++) {
             printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
             if (svcodec->useMmap[i] == 1) {
+                svcodec->useMmap[i] = 0;
+                printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
+                (svcodec->useMmap[USABLE_MMAP_MAX_SIZE])++;
+                file->private_data = &svcodec->useMmap[i];
+                printk(KERN_DEBUG "[%s] after available useMmap count:%d\n",
+                        __func__, (USABLE_MMAP_MAX_SIZE - svcodec->useMmap[USABLE_MMAP_MAX_SIZE]));
+                printk(KERN_DEBUG "[%s] return %d as the index of mmap\n", __func__, i);
+
                 break;
             }
         }
 
         if (i == USABLE_MMAP_MAX_SIZE) {
+            printk(KERN_INFO "[%s] Usable mmap is none\n", __func__);
             i = -1;
-        } else {
+        }
+#if 0
+        else {
             svcodec->useMmap[i] = 0;
             (svcodec->useMmap[USABLE_MMAP_MAX_SIZE])++;
             printk(KERN_DEBUG "[%s] available useMmap count:%d\n",
                    __func__, (USABLE_MMAP_MAX_SIZE - svcodec->useMmap[USABLE_MMAP_MAX_SIZE]));
             printk(KERN_DEBUG "[%s] useMmap[%d]=%d\n", __func__, i, svcodec->useMmap[i]);
-
         }
+#endif
 
         if (copy_to_user((void*)mmapIndex, &i, sizeof(int))) {
             printk(KERN_ERR "[%s]:Fail to copy_to_user\n", __func__);
@@ -380,7 +399,10 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
         mutex_unlock(&codec_mutex);
 
         return 0;
-    } else if (paramInfo.apiIndex == EMUL_RESET_MMAP_INDEX) {
+    }
+
+#if 0
+    else if (paramInfo.apiIndex == EMUL_RESET_MMAP_INDEX) {
         int index;
         index = paramInfo.mmapOffset;
         svcodec->useMmap[index] = 1;
@@ -389,6 +411,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 
         return 0;
     }
+#endif
 
     if (paramInfo.apiIndex == EMUL_AVCODEC_ALLOC_CONTEXT) {
         writel((uint32_t)file, svcodec->ioaddr + CODEC_FILE_INDEX);
@@ -446,10 +469,22 @@ static int svcodec_mmap (struct file *file, struct vm_area_struct *vm)
 
 static int svcodec_open (struct inode *inode, struct file *file)
 {
-    int max_size = USABLE_MMAP_MAX_SIZE;
+    int i;
+
+    mutex_lock(&codec_mutex);
 
     printk(KERN_DEBUG "[%s]\n", __func__);
+    printk(KERN_DEBUG "[%s] struct file :%p\n", __func__, file);
+
+    if (svcodec->useMmap[USABLE_MMAP_MAX_SIZE] == 0) {
+        for (i = 0; i < USABLE_MMAP_MAX_SIZE; i++) {
+            svcodec->useMmap[i] = 1;
+            printk(KERN_DEBUG "Reset useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
+        }
+    }
+
     try_module_get(THIS_MODULE);
+    mutex_unlock(&codec_mutex);
 
     return 0;
 }
@@ -457,6 +492,8 @@ static int svcodec_open (struct inode *inode, struct file *file)
 static int svcodec_release (struct inode *inode, struct file *file)
 {
     int max_size = USABLE_MMAP_MAX_SIZE;
+
+    mutex_lock(&codec_mutex);
 
     printk(KERN_DEBUG "[%s] close %s\n", __func__, DRIVER_NAME);
 #ifdef CODEC_HOST
@@ -468,20 +505,24 @@ static int svcodec_release (struct inode *inode, struct file *file)
 #endif
 
     (svcodec->useMmap[max_size])--;
+    *(uint8_t*)file->private_data = 1;
     printk(KERN_DEBUG "[%s] available useMmap count:%d\n",
            __func__, (max_size - svcodec->useMmap[max_size]));
 
     /* notify qemu of closing codec device. */
+    printk(KERN_DEBUG "[%s] struct file : %p\n", __func__, file);
     writel((uint32_t)file, svcodec->ioaddr + CODEC_CLOSED);
 
 #ifdef CODEC_DEBUG
         int i;
         for (i = 0; i < max_size; i++) {
-            printk(KERN_INFO "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
+            printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
         }
 #endif
-
     module_put(THIS_MODULE);
+
+    mutex_unlock(&codec_mutex);
+
     return 0;
 }
 
@@ -614,7 +655,7 @@ static struct pci_driver driver = {
 
 static int __init svcodec_init (void)
 {
-    printk(KERN_INFO "svcodec device is initialized.\n");
+    printk(KERN_INFO "marucodec device is initialized.\n");
     return pci_register_driver(&driver);
 }
 
