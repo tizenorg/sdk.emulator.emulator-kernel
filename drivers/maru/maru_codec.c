@@ -355,6 +355,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
         return 0;
     }
 #endif
+
     if (paramInfo.apiIndex == EMUL_GET_MMAP_INDEX) {
         int i;
         int *mmapIndex;
@@ -363,7 +364,6 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 
         printk(KERN_DEBUG "[%s] before available useMmap count:%d\n",
                 __func__, (USABLE_MMAP_MAX_SIZE - svcodec->useMmap[USABLE_MMAP_MAX_SIZE]));
-
         for (i = 0; i < USABLE_MMAP_MAX_SIZE; i++) {
             printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
             if (svcodec->useMmap[i] == 1) {
@@ -374,7 +374,6 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
                 printk(KERN_DEBUG "[%s] after available useMmap count:%d\n",
                         __func__, (USABLE_MMAP_MAX_SIZE - svcodec->useMmap[USABLE_MMAP_MAX_SIZE]));
                 printk(KERN_DEBUG "[%s] return %d as the index of mmap\n", __func__, i);
-
                 break;
             }
         }
@@ -416,11 +415,8 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
     if (paramInfo.apiIndex == EMUL_AVCODEC_ALLOC_CONTEXT) {
         writel((uint32_t)file, svcodec->ioaddr + CODEC_FILE_INDEX);
     }
-
     writel((uint32_t)paramInfo.ctxIndex, svcodec->ioaddr + CODEC_CONTEXT_INDEX);
-
     writel((uint32_t)paramInfo.mmapOffset, svcodec->ioaddr + CODEC_MMAP_OFFSET);
-
     writel((uint32_t)paramInfo.apiIndex, svcodec->ioaddr + CODEC_API_INDEX);
 
     mutex_unlock(&codec_mutex);
@@ -520,7 +516,6 @@ static int svcodec_release (struct inode *inode, struct file *file)
         }
 #endif
     module_put(THIS_MODULE);
-
     mutex_unlock(&codec_mutex);
 
     return 0;
