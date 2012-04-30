@@ -309,7 +309,7 @@ static int my_atoi(const char *name)
 }
 
 extern char *saved_command_line;
-#define DPI_DEF_VALUE		3200
+#define DPI_DEF_VALUE		3160
 #define DPI_MIN_VALUE		1000
 #define DPI_MAX_VALUE		4800
 
@@ -336,12 +336,12 @@ static void uvesafb_setup_var(struct fb_var_screeninfo *var,
 		if (dpi < DPI_MIN_VALUE || dpi > DPI_MAX_VALUE)
 			dpi = DPI_DEF_VALUE;
 	}
-
-	var->height = (var->yres * 254 / dpi);
-	var->width = (var->xres * 254 / dpi);
-	//printk(KERN_INFO "dpi value = %d\n", dpi);
-	//printk(KERN_INFO "var->yres = %d, var->xres = %d\n", var->yres, var->xres);
-	//printk(KERN_INFO "var->height = %d, var->width = %d\n", var->height, var->width);
+    /* round up */
+	var->height = ((var->yres * 2540 / dpi) + 5) / 10;
+	var->width = ((var->xres * 2540 / dpi)+ 5) / 10;
+//  printk(KERN_INFO "dpi value = %d\n", dpi);
+//	printk(KERN_INFO "var->yres = %d, var->xres = %d\n", var->yres, var->xres);
+//	printk(KERN_INFO "var->height = %d, var->width = %d\n", var->height, var->width);
 
 	var->xres_virtual = mode->x_res;
 	var->yres_virtual = (par->ypan) ?

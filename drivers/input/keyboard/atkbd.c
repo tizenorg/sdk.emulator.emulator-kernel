@@ -537,8 +537,9 @@ static irqreturn_t atkbd_interrupt(struct serio *serio, unsigned char data,
 			}
 
 #ifndef SIM_SKINCODE
-			printk(KERN_DEBUG "atkbd.c: Conversion Received code = (%d)%03x, keycode = (%d)%03x\n", 
+/*			printk(KERN_DEBUG "atkbd.c: Conversion Received code = (%d)%03x, keycode = (%d)%03x\n", 
 					code, code, keycode, keycode);
+*/
 #endif
 			input_event(dev, EV_KEY, keycode, value);
 			input_sync(dev);

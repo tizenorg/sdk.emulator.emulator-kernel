@@ -36,41 +36,55 @@ static int capacity = 100;
 static int charge_full = 1;
 static int charge_now = 0;
 
+//#define DEBUG_MARU_POWER_SUPPLY
+
 static ssize_t show_capacity(struct device *dev, struct device_attribute *attr, char *buf) 
 {
+#ifdef DEBUG_MARU_POWER_SUPPLY
 	printk("[%s] \n", __FUNCTION__);
+#endif
 	return snprintf(buf, PAGE_SIZE, "%d", capacity);
 }
 
 static ssize_t store_capacity(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) 
 {
+#ifdef DEBUG_MARU_POWER_SUPPLY
 	printk("[%s] \n", __FUNCTION__);
+#endif
 	sscanf(buf, "%d", &capacity);
 	return strnlen(buf, PAGE_SIZE);
 }
 
 static ssize_t show_charge_full(struct device *dev, struct device_attribute *attr, char *buf) 
 {
+#ifdef DEBUG_MARU_POWER_SUPPLY
 	printk("[%s] \n", __FUNCTION__);
+#endif
 	return snprintf(buf, PAGE_SIZE, "%d", charge_full);
 }
 
 static ssize_t store_charge_full(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) 
 {
+#ifdef DEBUG_MARU_POWER_SUPPLY
 	printk("[%s] \n", __FUNCTION__);
+#endif
 	sscanf(buf, "%d", &charge_full);
 	return strnlen(buf, PAGE_SIZE);
 }
 
 static ssize_t show_charge_now(struct device *dev, struct device_attribute *attr, char *buf) 
 {
+#ifdef DEBUG_MARU_POWER_SUPPLY
 	printk("[%s] \n", __FUNCTION__);
+#endif
 	return snprintf(buf, PAGE_SIZE, "%d", charge_now);
 }
 
 static ssize_t store_charge_now(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) 
 {
+#ifdef DEBUG_MARU_POWER_SUPPLY
 	printk("[%s] \n", __FUNCTION__);
+#endif
 	sscanf(buf, "%d", &charge_now);
 	return strnlen(buf, PAGE_SIZE);
 }

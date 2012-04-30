@@ -1120,11 +1120,23 @@ DECLARE_RWSEM(uts_sem);
 SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 {
 	int errno = 0;
+#ifdef CONFIG_MARU
+	struct new_utsname u;
 
+	down_read(&uts_sem);
+	memcpy(&u, utsname(), sizeof *name);
+	up_read(&uts_sem);
+
+	strcat(u.machine, "_emulated");
+	
+	if (copy_to_user(name, &u, sizeof *name))
+		errno = -EFAULT;
+#else
 	down_read(&uts_sem);
 	if (copy_to_user(name, utsname(), sizeof *name))
 		errno = -EFAULT;
 	up_read(&uts_sem);
+#endif
 	return errno;
 }
 
