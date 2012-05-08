@@ -105,6 +105,7 @@ enum svcodec_param_apiindex {
     EMUL_AV_PARSER_PARSE,
     EMUL_AV_PARSER_CLOSE,
     EMUL_GET_MMAP_INDEX,
+    EMUL_GET_CODEC_VER = 50,
 };
 
 typedef struct _svcodec_dev {
