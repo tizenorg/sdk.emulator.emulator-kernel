@@ -1,0 +1,41 @@
+#
+# Exynos Video configuration
+#
+
+menuconfig TIZEN_FGLES
+	bool "Tizen fake GLES passthrough driver support"
+	depends on MACH_TIZEN && (DRM || FB)
+	default n
+	help
+	  This module enables openGLES passthrough from emulated system
+	  to hypervisor (for example, QEMU). Must be used together with fake
+	  (hypervisor-aware) openGLES libraries.
+
+if TIZEN_FGLES
+
+config TIZEN_FGLES_FLOAT_ABI
+	int "FGLES floating point procedure call interface"
+	default 1
+	help
+	  Specify which floating point ABI calling standard to use:
+	  1 - arm_softfpu
+	  2 - arm_hardfpu
+	  "1" is the right choice in majority of situations.
+	  Note that the hard-float and soft-float ABIs are not link-compatible.
+	  You must compile your entire program with the same ABI, and link with
+	  a compatible set of libraries.
+
+config TIZEN_FGLES_MINOR
+	int "FGLES device node minor number"
+	default 128
+	help
+	  Specify minor number for /dev/kfgles2 device node.
+	  Major number for kfgles2 is always 10 (MISC devices).
+
+config TIZEN_FGLES_DEBUG
+	bool "FGLES calls debug messages"
+	default no
+	help
+	  Enable FGLES debug messages.
+
+endif # TIZEN_FGLES

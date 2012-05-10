@@ -270,6 +270,19 @@ static struct s3c_fb_platdata tizen_fb_pdata __initdata = {
 	.setup_gpio	= exynos4_fimd0_gpio_setup_24bpp,
 };
 
+#ifdef CONFIG_TIZEN_FGLES
+static struct resource tizen_fgles_resources[] = {
+	[0] = DEFINE_RES_MEM(0xcf000000, 0x100000),
+};
+
+struct platform_device tizen_fgles_device = {
+	.name		= "kfgles2",
+	.id		= 0,
+	.resource	= tizen_fgles_resources,
+	.num_resources	= ARRAY_SIZE(tizen_fgles_resources),
+};
+#endif /* CONFIG_VIRTIO_BLK */
+
 static void tizen_lcd_power_on(struct plat_lcd_data *pd, unsigned int power)
 {
 	int gpio = EXYNOS4_GPE1(5);
@@ -1348,6 +1361,9 @@ static struct platform_device *tizen_devices[] __initdata = {
 	&tizen_gpio_keys,
 	&tizen_lcd_device,
 	&tizen_backlight_device,
+#ifdef CONFIG_TIZEN_FGLES
+	&tizen_fgles_device,
+#endif
 	&max8903_fixed_reg_dev,
 	&tizen_max8903_device,
 	&cam_vt_cam15_fixed_rdev,
