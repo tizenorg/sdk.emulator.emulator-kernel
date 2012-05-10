@@ -178,23 +178,52 @@ static void __init tizen_sdhci_init(void)
 /* GPIO KEYS */
 static struct gpio_keys_button tizen_gpio_keys_tables[] = {
 	{
+        /* Volume Up */
 		.code			= KEY_VOLUMEUP,
-		.gpio			= EXYNOS4_GPX2(0),	/* XEINT16 */
+		.gpio			= EXYNOS4_GPX2(0),
 		.desc			= "gpio-keys: KEY_VOLUMEUP",
 		.type			= EV_KEY,
 		.active_low		= 1,
 		.debounce_interval	= 1,
 	}, {
+	     /* Volume Down */
 		.code			= KEY_VOLUMEDOWN,
-		.gpio			= EXYNOS4_GPX2(1),	/* XEINT17 */
+		.gpio			= EXYNOS4_GPX2(1),
 		.desc			= "gpio-keys: KEY_VOLUMEDOWN",
 		.type			= EV_KEY,
 		.active_low		= 1,
 		.debounce_interval	= 1,
 	}, {
+		/* Phone/send message */
+		.code			= KEY_PHONE,
+		.gpio			= EXYNOS4_GPX2(2),
+		.desc			= "gpio-keys: KEY_PHONE",
+		.type			= EV_KEY,
+		.active_low		= 1,
+		.debounce_interval	= 1,
+	}, {
+		 /* Cancel */
+		.code			= KEY_EXIT,
+		.gpio			= EXYNOS4_GPX2(4),
+		.desc			= "gpio-keys: KEY_EXIT",
+		.type			= EV_KEY,
+		.active_low		= 1,
+		.wakeup			= 1,
+		.debounce_interval	= 1,
+	}, {
+	    /* Power button */
 		.code			= KEY_POWER,
-		.gpio			= EXYNOS4_GPX2(7),	/* XEINT23 */
+		.gpio			= EXYNOS4_GPX2(7),
 		.desc			= "gpio-keys: KEY_POWER",
+		.type			= EV_KEY,
+		.active_low		= 1,
+		.wakeup			= 1,
+		.debounce_interval	= 1,
+	}, {
+        /* Big Front Button */
+		.code			= KEY_FRONT,
+		.gpio			= EXYNOS4_GPX3(5),
+		.desc			= "gpio-keys: KEY_FRONT",
 		.type			= EV_KEY,
 		.active_low		= 1,
 		.wakeup			= 1,
