@@ -181,9 +181,14 @@ struct max17042_config_data {
 struct max17042_platform_data {
 	struct max17042_reg_data *init_data;
 	struct max17042_config_data *config_data;
+	struct max17042_reg_data *alrt_data; /* used if IRQ is enabled by I2C */
 	int num_init_data; /* Number of enties in init_data array */
+	int num_alrt_data;
 	bool enable_current_sense;
 	bool enable_por_init; /* Use POR init from Maxim appnote */
+
+	bool enable_alert;
+	bool wakeup;
 
 	/*
 	 * R_sns in micro-ohms.
