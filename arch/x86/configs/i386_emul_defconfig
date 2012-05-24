@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.32.9
-# Wed Apr  4 20:30:19 2012
+# Thu May 17 15:23:31 2012
 #
 # CONFIG_64BIT is not set
 CONFIG_X86_32=y
@@ -282,8 +282,7 @@ CONFIG_CPU_SUP_CENTAUR=y
 CONFIG_CPU_SUP_TRANSMETA_32=y
 CONFIG_CPU_SUP_UMC_32=y
 # CONFIG_X86_DS is not set
-CONFIG_HPET_TIMER=y
-CONFIG_HPET_EMULATE_RTC=y
+# CONFIG_HPET_TIMER is not set
 CONFIG_DMI=y
 # CONFIG_IOMMU_HELPER is not set
 # CONFIG_IOMMU_API is not set
