@@ -287,7 +287,7 @@ static struct class sd_disk_class = {
 static struct scsi_driver sd_template = {
 	.owner			= THIS_MODULE,
 	.gendrv = {
-		.name		= "sd",
+		.name		= "mmcblk",
 		.probe		= sd_probe,
 		.remove		= sd_remove,
 		.suspend	= sd_suspend,
@@ -1124,21 +1124,21 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 		 * unknown amount of data was transferred so treat it as an
 		 * error.
 		 */
-		scsi_print_sense("sd", SCpnt);
+		scsi_print_sense("mmcblk", SCpnt);
 		SCpnt->result = 0;
 		memset(SCpnt->sense_buffer, 0, SCSI_SENSE_BUFFERSIZE);
 		break;
 	case ABORTED_COMMAND:
 		if (sshdr.asc == 0x10) { /* DIF: Disk detected corruption */
 			scsi_print_result(SCpnt);
-			scsi_print_sense("sd", SCpnt);
+			scsi_print_sense("mmcblk", SCpnt);
 			good_bytes = sd_completed_bytes(SCpnt);
 		}
 		break;
 	case ILLEGAL_REQUEST:
 		if (sshdr.asc == 0x10) { /* DIX: HBA detected corruption */
 			scsi_print_result(SCpnt);
-			scsi_print_sense("sd", SCpnt);
+			scsi_print_sense("mmcblk", SCpnt);
 			good_bytes = sd_completed_bytes(SCpnt);
 		}
 		break;
@@ -2010,7 +2010,8 @@ static int sd_revalidate_disk(struct gendisk *disk)
  */
 static int sd_format_disk_name(char *prefix, int index, char *buf, int buflen)
 {
-	const int base = 'z' - 'a' + 1;
+//	const int base = 'z' - 'a' + 1;
+	const int base = '9' - '0' + 1;
 	char *begin = buf + strlen(prefix);
 	char *end = buf + buflen;
 	char *p;
@@ -2022,7 +2023,8 @@ static int sd_format_disk_name(char *prefix, int index, char *buf, int buflen)
 	do {
 		if (p == begin)
 			return -EINVAL;
-		*--p = 'a' + (index % unit);
+//		*--p = 'a' + (index % unit);
+		*--p = '0' + (index % unit);
 		index = (index / unit) - 1;
 	} while (index >= 0);
 
@@ -2141,7 +2143,7 @@ static int sd_probe(struct device *dev)
 	if (error)
 		goto out_put;
 
-	error = sd_format_disk_name("sd", index, gd->disk_name, DISK_NAME_LEN);
+	error = sd_format_disk_name("mmcblk", index, gd->disk_name, DISK_NAME_LEN);
 	if (error)
 		goto out_free_index;
 
@@ -2349,7 +2351,7 @@ static int __init init_sd(void)
 	SCSI_LOG_HLQUEUE(3, printk("init_sd: sd driver entry point\n"));
 
 	for (i = 0; i < SD_MAJORS; i++)
-		if (register_blkdev(sd_major(i), "sd") == 0)
+		if (register_blkdev(sd_major(i), "mmcblk") == 0)
 			majors++;
 
 	if (!majors)
@@ -2385,7 +2387,7 @@ err_out_class:
 	class_unregister(&sd_disk_class);
 err_out:
 	for (i = 0; i < SD_MAJORS; i++)
-		unregister_blkdev(sd_major(i), "sd");
+		unregister_blkdev(sd_major(i), "mmcblk");
 	return err;
 }
 
@@ -2407,7 +2409,7 @@ static void __exit exit_sd(void)
 	class_unregister(&sd_disk_class);
 
 	for (i = 0; i < SD_MAJORS; i++)
-		unregister_blkdev(sd_major(i), "sd");
+		unregister_blkdev(sd_major(i), "mmcblk");
 }
 
 module_init(init_sd);
