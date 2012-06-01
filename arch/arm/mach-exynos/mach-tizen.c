@@ -27,6 +27,7 @@
 #include <linux/pwm_backlight.h>
 #include <linux/mfd/wm8994/pdata.h>
 #include <linux/regulator/machine.h>
+#include <linux/dma-mapping.h>
 
 #include <video/platform_lcd.h>
 #include <media/m5mols.h>
@@ -258,8 +259,8 @@ static struct s3c_fb_pd_win tizen_fb_win0 = {
 	},
 	.max_bpp	= 32,
 	.default_bpp	= 24,
-	.virtual_x	= 480,
-	.virtual_y	= 800,
+	.virtual_x	= 720,
+	.virtual_y	= 1280,
 };
 
 static struct s3c_fb_platdata tizen_fb_pdata __initdata = {
@@ -444,9 +445,24 @@ static struct i2c_board_info i2c3_devs[] __initdata = {
 	},
 };
 
-static void __init tizen_tsp_init(void)
+#define MXT_XY_SWITCH       (1 << 0)
+
+static void __init tizen_tsp_init(struct fb_videomode *win_mode)
 {
 	int gpio;
+
+	if (mxt_platform_data.orient & MXT_XY_SWITCH) {
+        unsigned int tmp;
+
+        mxt_platform_data.x_size = win_mode->yres;
+        mxt_platform_data.y_size = win_mode->xres;
+        tmp = mxt_platform_data.x_line;
+        mxt_platform_data.x_line = mxt_platform_data.y_line;
+        mxt_platform_data.y_line = tmp;
+	} else {
+        mxt_platform_data.x_size = win_mode->xres;
+        mxt_platform_data.y_size = win_mode->yres;
+	}
 
 	/* TOUCH_INT: XEINT_4 */
 	gpio = EXYNOS4_GPX0(4);
@@ -1399,6 +1415,7 @@ static struct platform_device *tizen_devices[] __initdata = {
 
 static void __init tizen_map_io(void)
 {
+	init_consistent_dma_size(SZ_4M);
 	clk_xusbxti.rate = 24000000;
 	exynos_init_io(NULL, 0);
 	s3c24xx_init_clocks(24000000);
@@ -1410,10 +1427,98 @@ static void __init tizen_reserve(void)
 	s5p_mfc_reserve_mem(0x43000000, 8 << 20, 0x51000000, 8 << 20);
 }
 
+static void  __init s3c_fb_setup(char *options, struct s3c_fb_pd_win *windata)
+{
+    int i;
+    unsigned int optlen;
+    unsigned short bpp = windata->default_bpp;
+    u32 xres = windata->win_mode.xres, yres = windata->win_mode.yres;
+    bool bpp_specified = false;
+    bool yres_specified = false;
+    bool xres_specified = false;
+
+    if (!options || !*options) {
+        return;
+    }
+
+    optlen = strlen(options);
+    for (i = optlen - 1; i >= 0; i--) {
+        switch (options[i]) {
+        case '-':
+            optlen = i;
+            if (!bpp_specified && !yres_specified) {
+                bpp = simple_strtoul(&options[i + 1], NULL, 10);
+                bpp_specified = true;
+            } else {
+                goto done;
+            }
+            break;
+        case 'x':
+            if (!yres_specified) {
+                yres = simple_strtoul(&options[i + 1], NULL, 10);
+                yres_specified = true;
+            } else {
+                goto done;
+            }
+            break;
+        case '0' ... '9':
+            break;
+        default:
+            goto done;
+        }
+    }
+
+    if (i < 0 && yres_specified) {
+        xres = simple_strtoul(options, NULL, 10);
+        xres_specified = true;
+    }
+
+done:
+    if (bpp_specified) {
+        if (bpp > windata->max_bpp) {
+            printk(KERN_WARNING "Specified fb bpp mode %u is too big,"
+                    "setting to %u bpp\n", bpp, windata->max_bpp);
+            bpp = windata->max_bpp;
+        }
+        windata->default_bpp = bpp;
+    }
+
+    if (yres_specified) {
+        if (yres > windata->virtual_y) {
+            printk(KERN_WARNING "Specified fb Yres %u is too big,"
+                    "setting to %u pixels\n", yres, windata->virtual_y);
+            yres = windata->virtual_y;
+        }
+        windata->win_mode.yres = yres;
+    }
+
+    if (xres_specified) {
+        if (xres > windata->virtual_x) {
+            printk(KERN_WARNING "Specified fb Xres %u is too big,"
+                    "setting to %u pixels\n", xres, windata->virtual_x);
+            xres = windata->virtual_x;
+        }
+        windata->win_mode.xres = xres;
+    }
+
+    printk(KERN_DEBUG "Framebuffer mode %ux%u - %u bpp set",
+        windata->win_mode.xres, windata->win_mode.yres, windata->default_bpp);
+}
+
+static void __init tizen_parse_videomode(void)
+{
+    char *cmdline_opt;
+
+    if (fb_get_options("s3cfb", &cmdline_opt) == 0) {
+        s3c_fb_setup(cmdline_opt, &tizen_fb_win0);
+    }
+}
+
 static void __init tizen_machine_init(void)
 {
 	tizen_sdhci_init();
-	tizen_tsp_init();
+    tizen_parse_videomode();
+	tizen_tsp_init(&tizen_fb_win0.win_mode);
 	tizen_power_init();
 
 	s3c_i2c0_set_platdata(&tizen_i2c0_platdata);
@@ -1431,7 +1536,6 @@ static void __init tizen_machine_init(void)
 	s5p_fimd0_set_platdata(&tizen_fb_pdata);
 
 	tizen_camera_init();
-
 	tizen_ehci_init();
 
 	/* Last */
