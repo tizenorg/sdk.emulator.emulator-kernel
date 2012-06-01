@@ -51,3 +51,8 @@ config MARU_USB_MASS_STORAGE
 config MARU_USB_MODE
 	tristate "MARU Usb mode Driver"
 	depends on MARU != n
+
+config MARU_POWER_SUPPLY
+    tristate "MARU Power supply Driver"
+    depends on MARU != n
+
