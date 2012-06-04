@@ -52,7 +52,7 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
 
-static unsigned debug = 1;
+static unsigned debug = 0;
 
 #define marucam_err(fmt, arg...) \
 	printk(KERN_ERR "marucam[%s] : " fmt, __func__, ##arg)
@@ -72,7 +72,7 @@ static unsigned debug = 1;
 #define MARUCAM_MODULE_NAME "marucam"
 
 #define MARUCAM_MAJOR_VERSION 0
-#define MARUCAM_MINOR_VERSION 20
+#define MARUCAM_MINOR_VERSION 22
 #define MARUCAM_RELEASE 1
 #define MARUCAM_VERSION \
 	KERNEL_VERSION(MARUCAM_MAJOR_VERSION, MARUCAM_MINOR_VERSION, MARUCAM_RELEASE)
@@ -81,8 +81,8 @@ MODULE_DESCRIPTION("MARU Virtual Camera Driver");
 MODULE_AUTHOR("Jinhyung Jo <jinhyung.jo@samsung.com>");
 MODULE_LICENSE("GPL2");
 
-#define DFL_WIDTH	320
-#define DFL_HEIGHT	240
+#define DFL_WIDTH	640
+#define DFL_HEIGHT	480
 
 /* ------------------------------------------------------------------
 	Basic structures
@@ -203,14 +203,16 @@ static const struct vm_operations_struct videobuf_vm_ops =
 	.close    = videobuf_vm_close,
 };
 
-static void *__videobuf_alloc(size_t size)
+static struct videobuf_buffer *__videobuf_alloc_vb(size_t size)
 {
 	struct videobuf_marucam_memory *mem;
 	struct videobuf_buffer *vb;
 
-	vb = kzalloc(size+sizeof(*mem),GFP_KERNEL);
+	vb = kzalloc(size + sizeof(*mem), GFP_KERNEL);
+	if (vb == NULL)
+		return vb;
 
-	mem = vb->priv = ((char *)vb)+size;
+	mem = vb->priv = ((char *)vb) + size;
 	mem->magic = MAGIC_MARUCAM_MEM;
 
 	return vb;
@@ -241,63 +243,23 @@ static int __videobuf_iolock (struct videobuf_queue* q,
 	return 0;
 }
 
-static int __videobuf_sync(struct videobuf_queue *q,
-			   struct videobuf_buffer *buf)
-{
-	return 0;
-}
-
-static int __videobuf_mmap_free(struct videobuf_queue *q)
-{
-	unsigned int i;
-
-	for (i = 0; i < VIDEO_MAX_FRAME; i++) {
-		if (q->bufs[i]) {
-			if (q->bufs[i]->map)
-				return -EBUSY;
-		}
-	}
-
-	return 0;
-}
-
 static int __videobuf_mmap_mapper(struct videobuf_queue *q,
-			 struct vm_area_struct *vma)
+			struct videobuf_buffer *buf, struct vm_area_struct *vma)
 {
 	struct videobuf_marucam_memory *mem;
 	struct videobuf_mapping *map;
-	unsigned int first;
 	int retval, pages;
-	unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
-
-	if (!(vma->vm_flags & VM_WRITE) || !(vma->vm_flags & VM_SHARED))
-		return -EINVAL;
-
-	for (first = 0; first < VIDEO_MAX_FRAME; first++) {
-		if (NULL == q->bufs[first])
-			continue;
-
-		if (V4L2_MEMORY_MMAP != q->bufs[first]->memory)
-			continue;
-		if (q->bufs[first]->boff == offset)
-			break;
-	}
-	if (VIDEO_MAX_FRAME == first) {
-		return -EINVAL;
-	}
 
 	map = kzalloc(sizeof(struct videobuf_mapping), GFP_KERNEL);
 	if (NULL == map)
 		return -ENOMEM;
 
-	q->bufs[first]->map = map;
-	map->start = vma->vm_start;
-	map->end   = vma->vm_end;
+	buf->map = map;
 	map->q     = q;
 
-	q->bufs[first]->baddr = vma->vm_start;
+	buf->baddr = vma->vm_start;
 
-	mem = q->bufs[first]->priv;
+	mem = buf->priv;
 	BUG_ON(!mem);
 	mem->mapped = 1;
 	MAGIC_CHECK(mem->magic, MAGIC_MARUCAM_MEM);
@@ -331,10 +293,8 @@ error:
 static struct videobuf_qtype_ops qops = {
 	.magic        = MAGIC_QTYPE_OPS,
 
-	.alloc        = __videobuf_alloc,
+	.alloc_vb     = __videobuf_alloc_vb,
 	.iolock       = __videobuf_iolock,
-	.sync         = __videobuf_sync,
-	.mmap_free    = __videobuf_mmap_free,
 	.mmap_mapper  = __videobuf_mmap_mapper,
 };
 
@@ -345,10 +305,11 @@ void videobuf_queue_marucam_init(struct videobuf_queue* q,
 			 enum v4l2_buf_type type,
 			 enum v4l2_field field,
 			 unsigned int msize,
-			 void *priv)
+			 void *priv,
+			 struct mutex *ext_lock)
 {
 	videobuf_queue_core_init(q, ops, dev, irqlock, type, field, msize,
-				 priv, &qops);
+				 priv, &qops, ext_lock);
 }
 
 
@@ -932,7 +893,7 @@ static int marucam_open(struct file *file)
 
 	videobuf_queue_marucam_init(&dev->vb_vidq, &marucam_video_qops,
 				&dev->pdev->dev, &dev->slock, dev->type, V4L2_FIELD_NONE,
-				sizeof(struct videobuf_buffer), dev);
+				sizeof(struct videobuf_buffer), dev, NULL);
 	
 	iowrite32(0, dev->mmregs + MARUCAM_OPEN);
 	ret = (int)ioread32(dev->mmregs + MARUCAM_OPEN);

@@ -111,6 +111,7 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 {
 	int ret;
 	struct backlight_device *bd;
+	struct backlight_properties props;
 
 	marubl_device = kmalloc(sizeof(struct marubl), GFP_KERNEL);
 	if (marubl_device == NULL) {
@@ -147,14 +148,16 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 	/*
 	 * register backlight device
 	 */
-	bd = backlight_device_register ("emulator",	&pci_dev->dev, NULL, &marubl_ops);
+	memset(&props, 0, sizeof(struct backlight_properties));
+	props.max_brightness = max_brightness;
+	props.type = BACKLIGHT_PLATFORM;
+	bd = backlight_device_register ("emulator",	&pci_dev->dev, NULL, &marubl_ops, &props);
 	if (IS_ERR (bd)) {
 		ret = PTR_ERR (bd);
 		goto outnotdev;
 	}
 
 	bd->props.brightness = (unsigned int)readl(marubl_device->marubl_mmreg);;
-	bd->props.max_brightness = max_brightness;
 	bd->props.power = FB_BLANK_UNBLANK;
 	backlight_update_status(bd);
 
