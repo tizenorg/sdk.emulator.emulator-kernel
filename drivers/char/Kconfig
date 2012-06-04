@@ -612,5 +612,18 @@ config TILE_SROM
 	  device appear much like a simple EEPROM, and knows
 	  how to partition a single ROM for multiple purposes.
 
+config VDPRAM_DEVICE
+	tristate "vdpram kernel driver for Telephony simulation"
+	help
+	  vdpram is telephony simulator works with the event injector.
+
+config VIRTIOGL
+	tristate "Virtio userspace memory transport"
+	depends on VIRTIO_PCI
+	default n
+	help
+	  A Driver to facilitate transferring data from userspace to a
+	  hypervisor (eg. qemu)
+
 endmenu
 

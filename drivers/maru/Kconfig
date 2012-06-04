@@ -1,0 +1,53 @@
+menuconfig MARU
+	tristate "MARU virtual device drivers for emulator"
+	default n
+
+config MARU_LCD
+	tristate "MARU LCD driver"
+	depends on MARU != n
+
+config MARU_CODEC
+	tristate "MARU codec driver"
+	depends on MARU != n
+
+config MARU_TOUCHSCREEN
+	tristate "MARU touchscreen driver"
+	depends on MARU != n
+
+config MARU_FB
+	tristate "MARU framebuffer driver"
+	depends on MARU != n
+
+config MARU_CAMERA
+        tristate "MARU Camera Driver"
+        depends on MARU != n && VIDEO_DEV && VIDEO_V4L2
+	select VIDEOBUF_VMALLOC
+        ---help---
+          Enables a MARU Virtual Camera driver.
+
+config MARU_BACKLIGHT
+        tristate "MARU Backlight Driver"
+        depends on MARU && BACKLIGHT_CLASS_DEVICE
+        default y
+        help
+          Say Y to enable the backlight driver of MARU.
+
+config MARU_OVERLAY
+	tristate "MARU overlay Driver"
+	depends on MARU != n && VIDEO_DEV && VIDEO_V4L2 && !SPARC32 && !SPARC64
+
+config MARU_JACK
+	tristate "MARU Jack Driver"
+	depends on MARU != n
+
+config MARU_POWER_SUPPLY
+	tristate "MARU Power supply Driver"
+	depends on MARU != n
+
+config MARU_USB_MASS_STORAGE
+	tristate "MARU Usb mass storage Driver"
+	depends on MARU != n
+
+config MARU_USB_MODE
+	tristate "MARU Usb mode Driver"
+	depends on MARU != n

@@ -165,6 +165,13 @@ config INPUT_APMPOWER
 	  To compile this driver as a module, choose M here: the
 	  module will be called apm-power.
 
+config INPUT_SECBRIDGE
+	bool "Specific input event handler for Samsung"
+	depends on INPUT
+	default n
+	help
+	  This driver implements the sec-input-bridge
+
 comment "Input Device Drivers"
 
 source "drivers/input/keyboard/Kconfig"
