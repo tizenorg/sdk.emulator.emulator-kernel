@@ -108,16 +108,13 @@ static struct queue_t *queue;
 static int vdpram_fasync(int fd, struct file *filp, int mode);
 static int spacefree(struct vdpram_dev *dev);
 
-int vdpram_ioctl(struct inode *inode, struct file *filp,
-                 unsigned int cmd,  unsigned long  arg);
+long vdpram_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
 /* Open and close */
 static int vdpram_open(struct inode *inode, struct file *filp)
 {
 	struct vdpram_dev *dev;
 	int index;
-
-
 
 	dev = container_of(inode->i_cdev, struct vdpram_dev, cdev);
 	filp->private_data = dev;
@@ -502,7 +499,7 @@ struct file_operations vdpram_even_fops = {
 	.open =		vdpram_open,
 	.release =	vdpram_release,
 	.fasync =	vdpram_fasync,
-	.ioctl =	vdpram_ioctl,
+	.unlocked_ioctl = vdpram_ioctl,
 };
 
 struct file_operations vdpram_odd_fops = {
@@ -514,18 +511,16 @@ struct file_operations vdpram_odd_fops = {
 	.open =		vdpram_open,
 	.release =	vdpram_release,
 	.fasync =	vdpram_fasync,
-	.ioctl =	vdpram_ioctl,
+	.unlocked_ioctl = vdpram_ioctl,
 };
 
-int vdpram_ioctl(struct inode *inode, struct file *filp,
-                 unsigned int cmd, unsigned long arg)
+long vdpram_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 {
 	struct vdpram_dev *dev;
 	struct vdpram_status_dev dev_status;
 	int index;
 
-	dev = container_of(inode->i_cdev, struct vdpram_dev, cdev);
-	filp->private_data = dev;
+	dev = (struct vdpram_dev*)filp->private_data;
 	index = dev->index ;
 
 	memset( &dev_status, 0, sizeof(struct vdpram_status_dev));
@@ -642,7 +637,8 @@ int vdpram_init(void)
 	memset(queue, 0, vdpram_nr_devs * sizeof(struct queue_t));
 	for (i = 0; i < vdpram_nr_devs; i++) {
 #ifdef VDPRAM_LOCK_ENABLE
-		init_MUTEX(&buffer[i].sem);
+//		init_MUTEX(&buffer[i].sem);
+		sema_init(&buffer[i].sem, 1);
 #endif //VDPRAM_LOCK_ENABLE
 		buffer[i].begin = kmalloc(vdpram_buffer, GFP_KERNEL);
 		buffer[i].buffersize = vdpram_buffer;
