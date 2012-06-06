@@ -343,6 +343,7 @@ config MACH_TIZEN
 	select S5P_SETUP_MIPIPHY
 	select SAMSUNG_DEV_PWM
 	select SAMSUNG_DEV_ADC
+	select MIGHT_HAVE_PCI
 	help
 	  Machine support for Samsung Tizen Board.
 

@@ -1467,6 +1467,13 @@ config PCI_HOST_ITE8152
 
 source "drivers/pci/Kconfig"
 
+config TIZEN_VPCI
+	bool "Tizen VPCI"
+	depends on PCI && MACH_TIZEN
+	default n
+	help
+	  Support for Tizen Virtual PCI Bus.
+
 source "drivers/pcmcia/Kconfig"
 
 endmenu
