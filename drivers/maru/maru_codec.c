@@ -42,6 +42,7 @@
 #include <linux/semaphore.h>
 #include <linux/workqueue.h>
 #include <linux/wait.h>
+#include <linux/slab.h>
 #include <asm/uaccess.h>
 #include <asm/io.h>
 
