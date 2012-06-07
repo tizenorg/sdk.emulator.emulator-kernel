@@ -126,7 +126,11 @@ static int __devinit amba_kmi_probe(struct amba_device *dev,
 	}
 
 
-	io->id.type	= SERIO_8042;
+#ifdef CONFIG_MARU
+    io->id.type = SERIO_8042_XL;
+#else
+    io->id.type = SERIO_8042;
+#endif
 	io->write	= amba_kmi_write;
 	io->open	= amba_kmi_open;
 	io->close	= amba_kmi_close;

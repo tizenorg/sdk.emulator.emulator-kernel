@@ -28,6 +28,7 @@
 #include <linux/mfd/wm8994/pdata.h>
 #include <linux/regulator/machine.h>
 #include <linux/dma-mapping.h>
+#include <linux/amba/bus.h>
 
 #include <video/platform_lcd.h>
 #include <media/m5mols.h>
@@ -176,73 +177,9 @@ static void __init tizen_sdhci_init(void)
 	s3c_sdhci3_set_platdata(&tizen_hsmmc3_data);
 }
 
-/* GPIO KEYS */
-static struct gpio_keys_button tizen_gpio_keys_tables[] = {
-	{
-        /* Volume Up */
-		.code			= KEY_VOLUMEUP,
-		.gpio			= EXYNOS4_GPX2(0),
-		.desc			= "gpio-keys: KEY_VOLUMEUP",
-		.type			= EV_KEY,
-		.active_low		= 1,
-		.debounce_interval	= 1,
-	}, {
-	     /* Volume Down */
-		.code			= KEY_VOLUMEDOWN,
-		.gpio			= EXYNOS4_GPX2(1),
-		.desc			= "gpio-keys: KEY_VOLUMEDOWN",
-		.type			= EV_KEY,
-		.active_low		= 1,
-		.debounce_interval	= 1,
-	}, {
-		/* Phone/send message */
-		.code			= KEY_PHONE,
-		.gpio			= EXYNOS4_GPX2(2),
-		.desc			= "gpio-keys: KEY_PHONE",
-		.type			= EV_KEY,
-		.active_low		= 1,
-		.debounce_interval	= 1,
-	}, {
-		 /* Cancel */
-		.code			= KEY_EXIT,
-		.gpio			= EXYNOS4_GPX2(4),
-		.desc			= "gpio-keys: KEY_EXIT",
-		.type			= EV_KEY,
-		.active_low		= 1,
-		.wakeup			= 1,
-		.debounce_interval	= 1,
-	}, {
-	    /* Power button */
-		.code			= KEY_POWER,
-		.gpio			= EXYNOS4_GPX2(7),
-		.desc			= "gpio-keys: KEY_POWER",
-		.type			= EV_KEY,
-		.active_low		= 1,
-		.wakeup			= 1,
-		.debounce_interval	= 1,
-	}, {
-        /* Big Front Button */
-		.code			= KEY_FRONT,
-		.gpio			= EXYNOS4_GPX3(5),
-		.desc			= "gpio-keys: KEY_FRONT",
-		.type			= EV_KEY,
-		.active_low		= 1,
-		.wakeup			= 1,
-		.debounce_interval	= 1,
-	},
-};
-
-static struct gpio_keys_platform_data tizen_gpio_keys_data = {
-	.buttons		= tizen_gpio_keys_tables,
-	.nbuttons		= ARRAY_SIZE(tizen_gpio_keys_tables),
-};
-
-static struct platform_device tizen_gpio_keys = {
-	.name			= "gpio-keys",
-	.dev			= {
-		.platform_data	= &tizen_gpio_keys_data,
-	},
-};
+#define IRQ_PL050    { EXYNOS4_IRQ_SPI2 }
+static AMBA_APB_DEVICE(kmi0,  "kmi-pl050", 0x41050, 0x12E30000,
+        IRQ_PL050, NULL);
 
 /* Frame Buffer */
 static struct s3c_fb_pd_win tizen_fb_win0 = {
@@ -1432,7 +1369,6 @@ static struct platform_device *tizen_devices[] __initdata = {
 #endif /* CONFIG_VIRTIO_MMIO */
 
 	/* Tizen Devices */
-	&tizen_gpio_keys,
 	&tizen_lcd_device,
 	&tizen_backlight_device,
 #ifdef CONFIG_TIZEN_FGLES
@@ -1557,6 +1493,7 @@ static void __init tizen_machine_init(void)
     tizen_parse_videomode();
 	tizen_tsp_init(&tizen_fb_win0.win_mode);
 	tizen_power_init();
+	amba_device_register(&kmi0_device, &iomem_resource);
 
 	s3c_i2c0_set_platdata(&tizen_i2c0_platdata);
 	s3c_i2c1_set_platdata(NULL);
