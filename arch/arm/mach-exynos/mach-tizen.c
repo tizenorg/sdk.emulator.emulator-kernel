@@ -353,61 +353,6 @@ static struct i2c_board_info i2c2_devs[] __initdata = {
 		},
 };
 
-/* TSP */
-static struct mxt_platform_data mxt_platform_data = {
-	.x_line			= 18,
-	.y_line			= 11,
-	.x_size			= 800,
-	.y_size			= 480,
-	.blen			= 0x1,
-	.threshold		= 0x28,
-	.voltage		= 2800000,		/* 2.8V */
-	.orient			= MXT_DIAGONAL_COUNTER,
-	.irqflags		= IRQF_TRIGGER_FALLING,
-};
-
-static struct s3c2410_platform_i2c i2c3_data __initdata = {
-	.flags		= 0,
-	.bus_num	= 3,
-	.slave_addr	= 0x10,
-	.frequency	= 400 * 1000,
-	.sda_delay	= 100,
-};
-
-static struct i2c_board_info i2c3_devs[] __initdata = {
-	{
-		I2C_BOARD_INFO("atmel_mxt_ts", 0x4a),
-		.platform_data	= &mxt_platform_data,
-		.irq		= IRQ_EINT(4),
-	},
-};
-
-#define MXT_XY_SWITCH       (1 << 0)
-
-static void __init tizen_tsp_init(struct fb_videomode *win_mode)
-{
-	int gpio;
-
-	if (mxt_platform_data.orient & MXT_XY_SWITCH) {
-        unsigned int tmp;
-
-        mxt_platform_data.x_size = win_mode->yres;
-        mxt_platform_data.y_size = win_mode->xres;
-        tmp = mxt_platform_data.x_line;
-        mxt_platform_data.x_line = mxt_platform_data.y_line;
-        mxt_platform_data.y_line = tmp;
-	} else {
-        mxt_platform_data.x_size = win_mode->xres;
-        mxt_platform_data.y_size = win_mode->yres;
-	}
-
-	/* TOUCH_INT: XEINT_4 */
-	gpio = EXYNOS4_GPX0(4);
-	gpio_request(gpio, "TOUCH_INT");
-	s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(0xf));
-	s3c_gpio_setpull(gpio, S3C_GPIO_PULL_UP);
-}
-
 static struct regulator_consumer_supply __initdata max8997_ldo1_[] = {
 	REGULATOR_SUPPLY("vdd", "s5p-adc"), /* Used by CPU's ADC drv */
 };
@@ -1349,7 +1294,6 @@ static struct platform_device *tizen_devices[] __initdata = {
 	&s3c_device_wdt,
 	&s3c_device_timer[0],
 	&s5p_device_ehci,
-	&s3c_device_i2c3,
 	&s3c_device_adc,
 	&s5p_device_g2d,
 	&s5p_device_jpeg,
@@ -1491,7 +1435,6 @@ static void __init tizen_machine_init(void)
 {
 	tizen_sdhci_init();
     tizen_parse_videomode();
-	tizen_tsp_init(&tizen_fb_win0.win_mode);
 	tizen_power_init();
 	amba_device_register(&kmi0_device, &iomem_resource);
 
@@ -1500,8 +1443,6 @@ static void __init tizen_machine_init(void)
 	i2c_register_board_info(1, i2c1_devs, ARRAY_SIZE(i2c1_devs));
 	s3c_i2c2_set_platdata(&i2c2_data);
 	i2c_register_board_info(2, i2c2_devs, ARRAY_SIZE(i2c2_devs));
-	s3c_i2c3_set_platdata(&i2c3_data);
-	i2c_register_board_info(3, i2c3_devs, ARRAY_SIZE(i2c3_devs));
 	s3c_i2c5_set_platdata(NULL);
 	i2c5_devs[I2C5_MAX8997].irq = gpio_to_irq(EXYNOS4_GPX0(7));
 	i2c_register_board_info(5, i2c5_devs, ARRAY_SIZE(i2c5_devs));
