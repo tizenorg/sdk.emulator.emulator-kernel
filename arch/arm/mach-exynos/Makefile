@@ -18,12 +18,7 @@ obj-$(CONFIG_ARCH_EXYNOS5)	+= clock-exynos5.o
 obj-$(CONFIG_CPU_EXYNOS4210)	+= clock-exynos4210.o
 obj-$(CONFIG_SOC_EXYNOS4212)	+= clock-exynos4212.o
 
-ifneq ($(CONFIG_MACH_TIZEN),y)
 obj-$(CONFIG_PM)		+= pm.o
-else
-obj-$(CONFIG_PM)		+= tizen_pm.o
-endif
- 
 obj-$(CONFIG_PM_GENERIC_DOMAINS) += pm_domains.o
 obj-$(CONFIG_CPU_IDLE)		+= cpuidle.o
 
