@@ -17,7 +17,6 @@
 #include <linux/gpio_keys.h>
 #include <linux/gpio.h>
 #include <linux/power/max8903_charger.h>
-#include <linux/power/max17042_battery.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/fixed.h>
 #include <linux/mfd/max8997.h>
@@ -307,51 +306,6 @@ static struct i2c_board_info i2c1_devs[] __initdata = {
 		I2C_BOARD_INFO("wm8994", 0x1a),
 		.platform_data	= &wm8994_platform_data,
 	},
-};
-
-/* I2C2 (Fuel Gauge) */
-static struct max17042_reg_data max17042_init_data[] = {
-	{ MAX17042_CGAIN,		0x0000 },
-	{ MAX17042_MiscCFG,		0x0003 },
-	{ MAX17042_LearnCFG,	0x0007 },
-	/* RCOMP: 0x0050 2011.02.29 from MAXIM */
-	{ MAX17042_RCOMP0,		0x0050 },
-};
-
-/* Alert only when the battery is removed or inserted */
-static struct max17042_reg_data max17042_alert_init_data[] = {
-	/* SALRT Threshold setting (disable) unsigned MAX/MIN */
-	{ MAX17042_SALRT_Th,	0xFF00 },
-	/* VALRT Threshold setting (disable) unsigned MAX/MIN */
-	{ MAX17042_VALRT_Th,	0xFF00 },
-	/* TALRT Threshold setting (disable) signed MAX/MIN */
-	{ MAX17042_TALRT_Th,	0x7F80 },
-};
-
-static struct max17042_platform_data tizen_battery_platform_data = {
-		.init_data = max17042_init_data,
-		.num_init_data = ARRAY_SIZE(max17042_init_data),
-		.alrt_data = max17042_alert_init_data,
-		.num_alrt_data = ARRAY_SIZE(max17042_alert_init_data),
-//		.irq_base = IRQ_FUEL_BASE,
-		.enable_alert = true,
-		.wakeup = true,
-		.r_sns = 10000, /* 10m Ohm */
-};
-
-static struct s3c2410_platform_i2c i2c2_data __initdata = {
-	.flags		= 0,
-	.bus_num	= 2,
-	.slave_addr	= 0x10,
-	.frequency	= 400000U,
-	.sda_delay	= 200,
-};
-
-static struct i2c_board_info i2c2_devs[] __initdata = {
-		{
-				I2C_BOARD_INFO("max17042", 0x36),
-				.platform_data = &tizen_battery_platform_data,
-		},
 };
 
 static struct regulator_consumer_supply __initdata max8997_ldo1_[] = {
@@ -1312,7 +1266,6 @@ static struct platform_device *tizen_devices[] __initdata = {
 	&cam_8m_12v_fixed_rdev,
 	&exynos4_bus_devfreq,
 	&s3c_device_i2c1,
-	&s3c_device_i2c2,
 	&exynos4_device_i2s0,
 	&samsung_asoc_idma,
 };
