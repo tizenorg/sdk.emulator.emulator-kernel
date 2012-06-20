@@ -1279,30 +1279,16 @@ struct platform_device tizen_virtio_mmio_net_device = {
 
 static struct platform_device *tizen_devices[] __initdata = {
 	/* Samsung Platform Devices */
-	&s3c_device_i2c5, /* PMIC should initialize first */
-	&s3c_device_i2c0,
-	&s3c_device_i2c6,
-	&emmc_fixed_voltage,
 	&s5p_device_mipi_csis0,
-	&s5p_device_fimc0,
-	&s5p_device_fimc1,
-	&s5p_device_fimc2,
-	&s5p_device_fimc3,
 	&s5p_device_fimd0,
-	&s3c_device_hsmmc0,
-	&s3c_device_hsmmc2,
-	&s3c_device_hsmmc3,
-	&s3c_device_wdt,
 	&s3c_device_timer[0],
 	&s5p_device_ehci,
-	&s3c_device_adc,
 	&s5p_device_g2d,
 	&s5p_device_jpeg,
 	&s3c_device_rtc,
 	&s5p_device_mfc,
 	&s5p_device_mfc_l,
 	&s5p_device_mfc_r,
-	&s5p_device_fimc_md,
 
 #ifdef CONFIG_VIRTIO_MMIO
 #ifdef CONFIG_VIRTIO_BLK
@@ -1452,21 +1438,11 @@ void tizen_restart(char mode, const char *cmd)
 
 static void __init tizen_machine_init(void)
 {
-	tizen_sdhci_init();
     tizen_parse_videomode();
-	tizen_power_init();
 	amba_device_register(&kmi0_device, &iomem_resource);
 
-	s3c_i2c0_set_platdata(&tizen_i2c0_platdata);
 	s3c_i2c1_set_platdata(NULL);
 	i2c_register_board_info(1, i2c1_devs, ARRAY_SIZE(i2c1_devs));
-	s3c_i2c2_set_platdata(&i2c2_data);
-	i2c_register_board_info(2, i2c2_devs, ARRAY_SIZE(i2c2_devs));
-	s3c_i2c5_set_platdata(NULL);
-	i2c5_devs[I2C5_MAX8997].irq = gpio_to_irq(EXYNOS4_GPX0(7));
-	i2c_register_board_info(5, i2c5_devs, ARRAY_SIZE(i2c5_devs));
-	s3c_i2c6_set_platdata(&tizen_i2c6_platdata);
-
 	s5p_fimd0_set_platdata(&tizen_fb_pdata);
 
 	tizen_camera_init();
