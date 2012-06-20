@@ -58,6 +58,7 @@
 #include <plat/mipi_csis.h>
 
 #include <mach/map.h>
+#include <mach/regs-pmu.h>
 
 #include "common.h"
 
@@ -1431,6 +1432,26 @@ static void __init tizen_parse_videomode(void)
     }
 }
 
+void tizen_power_off(char mode, const char *cmd)
+{
+	unsigned long tmp;
+
+	/* Setting Central Sequence Register for power down mode */
+
+	printk(KERN_EMERG "1\n");
+
+	tmp = __raw_readl(S5P_CENTRAL_SEQ_CONFIGURATION);
+	tmp &= ~S5P_CENTRAL_LOWPWR_CFG;
+	__raw_writel(tmp, S5P_CENTRAL_SEQ_CONFIGURATION);
+
+	return 0;
+}
+
+void tizen_restart(char mode, const char *cmd)
+{
+	__raw_writel(0x1, S5P_SWRESET);
+}
+
 static void __init tizen_machine_init(void)
 {
 	tizen_sdhci_init();
@@ -1453,6 +1474,8 @@ static void __init tizen_machine_init(void)
 	tizen_camera_init();
 	tizen_ehci_init();
 
+	pm_power_off = tizen_power_off;
+
 	/* Last */
 	platform_add_devices(tizen_devices, ARRAY_SIZE(tizen_devices));
 }
@@ -1465,5 +1488,5 @@ MACHINE_START(TIZEN, "Tizen")
 	.init_machine	= tizen_machine_init,
 	.timer		= &exynos4_timer,
 	.reserve        = &tizen_reserve,
-	.restart	= exynos4_restart,
+	.restart	= tizen_restart,
 MACHINE_END
