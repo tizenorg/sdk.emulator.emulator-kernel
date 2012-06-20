@@ -1438,8 +1438,6 @@ void tizen_power_off(char mode, const char *cmd)
 
 	/* Setting Central Sequence Register for power down mode */
 
-	printk(KERN_EMERG "1\n");
-
 	tmp = __raw_readl(S5P_CENTRAL_SEQ_CONFIGURATION);
 	tmp &= ~S5P_CENTRAL_LOWPWR_CFG;
 	__raw_writel(tmp, S5P_CENTRAL_SEQ_CONFIGURATION);
