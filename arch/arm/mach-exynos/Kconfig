@@ -70,6 +70,13 @@ config EXYNOS4_MCT
 	help
 	  Use MCT (Multi Core Timer) as kernel timers
 
+config TIZEN_PWM
+	bool "Tizen PWM"
+	depends on MACH_TIZEN
+	default y
+	help
+	  Support for Tizen PWM timer.
+
 config EXYNOS4_DEV_DMA
 	bool
 	help

@@ -27,6 +27,7 @@ obj-$(CONFIG_ARCH_EXYNOS4)	+= pmu.o
 obj-$(CONFIG_SMP)		+= platsmp.o headsmp.o
 
 obj-$(CONFIG_EXYNOS4_MCT)	+= mct.o
+obj-$(CONFIG_TIZEN_PWM)		+= tizen-pwm.o
 
 obj-$(CONFIG_HOTPLUG_CPU)	+= hotplug.o
 

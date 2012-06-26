@@ -1413,7 +1413,7 @@ MACHINE_START(TIZEN, "Tizen")
 	.map_io		= tizen_map_io,
 	.handle_irq	= gic_handle_irq,
 	.init_machine	= tizen_machine_init,
-	.timer		= &exynos4_timer,
+	.timer		= &tizen_timer,
 	.reserve        = &tizen_reserve,
 	.restart	= tizen_restart,
 MACHINE_END
