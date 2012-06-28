@@ -91,15 +91,19 @@ static void emul_touchscreen_sys_irq(struct urb *urb)
         input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 5);
         input_report_abs(input_dev, ABS_MT_POSITION_X, packet->x);
         input_report_abs(input_dev, ABS_MT_POSITION_Y, packet->y);
+        //printk(KERN_INFO "!!pressed x=%d, y=%d, z=%d", packet->x, packet->y, packet->z);
         input_mt_sync(input_dev);
     } else { //release
+#if 0
         if (packet->z == 1) {
             input_report_abs(input_dev, ABS_MT_TRACKING_ID, 1);
             input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
             input_mt_sync(input_dev);
         }
-        input_report_abs(input_dev, ABS_MT_TRACKING_ID, 0);
+#endif
+        input_report_abs(input_dev, ABS_MT_TRACKING_ID, packet->z);
         input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
+        //printk(KERN_INFO "!!released x=%d, y=%d, z=%d", packet->x, packet->y, packet->z);
         input_mt_sync(input_dev);
     }
 
