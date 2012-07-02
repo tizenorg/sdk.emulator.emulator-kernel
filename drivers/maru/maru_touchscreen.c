@@ -40,6 +40,7 @@ MODULE_AUTHOR("s-core");
 MODULE_DESCRIPTION("Emulator Touchscreen driver for x86");
 
 /* touchscreen device features */
+#define MAX_TRKID 3
 #define EMUL_TOUCHSCREEN_PACKET_LEN 7
 #define TOUCHSCREEN_RESOLUTION_X 5040
 #define TOUCHSCREEN_RESOLUTION_Y 3780
@@ -206,7 +207,7 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
     input_set_abs_params(usb_ts->emuldev, ABS_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 4, 0);
 
     /* for multitouch */
-    input_set_abs_params(usb_ts->emuldev, ABS_MT_TRACKING_ID, 0, 1, 0, 0);
+    input_set_abs_params(usb_ts->emuldev, ABS_MT_TRACKING_ID, 0, MAX_TRKID, 0, 0);
     input_set_abs_params(usb_ts->emuldev, ABS_MT_TOUCH_MAJOR, 0, ABS_PRESSURE_MAX, 0, 0);
     input_set_abs_params(usb_ts->emuldev, ABS_MT_POSITION_X, 0, TOUCHSCREEN_RESOLUTION_X, 0, 0);
     input_set_abs_params(usb_ts->emuldev, ABS_MT_POSITION_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 0, 0);
