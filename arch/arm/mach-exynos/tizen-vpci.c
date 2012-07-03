@@ -139,8 +139,8 @@ static struct pci_ops tizen_vpci_ops = {
 
 static struct resource io_mem = {
     .name   = "PCI I/O space",
-    .start  = TIZEN_VPCI_MEM_BASE0,
-    .end    = TIZEN_VPCI_MEM_BASE0+TIZEN_VPCI_MEM_BASE0_SIZE-1,
+    .start  = TIZEN_VPCI_IO_OFFSET,
+    .end    = TIZEN_VPCI_IO_BASE_SIZE-1,
     .flags  = IORESOURCE_IO,
 };
 
@@ -162,7 +162,7 @@ static int __init tizen_vpci_setup_resources(struct pci_sys_data *sys)
 {
     int ret = 0;
 
-    ret = request_resource(&iomem_resource, &io_mem);
+    ret = request_resource(&ioport_resource, &io_mem);
     if (ret) {
         printk(KERN_ERR "PCI: unable to allocate I/O "
                "memory region (%d)\n", ret);
@@ -210,6 +210,7 @@ int __init tizen_vpci_setup(int nr, struct pci_sys_data *sys)
 
     if (nr == 0) {
         sys->mem_offset = 0;
+        sys->io_offset = 0;
         ret = tizen_vpci_setup_resources(sys);
         if (ret < 0) {
             printk("tizen_vpci_setup: resources... oops?\n");
@@ -272,8 +273,8 @@ struct pci_bus * __init tizen_vpci_scan_bus(int nr, struct pci_sys_data *sys)
 
 void __init tizen_vpci_preinit(void)
 {
-    pcibios_min_io = TIZEN_VPCI_MEM_BASE0_SIZE;
-    pcibios_min_mem = TIZEN_VPCI_MEM_BASE1_SIZE;
+    pcibios_min_io = TIZEN_VPCI_IO_OFFSET;
+    pcibios_min_mem = TIZEN_VPCI_MEM_BASE1;
 }
 
 static int __init tizen_vpci_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)

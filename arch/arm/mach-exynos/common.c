@@ -310,6 +310,12 @@ void __init exynos_init_io(struct map_desc *mach_desc, int size)
 #ifdef CONFIG_TIZEN_VPCI
 static struct map_desc tizen_vpci_iodesc[] __initdata = {
     {
+        .virtual    = (unsigned long)TIZEN_VPCI_IO_VIRT_BASE,
+        .pfn        = __phys_to_pfn(TIZEN_VPCI_IO_BASE),
+        .length     = TIZEN_VPCI_IO_BASE_SIZE,
+        .type       = MT_DEVICE,
+    },
+    {
         .virtual    = (unsigned long)TIZEN_VPCI_CFG_VIRT_BASE,
         .pfn        = __phys_to_pfn(TIZEN_VPCI_CFG_BASE),
         .length     = TIZEN_VPCI_CFG_BASE_SIZE,
