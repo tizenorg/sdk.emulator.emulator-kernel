@@ -53,15 +53,10 @@ MODULE_DESCRIPTION("Virtual Codec Device Driver");
 MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_LICENSE("GPL2");
 
-#ifdef CODEC_DEBUG
-#define MARU_CODEC_LOG(fmt, ...) \
-    printk(KERN_INFO "[%s][%s][%d]" fmt, DRIVER_NAME, __func__, __LINE__, ##__VA_ARGS__)
-#else
-#define MARU_CODEC_LOG(fmt, ...) ((void)0)
-#endif
-
 #define USABLE_MMAP_MAX_SIZE    4
-#define CODEC_MAX_CONTEXT       10
+#define CODEC_ERR_LOG(fmt, ...) \
+	printk(KERN_ERR "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
+
 
 struct _param {
     uint32_t apiIndex;
@@ -142,43 +137,42 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
     mutex_lock(&codec_mutex);
 
     if (!svcodec) {
-        printk(KERN_ERR "[%s]:Fail to get codec device info\n", __func__);
+        CODEC_ERR_LOG("fail to get codec device info\n");
         return -EINVAL;
     }
 
     if (copy_from_user(&paramInfo, buf, sizeof(struct _param))) {
-        printk(KERN_ERR "[%s]:Fail to get codec parameter info from user\n", __func__);
+        CODEC_ERR_LOG("fail to get codec parameter info from user\n");
     }
 
     if (paramInfo.apiIndex == EMUL_GET_MMAP_INDEX) {
-        int i;
-        int *mmapIndex;
+        int i = 0;
+        int max_size = USABLE_MMAP_MAX_SIZE;
+        int *mmapIndex = (int*)paramInfo.ret;
+        uint8_t *useMmapSize = &svcodec->useMmap[max_size];
 
-        mmapIndex = (int*)paramInfo.ret;
+        printk(KERN_DEBUG "%s: before available useMmap count:%d\n", DRIVER_NAME, (max_size - *useMmapSize));
 
-        printk(KERN_DEBUG "[%s] before available useMmap count:%d\n",
-                __func__, (USABLE_MMAP_MAX_SIZE - svcodec->useMmap[USABLE_MMAP_MAX_SIZE]));
-        for (i = 0; i < USABLE_MMAP_MAX_SIZE; i++) {
-            printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
+        for (; i < max_size; i++) {
             if (svcodec->useMmap[i] == 1) {
                 svcodec->useMmap[i] = 0;
-                printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
-                (svcodec->useMmap[USABLE_MMAP_MAX_SIZE])++;
+                (*useMmapSize)++;
                 file->private_data = &svcodec->useMmap[i];
-                printk(KERN_DEBUG "[%s] after available useMmap count:%d\n",
-                        __func__, (USABLE_MMAP_MAX_SIZE - svcodec->useMmap[USABLE_MMAP_MAX_SIZE]));
-                printk(KERN_DEBUG "[%s] return %d as the index of mmap\n", __func__, i);
+                printk(KERN_DEBUG "%s: useMmap[%d]=%d\n", DRIVER_NAME, i, svcodec->useMmap[i]);
+                printk(KERN_DEBUG "%s: file:%p private_data:%p\n", DRIVER_NAME, file, file->private_data);
+                printk(KERN_DEBUG "%s: after available useMmap count:%d\n", DRIVER_NAME, (max_size - *useMmapSize));
+                printk(KERN_DEBUG "%s: return %d as the index of mmap\n", DRIVER_NAME, i);
                 break;
             }
         }
 
-        if (i == USABLE_MMAP_MAX_SIZE) {
-            printk(KERN_INFO "[%s] Usable mmap is none\n", __func__);
+        if (i == max_size) {
+            printk(KERN_DEBUG "%s: Usable mmap is none! struct file:%p\n", DRIVER_NAME, file);
             i = -1;
         }
 
         if (copy_to_user((void*)mmapIndex, &i, sizeof(int))) {
-            printk(KERN_ERR "[%s]:Fail to copy_to_user\n", __func__);
+            printk(KERN_ERR "%s: fail to copy the index value to user.\n", DRIVER_NAME);
         }
         mutex_unlock(&codec_mutex);
 
@@ -201,9 +195,7 @@ static ssize_t svcodec_write (struct file *file, const char __user *buf,
 static ssize_t svcodec_read (struct file *file, char __user *buf,
                              size_t count, loff_t *fops)
 {
-    if (!svcodec) {
-        printk(KERN_ERR "[%s] : Fail to get codec device info\n", __func__);
-    }
+    printk(KERN_INFO "%s: do nothing in the read operation \n", DRIVER_NAME);
     return 0;
 }
 
@@ -217,16 +209,15 @@ static int svcodec_mmap (struct file *file, struct vm_area_struct *vm)
     off = vm->vm_pgoff << PAGE_SHIFT;
     phys_addr = (PAGE_ALIGN(svcodec->mem_start) + off) >> PAGE_SHIFT;
     size = vm->vm_end - vm->vm_start;
-    printk(KERN_DEBUG "svcodec_mmap\n");
 
     if (size > svcodec->mem_size) {
-        printk(KERN_ERR "Over mapping size\n");
+        CODEC_ERR_LOG("over mapping size\n");
         return -EINVAL;
     }
 
     ret = remap_pfn_range(vm, vm->vm_start, phys_addr, size, vm->vm_page_prot);
     if (ret < 0) {
-        printk(KERN_ERR "Failed to remap page range\n");
+        CODEC_ERR_LOG("failed to remap page range\n");
         return -EAGAIN;
     }
 
@@ -239,16 +230,15 @@ static int svcodec_mmap (struct file *file, struct vm_area_struct *vm)
 static int svcodec_open (struct inode *inode, struct file *file)
 {
     int i;
+    int max_size = USABLE_MMAP_MAX_SIZE;
 
     mutex_lock(&codec_mutex);
 
-    printk(KERN_DEBUG "[%s]\n", __func__);
-    printk(KERN_DEBUG "[%s] struct file :%p\n", __func__, file);
-
-    if (svcodec->useMmap[USABLE_MMAP_MAX_SIZE] == 0) {
-        for (i = 0; i < USABLE_MMAP_MAX_SIZE; i++) {
+    printk(KERN_DEBUG "%s: open! struct file:%p\n", DRIVER_NAME, file);
+    if (svcodec->useMmap[max_size] == 0) {
+        for (i = 0; i < max_size; i++) {
             svcodec->useMmap[i] = 1;
-            printk(KERN_DEBUG "Reset useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
+            printk(KERN_DEBUG "%s: reset useMmap[%d]=%d\n", DRIVER_NAME, i, svcodec->useMmap[i]);
         }
     }
 
@@ -261,24 +251,29 @@ static int svcodec_open (struct inode *inode, struct file *file)
 static int svcodec_release (struct inode *inode, struct file *file)
 {
     int max_size = USABLE_MMAP_MAX_SIZE;
+    uint8_t *useMmap;
 
     mutex_lock(&codec_mutex);
 
-    printk(KERN_DEBUG "[%s] close %s\n", __func__, DRIVER_NAME);
+    useMmap  = (uint8_t*)file->private_data;
+    printk(KERN_DEBUG "%s: close!! struct file:%p, priv_data:%p\n", DRIVER_NAME, file, useMmap);
 
-    (svcodec->useMmap[max_size])--;
-    *(uint8_t*)file->private_data = 1;
-    printk(KERN_DEBUG "[%s] available useMmap count:%d\n",
-           __func__, (max_size - svcodec->useMmap[max_size]));
+    if (file && file->private_data) {
+        if (svcodec->useMmap[max_size] > 0) {
+            (svcodec->useMmap[max_size])--;
+        }
+        *useMmap = 1;
+        printk(KERN_DEBUG "%s: available useMmap count:%d\n",
+                DRIVER_NAME, (max_size - svcodec->useMmap[max_size]));
 
-    /* notify qemu of closing codec device. */
-    printk(KERN_DEBUG "[%s] struct file : %p\n", __func__, file);
-    writel((uint32_t)file, svcodec->ioaddr + CODEC_CLOSED);
+        /* notify closing codec device of qemu. */
+        writel((uint32_t)file, svcodec->ioaddr + CODEC_CLOSED);
+    }
 
 #ifdef CODEC_DEBUG
     int i;
     for (i = 0; i < max_size; i++) {
-        printk(KERN_DEBUG "useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
+        printk(KERN_DEBUG "%s: useMmap[%d]=%d\n", DRIVER_NAME, i, svcodec->useMmap[i]);
     }
 #endif
     module_put(THIS_MODULE);
@@ -329,32 +324,28 @@ static void __devinit svcodec_remove (struct pci_dev *pci_dev)
 static int __devinit svcodec_probe (struct pci_dev *pci_dev,
                                     const struct pci_device_id *pci_id)
 {
-    int ret;
-
     svcodec = (svcodec_dev*)kmalloc(sizeof(svcodec_dev), GFP_KERNEL);
     memset(svcodec, 0x00, sizeof(svcodec_dev));
 
     svcodec->dev = pci_dev;
 
     if (pci_enable_device(pci_dev)) {
-        printk(KERN_ERR "[%s] : pci_enable_device failed\n", __func__);
+        CODEC_ERR_LOG("pci_enable_device failed\n");
         goto err_rel;
     }
 
     pci_set_master(pci_dev);
 
-    ret = -EIO;
-
     svcodec->mem_start = pci_resource_start(pci_dev, 0);
     svcodec->mem_size = pci_resource_len(pci_dev, 0);
 
     if (!svcodec->mem_start) {
-        printk(KERN_ERR "[%s] : pci_resource_start failed\n", __func__);
+        CODEC_ERR_LOG("pci_resource_start failed\n");
         goto err_out;
     }
     
     if (!request_mem_region(svcodec->mem_start, svcodec->mem_size, DRIVER_NAME)) {
-        printk(KERN_ERR "[%s] : request_mem_region failed\n", __func__);
+        CODEC_ERR_LOG("request_mem_region failed\n");
         goto err_out;
     }
 
@@ -362,30 +353,30 @@ static int __devinit svcodec_probe (struct pci_dev *pci_dev,
     svcodec->io_size = pci_resource_len(pci_dev, 1);
 
     if (!svcodec->io_start) {
-        printk(KERN_ERR "[%s] : pci_resource_start failed\n", __func__);
+        CODEC_ERR_LOG("pci_resource_start failed\n");
         goto err_mem_region;
     }
 
     if (!request_mem_region(svcodec->io_start, svcodec->io_size, DRIVER_NAME)) {
-        printk(KERN_ERR "[%s] : request_io_region failed\n", __func__);
+        CODEC_ERR_LOG("request_io_region failed\n");
         goto err_mem_region;
     }
 
 #if 0
     svcodec->memaddr = ioremap(svcodec->mem_start, svcodec->mem_size);
     if (!svcodec->memaddr) {
-        printk(KERN_ERR "[%s] : ioremap failed\n", __func__);
+        CODEC_ERR_LOG( "[%s] : ioremap failed\n", __func__);
         goto err_io_region;
     }
 #endif
 
     svcodec->ioaddr = ioremap_nocache(svcodec->io_start, svcodec->io_size);
     if (!svcodec->ioaddr) {
-        printk(KERN_ERR "[%s] : ioremap failed\n", __func__);
+        CODEC_ERR_LOG("ioremap failed\n");
         goto err_io_region;
     }
     if (register_chrdev(CODEC_MAJOR, DRIVER_NAME, &svcodec_fops)) {
-        printk(KERN_ERR "[%s] : register_chrdev failed\n", __func__);
+        CODEC_ERR_LOG("register_chrdev failed\n");
         goto err_io_unmap;
     }
 
@@ -404,7 +395,7 @@ err_mem_region:
 err_out:
     pci_disable_device(pci_dev);
 err_rel:
-    return ret;
+    return -EIO;
 }
 
 static struct pci_driver driver = {
@@ -416,7 +407,7 @@ static struct pci_driver driver = {
 
 static int __init svcodec_init (void)
 {
-    printk(KERN_INFO "marucodec device is initialized.\n");
+    printk(KERN_INFO "%s: device is initialized.\n", DRIVER_NAME);
     return pci_register_driver(&driver);
 }
 
