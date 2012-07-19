@@ -1031,7 +1031,8 @@ static struct pci_device_id marucam_pci_id_tbl[] = {
 		.device		= PCI_DEVICE_ID_VIRTUAL_CAMERA,
 		.subvendor	= PCI_ANY_ID,
 		.subdevice	= PCI_ANY_ID,
-	}
+	},
+	{ 0, },
 };
 
 MODULE_DEVICE_TABLE(pci, marucam_pci_id_tbl);

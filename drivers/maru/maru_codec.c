@@ -124,6 +124,7 @@ static struct pci_device_id svcodec_pci_table[] __devinitdata = {
     .subvendor  = PCI_ANY_ID,
     .subdevice  = PCI_ANY_ID,
     },
+    { 0, },
 };
 MODULE_DEVICE_TABLE(pci, svcodec_pci_table);
 
@@ -340,12 +341,12 @@ static int __devinit svcodec_probe (struct pci_dev *pci_dev,
     svcodec->mem_size = pci_resource_len(pci_dev, 0);
 
     if (!svcodec->mem_start) {
-        CODEC_ERR_LOG("pci_resource_start failed\n");
+        CODEC_ERR_LOG("pci_resource_start failed:mem\n");
         goto err_out;
     }
     
     if (!request_mem_region(svcodec->mem_start, svcodec->mem_size, DRIVER_NAME)) {
-        CODEC_ERR_LOG("request_mem_region failed\n");
+        CODEC_ERR_LOG("request_mem_region failed:mem\n");
         goto err_out;
     }
 
@@ -353,12 +354,12 @@ static int __devinit svcodec_probe (struct pci_dev *pci_dev,
     svcodec->io_size = pci_resource_len(pci_dev, 1);
 
     if (!svcodec->io_start) {
-        CODEC_ERR_LOG("pci_resource_start failed\n");
+        CODEC_ERR_LOG("pci_resource_start failed:io\n");
         goto err_mem_region;
     }
 
     if (!request_mem_region(svcodec->io_start, svcodec->io_size, DRIVER_NAME)) {
-        CODEC_ERR_LOG("request_io_region failed\n");
+        CODEC_ERR_LOG("request_io_region failed:io\n");
         goto err_mem_region;
     }
 

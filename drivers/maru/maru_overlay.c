@@ -48,7 +48,8 @@ static struct pci_device_id svo_pci_tbl[] = {
 		.device       = 0x1010,
 		.subvendor    = PCI_ANY_ID,
 		.subdevice    = PCI_ANY_ID,
-	}
+	},
+	{ 0, },
 };
 
 struct svo {
