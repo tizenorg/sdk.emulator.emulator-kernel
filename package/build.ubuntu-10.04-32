@@ -1,0 +1,38 @@
+#!/bin/sh -xe
+# clean
+clean()
+{
+	echo "$SRCDIR"
+	make clean
+	rm -rf $SRCDIR/*.zip
+	rm -rf $SRCDIR/*.tar.gz
+}
+
+# build
+build() 
+{
+	make i386_emul_defconfig
+	make
+}
+
+# install
+install() 
+{
+    if [ "$TARGET_OS" = "ubuntu-10.04-32" ]
+    then
+		BIN_DIR=$SRCDIR/package/emulator-kernel-x86.package.${TARGET_OS}
+    elif [ "$TARGET_OS" = "windows-7-32" ]
+		BIN_DIR=$SRCDIR/package/emulator-kernel-x86.package.${TARGET_OS}
+	else
+		BIN_DIR=$SRCDIR/package/emulator-kernel-x86.package.${TARGET_OS}
+    fi
+	mkdir -p $BIN_DIR/data/tools/emulator/data/kernel
+
+	cp arch/x86/boot/bzImage $BIN_DIR/bzImage.x86
+}
+
+[ "$1" = "clean" ] && clean
+[ "$1" = "build" ] && build
+[ "$1" = "install" ] && install
+
+echo "success"
