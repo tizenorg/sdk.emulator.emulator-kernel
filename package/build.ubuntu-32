@@ -18,8 +18,8 @@ build()
 # install
 install()
 {
-	BIN_DIR=$SRCDIR/package/emulator-kernel-x86.package.${TARGET_OS}
-	mkdir -p $BIN_DIR/data/tools/emulator/data/kernel
+	BIN_DIR=$SRCDIR/package/emulator-kernel-x86.package.${TARGET_OS}/data/tools/emulator/data/kernel
+	mkdir -p $BIN_DIR
 
 	cp arch/x86/boot/bzImage $BIN_DIR/bzImage.x86
 }
