@@ -18,15 +18,10 @@ build()
 # install
 install() 
 {
-    if [ "$BUILD_TARGET_OS" = "linux" ]
-    then
-		BIN_DIR=$SRCDIR/package/emulator-kernel.package.linux/data/Emulator/x86/data/kernel-img
-    else
-		BIN_DIR=$SRCDIR/package/emulator-kernel.package.windows/data/Emulator/x86/data/kernel-img
-    fi
+	BIN_DIR=$SRCDIR/package/emulator-kernel-x86.package.${TARGET_OS}/data/tools/emulator/data/kernel
 	mkdir -p $BIN_DIR
 
-	cp arch/x86/boot/bzImage $BIN_DIR
+	cp arch/x86/boot/bzImage $BIN_DIR/bzImage.x86
 }
 
 [ "$1" = "clean" ] && clean

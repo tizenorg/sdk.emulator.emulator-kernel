@@ -1,15 +1,7 @@
-Package: emulator-kernel
-Version: 1.1.20
-OS: linux
-Build-host-os: linux
-Maintainer: Yeong-Kyoon, Lee <yeongkyoon.lee@samsung.com>
-Source: emulator-kernel
-Description: Tizen Emulator Kernel
-
-Package: emulator-kernel
-Version: 1.1.20
-OS: windows
-Build-host-os: linux
+Package: emulator-kernel-x86
+Version: 1.3.1
+OS: ubuntu-32, ubuntu-64, windows-32, macos-64
+Build-host-os: ubuntu-32
 Maintainer: Yeong-Kyoon, Lee <yeongkyoon.lee@samsung.com>
 Source: emulator-kernel
 Description: Tizen Emulator Kernel
