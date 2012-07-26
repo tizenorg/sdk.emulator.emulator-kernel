@@ -219,7 +219,7 @@ struct platform_device tizen_fgles_device = {
 	.resource	= tizen_fgles_resources,
 	.num_resources	= ARRAY_SIZE(tizen_fgles_resources),
 };
-#endif /* CONFIG_VIRTIO_BLK */
+#endif /* CONFIG_TIZEN_FGLES */
 
 static void tizen_lcd_power_on(struct plat_lcd_data *pd, unsigned int power)
 {
@@ -1201,36 +1201,6 @@ static struct platform_device exynos4_bus_devfreq = {
 	.name			= "exynos4210-busfreq",
 };
 
-#ifdef CONFIG_VIRTIO_MMIO
-#ifdef CONFIG_VIRTIO_BLK
-static struct resource tizen_virtio_mmio_blk_resources[] = {
-	[0] = DEFINE_RES_MEM(0x10AD0000, SZ_4K),
-	[1] = DEFINE_RES_IRQ(IRQ_EINT(7)),
-};
-
-struct platform_device tizen_virtio_mmio_blk_device = {
-	.name		= "virtio-mmio",
-	.id		= 0,
-	.resource	= tizen_virtio_mmio_blk_resources,
-	.num_resources	= ARRAY_SIZE(tizen_virtio_mmio_blk_resources),
-};
-#endif /* CONFIG_VIRTIO_BLK */
-
-#ifdef CONFIG_VIRTIO_NET
-static struct resource tizen_virtio_mmio_net_resources[] = {
-	[0] = DEFINE_RES_MEM(0x10AC0000, SZ_4K),
-	[1] = DEFINE_RES_IRQ(IRQ_EINT(6)),
-};
-
-struct platform_device tizen_virtio_mmio_net_device = {
-	.name		= "virtio-mmio",
-	.id		= -1,
-	.resource	= tizen_virtio_mmio_net_resources,
-	.num_resources	= ARRAY_SIZE(tizen_virtio_mmio_net_resources),
-};
-#endif /* CONFIG_VIRTIO_NET */
-#endif /* CONFIG_VIRTIO_MMIO */
-
 static struct platform_device *tizen_devices[] __initdata = {
 	/* Samsung Platform Devices */
 	&s5p_device_mipi_csis0,
@@ -1243,15 +1213,6 @@ static struct platform_device *tizen_devices[] __initdata = {
 	&s5p_device_mfc,
 	&s5p_device_mfc_l,
 	&s5p_device_mfc_r,
-
-#ifdef CONFIG_VIRTIO_MMIO
-#ifdef CONFIG_VIRTIO_BLK
-	&tizen_virtio_mmio_blk_device,
-#endif /* CONFIG_VIRTIO_BLK */
-#ifdef CONFIG_VIRTIO_NET
-	&tizen_virtio_mmio_net_device,
-#endif /* CONFIG_VIRTIO_NET */
-#endif /* CONFIG_VIRTIO_MMIO */
 
 	/* Tizen Devices */
 	&tizen_lcd_device,
