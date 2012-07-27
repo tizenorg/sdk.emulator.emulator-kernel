@@ -72,7 +72,7 @@ static unsigned debug = 0;
 #define MARUCAM_MODULE_NAME "marucam"
 
 #define MARUCAM_MAJOR_VERSION 0
-#define MARUCAM_MINOR_VERSION 22
+#define MARUCAM_MINOR_VERSION 24
 #define MARUCAM_RELEASE 1
 #define MARUCAM_VERSION \
 	KERNEL_VERSION(MARUCAM_MAJOR_VERSION, MARUCAM_MINOR_VERSION, MARUCAM_RELEASE)
@@ -90,7 +90,7 @@ MODULE_LICENSE("GPL2");
 #define MARUCAM_INIT           0x00
 #define MARUCAM_OPEN           0x04
 #define MARUCAM_CLOSE          0x08
-#define MARUCAM_ISSTREAM       0x0C
+#define MARUCAM_ISR            0x0C
 #define MARUCAM_START_PREVIEW  0x10
 #define MARUCAM_STOP_PREVIEW   0x14
 #define MARUCAM_S_PARAM        0x18
@@ -106,7 +106,6 @@ MODULE_LICENSE("GPL2");
 #define MARUCAM_ENUM_FINTV     0x40
 #define MARUCAM_S_DATA         0x44
 #define MARUCAM_G_DATA         0x48
-#define MARUCAM_CLRIRQ         0x4C
 #define MARUCAM_DTC            0x50
 #define MARUCAM_REQFRAME       0x54
 
@@ -369,11 +368,12 @@ done:
 static irqreturn_t marucam_irq_handler(int irq, void *dev_id)
 {
 	struct marucam_device *dev = dev_id;
+	uint32_t isr = 0;
 
-	if (!ioread32(dev->mmregs + MARUCAM_ISSTREAM))
+	isr = ioread32(dev->mmregs + MARUCAM_ISR);
+	if (!isr)
 		return IRQ_NONE;
 
-	iowrite32(0, dev->mmregs + MARUCAM_CLRIRQ);
 	marucam_fillbuf(dev);
 	return IRQ_HANDLED;
 }
