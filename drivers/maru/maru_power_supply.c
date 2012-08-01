@@ -32,7 +32,7 @@
 static struct class *mtd_class;
 static struct device* mtd_device;
 
-static int capacity = 100;
+static int capacity = 50;
 static int charge_full = 0;
 static int charge_now = 0;
 
