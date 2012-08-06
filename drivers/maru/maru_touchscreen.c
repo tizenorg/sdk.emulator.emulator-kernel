@@ -40,7 +40,7 @@ MODULE_AUTHOR("s-core");
 MODULE_DESCRIPTION("Emulator Touchscreen driver for x86");
 
 /* touchscreen device features */
-#define MAX_TRKID 3
+#define MAX_TRKID 6
 #define EMUL_TOUCHSCREEN_PACKET_LEN 7
 #define TOUCHSCREEN_RESOLUTION_X 5040
 #define TOUCHSCREEN_RESOLUTION_Y 3780
