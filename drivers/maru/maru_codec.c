@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2011-2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: 
+ * Contact:
  *  Kitae KIM <kt920.kim@samsung.com>
  *  SeokYeon Hwang <syeon.hwang@samsung.com>
  *  DongKyun Yun <dk77.yun@samsung.com>
@@ -21,7 +21,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+ * MA  02110-1301, USA.
  *
  * Contributors:
  * - S-Core Co., Ltd
@@ -32,6 +33,7 @@
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/io.h>
 #include <linux/ioport.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -39,10 +41,9 @@
 #include <linux/types.h>
 #include <linux/sched.h>
 #include <linux/semaphore.h>
+#include <linux/uaccess.h>
 #include <linux/workqueue.h>
 #include <linux/wait.h>
-#include <asm/uaccess.h>
-#include <asm/io.h>
 
 #define DRIVER_NAME	 "codec"
 #define CODEC_MAJOR	 240
@@ -125,9 +126,8 @@ static ssize_t svcodec_read(struct file *file, char __user *buf,
 	return 0;
 }
 
-/* Another way to copy data between guest and host. */
 /* Copy data between guest and host using mmap operation. */
-static ssize_t svcodec_write (struct file *file, const char __user *buf,
+static ssize_t svcodec_write(struct file *file, const char __user *buf,
 			size_t count, loff_t *fops)
 {
 	struct codec_param paramInfo;
@@ -250,11 +250,7 @@ static irqreturn_t svcodec_irq_handler (int irq, void *dev_id)
 	}
 
 	spin_lock_irqsave(&dev->lock, flags);
-
 	CODEC_LOG(KERN_DEBUG, "irq is for this module.\n");
-	writel(0, dev->ioaddr + CODEC_QUERY_STATE);
-
-	spin_lock_irqsave(&dev->lock, flags);
 
 	dev->sleep_flag = 1;
 	wake_up_interruptible(&dev->codec_wq);
@@ -296,7 +292,7 @@ static int svcodec_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static int svcodec_release (struct inode *inode, struct file *file)
+static int svcodec_release(struct inode *inode, struct file *file)
 {
 	int max_size = USABLE_MMAP_MAX_SIZE;
 	uint8_t *useMmap;
@@ -338,7 +334,7 @@ static int svcodec_release (struct inode *inode, struct file *file)
 }
 
 /* define file opertion for CODEC */
-struct file_operations svcodec_fops = {
+const struct file_operations svcodec_fops = {
 	.owner	 = THIS_MODULE,
 	.read	 = svcodec_read,
 	.write	 = svcodec_write,
@@ -483,13 +479,13 @@ static struct pci_driver driver = {
 	.remove = svcodec_remove,
 };
 
-static int __init svcodec_init (void)
+static int __init svcodec_init(void)
 {
 	CODEC_LOG(KERN_INFO, "device is initialized.\n");
 	return pci_register_driver(&driver);
 }
 
-static void __exit svcodec_exit (void)
+static void __exit svcodec_exit(void)
 {
 	pci_unregister_driver(&driver);
 }
