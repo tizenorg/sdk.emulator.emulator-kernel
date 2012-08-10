@@ -32,8 +32,8 @@
 static struct class *mtd_class;
 static struct device* mtd_device;
 
-static int capacity = 100;
-static int charge_full = 1;
+static int capacity = 50;
+static int charge_full = 0;
 static int charge_now = 0;
 
 //#define DEBUG_MARU_POWER_SUPPLY
