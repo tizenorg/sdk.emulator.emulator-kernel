@@ -74,7 +74,7 @@ static unsigned debug;
 #define MARUCAM_MODULE_NAME "marucam"
 
 #define MARUCAM_MAJOR_VERSION 0
-#define MARUCAM_MINOR_VERSION 24
+#define MARUCAM_MINOR_VERSION 25
 #define MARUCAM_RELEASE 1
 #define MARUCAM_VERSION \
 	KERNEL_VERSION(MARUCAM_MAJOR_VERSION, \
@@ -82,7 +82,7 @@ static unsigned debug;
 
 MODULE_DESCRIPTION("MARU Virtual Camera Driver");
 MODULE_AUTHOR("Jinhyung Jo <jinhyung.jo@samsung.com>");
-MODULE_LICENSE("GPL2");
+MODULE_LICENSE("GPL");
 
 #define DFL_WIDTH	640
 #define DFL_HEIGHT	480
@@ -112,10 +112,19 @@ MODULE_LICENSE("GPL2");
 #define MARUCAM_DTC            0x50
 #define MARUCAM_REQFRAME       0x54
 
+enum marucam_opstate {
+	S_IDLE = 0,
+	S_RUNNING = 1
+};
+
+
 struct marucam_device {
 	struct v4l2_device		v4l2_dev;
 
 	spinlock_t			slock;
+	struct mutex			mlock;
+	enum marucam_opstate		opstate;
+	unsigned int			in_use;
 
 	struct video_device		*vfd;
 	struct pci_dev			*pdev;
@@ -134,6 +143,11 @@ struct marucam_device {
 
 	struct list_head		active;
 };
+
+/*
+ * Use only one instance.
+ */
+static struct marucam_device *marucam_instance;
 
 /*
  * The code below has been modified from 'videobuf_vmalloc.c'.
@@ -277,7 +291,7 @@ static int __videobuf_mmap_mapper(struct videobuf_queue *q,
 			+ vma->vm_pgoff) >> PAGE_SHIFT,
 			pages, vma->vm_page_prot);
 	if (retval < 0) {
-		marucam_err("remap failed with error %d. ", retval);
+		marucam_err("remap failed with error %d.", retval);
 		mem->mapped = 0;
 		goto error;
 	}
@@ -352,6 +366,8 @@ static void marucam_fillbuf(struct marucam_device *dev)
 	unsigned long flags = 0;
 
 	spin_lock_irqsave(q->irqlock, flags);
+	if (dev->opstate != S_RUNNING)
+		goto done;
 	if (list_empty(&dev->active))
 		goto done;
 
@@ -409,19 +425,23 @@ static int vidioc_enum_fmt_vid_cap(struct file *file, void  *priv,
 	if (f->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 
+	mutex_lock(&dev->mlock);
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(f->index, dev->mmregs + MARUCAM_S_DATA);
 
 	iowrite32(0, dev->mmregs + MARUCAM_ENUM_FMT);
 	ret = ioread32(dev->mmregs + MARUCAM_ENUM_FMT);
-	if (ret > 0)
-		return -(ret);
+	if (ret > 0) {
+		mutex_unlock(&dev->mlock);
+		return (int)(-ret);
+	}
 
 	f->index	= ioread32(dev->mmregs + MARUCAM_G_DATA);
 	f->flags	= ioread32(dev->mmregs + MARUCAM_G_DATA);
 	f->pixelformat	= ioread32(dev->mmregs + MARUCAM_G_DATA);
 	ioread32_rep(dev->mmregs + MARUCAM_G_DATA, f->description, 8);
 
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -431,11 +451,15 @@ static int vidioc_g_fmt_vid_cap(struct file *file, void *priv,
 	struct marucam_device *dev = priv;
 	uint32_t ret;
 
+	mutex_lock(&dev->mlock);
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(0, dev->mmregs + MARUCAM_G_FMT);
 	ret = ioread32(dev->mmregs + MARUCAM_G_FMT);
-	if (ret > 0)
-		return -(ret);
+        if (ret > 0) {
+                marucam_err("MARUCAM_G_FMT failed with error %d.", -ret);
+                mutex_unlock(&dev->mlock);
+                return (int)(-ret);
+        }
 
 	f->fmt.pix.width	= ioread32(dev->mmregs + MARUCAM_G_DATA);
 	f->fmt.pix.height	= ioread32(dev->mmregs + MARUCAM_G_DATA);
@@ -452,6 +476,7 @@ static int vidioc_g_fmt_vid_cap(struct file *file, void *priv,
 	dev->vb_vidq.field	= f->fmt.pix.field;
 	dev->type		= f->type;
 
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -461,6 +486,7 @@ static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
 	struct marucam_device *dev = priv;
 	uint32_t ret;
 
+	mutex_lock(&dev->mlock);
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(f->fmt.pix.width, dev->mmregs + MARUCAM_S_DATA);
 	iowrite32(f->fmt.pix.height, dev->mmregs + MARUCAM_S_DATA);
@@ -469,9 +495,11 @@ static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
 
 	iowrite32(0, dev->mmregs + MARUCAM_TRY_FMT);
 	ret = ioread32(dev->mmregs + MARUCAM_TRY_FMT);
-
-	if (ret > 0)
-		return -(ret);
+        if (ret > 0) {
+                marucam_err("MARUCAM_TRY_FMT failed with error %d.", -ret);
+                mutex_unlock(&dev->mlock);
+                return (int)(-ret);
+        }
 
 	f->fmt.pix.width	= ioread32(dev->mmregs + MARUCAM_G_DATA);
 	f->fmt.pix.height	= ioread32(dev->mmregs + MARUCAM_G_DATA);
@@ -482,6 +510,7 @@ static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
 	f->fmt.pix.colorspace	= ioread32(dev->mmregs + MARUCAM_G_DATA);
 	f->fmt.pix.priv		= ioread32(dev->mmregs + MARUCAM_G_DATA);
 
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -492,12 +521,21 @@ static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 	struct videobuf_queue *q = &dev->vb_vidq;
 	uint32_t ret;
 
-	mutex_lock(&q->vb_lock);
-	if (videobuf_queue_is_busy(&dev->vb_vidq)) {
-		marucam_dbg(1, "queue busy\n");
-		mutex_unlock(&q->vb_lock);
+	mutex_lock(&dev->mlock);
+	if (dev->opstate != S_IDLE) {
+		marucam_err("device state is not S_IDLE\n");
+		mutex_unlock(&dev->mlock);
 		return -EBUSY;
 	}
+	mutex_lock(&q->vb_lock);
+	if (videobuf_queue_is_busy(&dev->vb_vidq)) {
+		marucam_err("videobuf queue is busy\n");
+		mutex_unlock(&q->vb_lock);
+		mutex_unlock(&dev->mlock);
+		return -EBUSY;
+	}
+	mutex_unlock(&q->vb_lock);
+
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(f->fmt.pix.width, dev->mmregs + MARUCAM_S_DATA);
 	iowrite32(f->fmt.pix.height, dev->mmregs + MARUCAM_S_DATA);
@@ -506,11 +544,10 @@ static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 
 	iowrite32(0, dev->mmregs + MARUCAM_S_FMT);
 	ret = ioread32(dev->mmregs + MARUCAM_S_FMT);
-	mutex_unlock(&q->vb_lock);
-
 	if (ret > 0) {
-		marucam_err("MARUCAM_S_FMT failed\n");
-		return -(ret);
+		marucam_err("MARUCAM_S_FMT failed with error %d.", -ret);
+		mutex_unlock(&dev->mlock);
+		return (int)(-ret);
 	}
 
 	f->fmt.pix.width	= ioread32(dev->mmregs + MARUCAM_G_DATA);
@@ -528,6 +565,7 @@ static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 	dev->vb_vidq.field	= f->fmt.pix.field;
 	dev->type		= f->type;
 
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -572,17 +610,31 @@ static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 	if (i != dev->type)
 		return -EINVAL;
 
+        mutex_lock(&dev->mlock);
+        if (dev->opstate != S_IDLE) {
+                marucam_err("device state is not S_IDLE.\n");
+                mutex_unlock(&dev->mlock);
+                return -EBUSY;
+        }
+
+        INIT_LIST_HEAD(&dev->active);
+	ret = videobuf_streamon(&dev->vb_vidq);
+	if (ret) {
+		marucam_err("videobuf_streamon failed, reti(%d)\n", ret);
+                mutex_unlock(&dev->mlock);
+                return ret;
+	}
+
 	iowrite32(1, dev->mmregs + MARUCAM_START_PREVIEW);
 	ret = (int)ioread32(dev->mmregs + MARUCAM_START_PREVIEW);
 	if (ret) {
-		marucam_err("device streamon failed!\n");
-		return -(ret);
+		marucam_err("MARUCAM_START_PREVIEW failed!\n");
+		mutex_unlock(&dev->mlock);
+		return -ret;
 	}
 
-	ret = videobuf_streamon(&dev->vb_vidq);
-	if (ret < 0)
-		marucam_err("videobuf_streamon failed!, ret = %d\n", ret);
-
+	dev->opstate = S_RUNNING;
+	mutex_unlock(&dev->mlock);
 	return ret;
 }
 
@@ -596,17 +648,29 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 	if (i != dev->type)
 		return -EINVAL;
 
-	iowrite32(1, dev->mmregs + MARUCAM_STOP_PREVIEW);
-	ret = (int)ioread32(dev->mmregs + MARUCAM_STOP_PREVIEW);
-	if (ret > 0) {
-		marucam_err("device streamoff failed!\n");
-		return -(ret);
+	mutex_lock(&dev->mlock);
+	if (dev->opstate != S_RUNNING) {
+		marucam_err("device state is not S_RUNNING.\n");
+		mutex_unlock(&dev->mlock);
+		return -EBUSY;
 	}
 
-	ret = videobuf_streamoff(&dev->vb_vidq);
-	if (ret < 0)
-		marucam_err("videobuf_streamoff failed!\n");
+	iowrite32(1, dev->mmregs + MARUCAM_STOP_PREVIEW);
+	ret = (int)ioread32(dev->mmregs + MARUCAM_STOP_PREVIEW);
+	if (ret) {
+		marucam_err("MARUCAM_STOP_PREVIEW failed!\n");
+		mutex_unlock(&dev->mlock);
+		return -ret;
+	}
 
+	dev->opstate = S_IDLE;
+	ret = videobuf_streamoff(&dev->vb_vidq);
+	if (ret) {
+		marucam_err("videobuf_streamoff failed, ret(%d)\n", ret);
+	}
+
+	INIT_LIST_HEAD(&dev->active);
+	mutex_unlock(&dev->mlock);
 	return ret;
 }
 
@@ -647,14 +711,16 @@ static int vidioc_queryctrl(struct file *file, void *priv,
 	struct marucam_device *dev = priv;
 	uint32_t ret;
 
+	mutex_lock(&dev->mlock);
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(qc->id, dev->mmregs + MARUCAM_S_DATA);
 
 	iowrite32(0, dev->mmregs + MARUCAM_QCTRL);
 	ret = ioread32(dev->mmregs + MARUCAM_QCTRL);
-
-	if (ret > 0)
+	if (ret > 0) {
+		mutex_unlock(&dev->mlock);
 		return -(ret);
+	}
 
 	qc->id			= ioread32(dev->mmregs + MARUCAM_G_DATA);
 	qc->minimum		= ioread32(dev->mmregs + MARUCAM_G_DATA);
@@ -664,6 +730,7 @@ static int vidioc_queryctrl(struct file *file, void *priv,
 	qc->flags		= ioread32(dev->mmregs + MARUCAM_G_DATA);
 	ioread32_rep(dev->mmregs + MARUCAM_G_DATA, qc->name, 8);
 
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -673,17 +740,22 @@ static int vidioc_g_ctrl(struct file *file, void *priv,
 	struct marucam_device *dev = priv;
 	uint32_t ret;
 
+	mutex_lock(&dev->mlock);
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(ctrl->id, dev->mmregs + MARUCAM_S_DATA);
 
 	iowrite32(0, dev->mmregs + MARUCAM_G_CTRL);
 	ret = ioread32(dev->mmregs + MARUCAM_G_CTRL);
 
-	if (ret > 0)
+	if (ret > 0) {
+		marucam_err("MARUCAM_G_CTRL failed!\n");
+		mutex_unlock(&dev->mlock);
 		return -(ret);
+	}
 
 	ctrl->value = ioread32(dev->mmregs + MARUCAM_G_DATA);
 
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -693,16 +765,20 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 	struct marucam_device *dev = priv;
 	uint32_t ret;
 
+	mutex_lock(&dev->mlock);
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(ctrl->id, dev->mmregs + MARUCAM_S_DATA);
 	iowrite32(ctrl->value, dev->mmregs + MARUCAM_S_DATA);
 
 	iowrite32(0, dev->mmregs + MARUCAM_S_CTRL);
 	ret = ioread32(dev->mmregs + MARUCAM_S_CTRL);
+        if (ret > 0) {
+                marucam_err("MARUCAM_S_CTRL failed!\n");
+                mutex_unlock(&dev->mlock);
+                return -(ret);
+        }
 
-	if (ret > 0)
-		return -(ret);
-
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -716,16 +792,20 @@ static int vidioc_s_parm(struct file *file, void *priv,
 	if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 
+	mutex_lock(&dev->mlock);
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(cp->timeperframe.numerator, dev->mmregs + MARUCAM_S_DATA);
 	iowrite32(cp->timeperframe.denominator, dev->mmregs + MARUCAM_S_DATA);
 
 	iowrite32(0, dev->mmregs + MARUCAM_S_PARAM);
 	ret = ioread32(dev->mmregs + MARUCAM_S_PARAM);
+        if (ret > 0) {
+                marucam_err("MARUCAM_S_PARAM failed!\n");
+                mutex_unlock(&dev->mlock);
+                return -(ret);
+        }
 
-	if (ret > 0)
-		return -(ret);
-
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -739,16 +819,21 @@ static int vidioc_g_parm(struct file *file, void *priv,
 	if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 
+	mutex_lock(&dev->mlock);
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(0, dev->mmregs + MARUCAM_G_PARAM);
 	ret = ioread32(dev->mmregs + MARUCAM_G_PARAM);
-	if (ret > 0)
-		return -(ret);
+        if (ret > 0) {
+                marucam_err("MARUCAM_G_PARAM failed!\n");
+                mutex_unlock(&dev->mlock);
+                return -(ret);
+        }
 
 	cp->capability = ioread32(dev->mmregs + MARUCAM_G_DATA);
 	cp->timeperframe.numerator = ioread32(dev->mmregs + MARUCAM_G_DATA);
 	cp->timeperframe.denominator = ioread32(dev->mmregs + MARUCAM_G_DATA);
 
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -758,19 +843,23 @@ static int vidioc_enum_framesizes(struct file *file, void *priv,
 	struct marucam_device *dev = priv;
 	uint32_t ret;
 
+	mutex_lock(&dev->mlock);
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(fsize->index, dev->mmregs + MARUCAM_S_DATA);
 	iowrite32(fsize->pixel_format, dev->mmregs + MARUCAM_S_DATA);
 
 	iowrite32(0, dev->mmregs + MARUCAM_ENUM_FSIZES);
 	ret = ioread32(dev->mmregs + MARUCAM_ENUM_FSIZES);
-	if (ret > 0)
-		return -(ret);
+        if (ret > 0) {
+                mutex_unlock(&dev->mlock);
+                return -(ret);
+        }
 
 	fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
 	fsize->discrete.width = ioread32(dev->mmregs + MARUCAM_G_DATA);
 	fsize->discrete.height = ioread32(dev->mmregs + MARUCAM_G_DATA);
 
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -780,6 +869,7 @@ static int vidioc_enum_frameintervals(struct file *file, void *priv,
 	struct marucam_device *dev = priv;
 	uint32_t ret;
 
+	mutex_lock(&dev->mlock);
 	iowrite32(0, dev->mmregs + MARUCAM_DTC);
 	iowrite32(fival->index, dev->mmregs + MARUCAM_S_DATA);
 	iowrite32(fival->pixel_format, dev->mmregs + MARUCAM_S_DATA);
@@ -788,13 +878,16 @@ static int vidioc_enum_frameintervals(struct file *file, void *priv,
 
 	iowrite32(0, dev->mmregs + MARUCAM_ENUM_FINTV);
 	ret = ioread32(dev->mmregs + MARUCAM_ENUM_FINTV);
-	if (ret > 0)
-		return -(ret);
+        if (ret > 0) {
+                mutex_unlock(&dev->mlock);
+                return -(ret);
+        }
 
 	fival->type = V4L2_FRMIVAL_TYPE_DISCRETE;
 	fival->discrete.numerator = ioread32(dev->mmregs + MARUCAM_G_DATA);
 	fival->discrete.denominator = ioread32(dev->mmregs + MARUCAM_G_DATA);
 
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -885,6 +978,14 @@ static int marucam_open(struct file *file)
 	int ret;
 
 	file->private_data	= dev;
+
+	mutex_lock(&dev->mlock);
+	if (dev->in_use) {
+		marucam_err("device already opend!!!!\n");
+		mutex_unlock(&dev->mlock);
+		return -EBUSY;
+	}
+
 	dev->type		= V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	dev->pixelformat	= V4L2_PIX_FMT_YUYV;
 	dev->width		= DFL_WIDTH;
@@ -894,6 +995,7 @@ static int marucam_open(struct file *file)
 				IRQF_SHARED, MARUCAM_MODULE_NAME, dev);
 	if (ret) {
 		marucam_err("request_irq failed!!! irq#(%d)\n",	dev->pdev->irq);
+		mutex_unlock(&dev->mlock);
 		return ret;
 	}
 
@@ -904,12 +1006,15 @@ static int marucam_open(struct file *file)
 
 	iowrite32(0, dev->mmregs + MARUCAM_OPEN);
 	ret = (int)ioread32(dev->mmregs + MARUCAM_OPEN);
-
 	if (ret > 0) {
-		marucam_err("device open failed\n");
+		marucam_err("MARUCAM_OPEN failed\n");
+		free_irq(dev->pdev->irq, dev);
+		mutex_unlock(&dev->mlock);
 		return -ret;
 	}
 
+	dev->in_use = 1;
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -920,6 +1025,28 @@ static int marucam_close(struct file *file)
 
 	int minor = video_devdata(file)->minor;
 
+	mutex_lock(&dev->mlock);
+	if (dev->opstate == S_RUNNING) {
+		marucam_err("The device has been terminated unexpectedly.\n");
+		iowrite32(1, dev->mmregs + MARUCAM_STOP_PREVIEW);
+		ret = (int)ioread32(dev->mmregs + MARUCAM_STOP_PREVIEW);
+		if (ret > 0) {
+			marucam_err("MARUCAM_STOP_PREVIEW failed!\n");
+			mutex_unlock(&dev->mlock);
+			return -(ret);
+		}
+
+		dev->opstate = S_IDLE;
+		ret = videobuf_streamoff(&dev->vb_vidq);
+		if (ret < 0) {
+			marucam_err("videobuf_streamoff failed! ret(%d)\n",
+					 ret);
+			mutex_unlock(&dev->mlock);
+			return -(ret);
+		}
+		INIT_LIST_HEAD(&dev->active);
+	}
+
 	videobuf_stop(&dev->vb_vidq);
 	videobuf_mmap_free(&dev->vb_vidq);
 
@@ -929,11 +1056,14 @@ static int marucam_close(struct file *file)
 	ret = ioread32(dev->mmregs + MARUCAM_CLOSE);
 	if (ret > 0) {
 		marucam_err("device close failed\n");
+		mutex_unlock(&dev->mlock);
 		return -(ret);
 	}
 
 	marucam_dbg(1, "close called (minor=%d)\n", minor);
 
+	dev->in_use = 0;
+	mutex_unlock(&dev->mlock);
 	return 0;
 }
 
@@ -1037,7 +1167,6 @@ DEFINE_PCI_DEVICE_TABLE(marucam_pci_id_tbl) = {
 };
 
 MODULE_DEVICE_TABLE(pci, marucam_pci_id_tbl);
-
 static int marucam_pci_initdev(struct pci_dev *pdev,
 				const struct pci_device_id *id)
 {
@@ -1046,9 +1175,17 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 
 	debug = MARUCAM_DEBUG_LEVEL;
 
+	if (marucam_instance != NULL) {
+		marucam_err("only one device allowed!\n");
+		return -EBUSY;
+	}
+
 	dev = kzalloc(sizeof(struct marucam_device), GFP_KERNEL);
-	if (!dev)
+	if (!dev) {
+		marucam_err("kzalloc() failed\n");
 		return -ENOMEM;
+	}
+	marucam_instance = dev;
 
 	ret = v4l2_device_register(&pdev->dev, &dev->v4l2_dev);
 	if (ret)
@@ -1056,6 +1193,8 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 
 	INIT_LIST_HEAD(&dev->active);
 	spin_lock_init(&dev->slock);
+	mutex_init(&dev->mlock);
+	dev->opstate = S_IDLE;
 
 	dev->pdev = pdev;
 
@@ -1072,8 +1211,10 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 	dev->vfd->v4l2_dev = &dev->v4l2_dev;
 
 	ret = pci_enable_device(dev->pdev);
-	if (ret)
+	if (ret) {
+		marucam_err("pci_enable_device failed!!\n");
 		goto rel_vdev;
+	}
 	pci_set_master(dev->pdev);
 
 	ret = -EIO;
@@ -1140,6 +1281,8 @@ out_unreg:
 	v4l2_device_unregister(&dev->v4l2_dev);
 out_free:
 	kfree(dev);
+	dev = NULL;
+	marucam_instance = NULL;
 
 	return ret;
 }
@@ -1171,6 +1314,8 @@ static void marucam_pci_removedev(struct pci_dev *pdev)
 	pci_disable_device(dev->pdev);
 	v4l2_device_unregister(&dev->v4l2_dev);
 	kfree(dev);
+	dev = NULL;
+	marucam_instance = NULL;
 }
 
 static struct pci_driver marucam_pci_driver = {
