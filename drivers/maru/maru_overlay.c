@@ -42,7 +42,10 @@ enum {
 };
 
 DEFINE_PCI_DEVICE_TABLE(svo_pci_tbl) = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_TIZEN, PCI_DEVICE_ID_VIRTUAL_OVERLAY) } };
+	{ PCI_DEVICE(PCI_VENDOR_ID_TIZEN, PCI_DEVICE_ID_VIRTUAL_OVERLAY) },
+	{}
+};
+MODULE_DEVICE_TABLE(pci, svo_pci_tbl);
 
 struct svo {
 	/* pci device */

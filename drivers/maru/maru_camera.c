@@ -1032,7 +1032,11 @@ static struct video_device marucam_video_dev = {
    ------------------------------------------------------------------*/
 
 DEFINE_PCI_DEVICE_TABLE(marucam_pci_id_tbl) = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_TIZEN, PCI_DEVICE_ID_VIRTUAL_CAMERA) } };
+	{ PCI_DEVICE(PCI_VENDOR_ID_TIZEN, PCI_DEVICE_ID_VIRTUAL_CAMERA) },
+	{}
+};
+
+MODULE_DEVICE_TABLE(pci, marucam_pci_id_tbl);
 
 static int marucam_pci_initdev(struct pci_dev *pdev,
 				const struct pci_device_id *id)
