@@ -11,7 +11,11 @@ config MARU_CODEC
 	depends on MARU != n
 
 config MARU_TOUCHSCREEN
-	tristate "MARU touchscreen driver"
+	tristate "MARU USB Touchscreen Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_TOUCHSCREEN
+	tristate "MARU Virtio Touchscreen Driver"
 	depends on MARU != n
 
 config MARU_FB
