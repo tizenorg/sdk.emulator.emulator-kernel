@@ -1,5 +1,5 @@
 /*
- * Maru Virtual USB Touchscreen device driver
+ * Maru USB Touchscreen Device Driver
  * Based on drivers/input/tablet/wacom_sys.c:
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
@@ -187,7 +187,7 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
     usb_make_path(usb_ts->usbdev, usb_ts->phys, sizeof(usb_ts->phys));
     strlcat(usb_ts->phys, "/input0", sizeof(usb_ts->phys));
 
-    usb_ts->emuldev->name = "Maru Virtual Touchscreen";
+    usb_ts->emuldev->name = "Maru USB Touchscreen";
     usb_to_input_id(usb_ts->usbdev, &usb_ts->emuldev->id);
 
     usb_ts->emuldev->dev.parent = &intf->dev;
