@@ -1,5 +1,5 @@
 /*
- * Maru Virtual Virtio Touchscreen device driver
+ * Maru Virtio Touchscreen Device Driver
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
@@ -169,7 +169,6 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     /* thread */
     vt->thread = kthread_run(run_touchscreen, vt, "vtouchscreen");
     if (IS_ERR(vt->thread)) {
-        kfree(vt);
 		return PTR_ERR(vt->thread);
 	}
 
