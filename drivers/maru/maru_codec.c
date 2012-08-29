@@ -52,18 +52,16 @@ MODULE_DESCRIPTION("Virtual Codec Device Driver");
 MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_LICENSE("GPL2");
 
-#define USABLE_MMAP_MAX_SIZE	20
 #define CODEC_LOG(log_level, fmt, ...) \
 	printk(log_level "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
 
 #define CODEC_IRQ 0x7f
 
 /* Clean up source. : _param, svcodec_param_offset, paramindex */
-
 struct codec_param {
-	uint32_t apiIndex;
-	uint32_t ctxIndex;
-	uint32_t mmapOffset;
+	uint32_t api_index;
+	uint32_t ctx_index;
+	uint32_t mmap_offset;
 	uint32_t ret;
 };
 
@@ -79,7 +77,6 @@ enum codec_io_cmd {
 enum codec_api_index {
 	EMUL_AV_REGISTER_ALL = 1,
 	EMUL_AVCODEC_ALLOC_CONTEXT,
-	EMUL_AVCODEC_ALLOC_FRAME,
 	EMUL_AVCODEC_OPEN,
 	EMUL_AVCODEC_CLOSE,
 	EMUL_AV_FREE,
@@ -92,8 +89,9 @@ enum codec_api_index {
 	EMUL_AV_PARSER_INIT,
 	EMUL_AV_PARSER_PARSE,
 	EMUL_AV_PARSER_CLOSE,
-	EMUL_GET_MMAP_INDEX,
 	EMUL_GET_CODEC_VER = 50,
+	EMUL_LOCK_MEM_REGION,
+	EMUL_UNLOCK_MEM_REGION,
 };
 
 struct svcodec_device {
@@ -113,11 +111,39 @@ struct svcodec_device {
 	spinlock_t lock;
 	int sleep_flag;
 
-	uint8_t useMmap[USABLE_MMAP_MAX_SIZE + 1];
+	int availableMem;
 };
 
 static struct svcodec_device *svcodec;
 DEFINE_MUTEX(codec_mutex);
+
+static long svcodec_ioctl(struct file *file,
+			unsigned int cmd,
+			unsigned long arg)
+{
+	mutex_lock(&codec_mutex);
+
+	if (cmd == EMUL_LOCK_MEM_REGION) {
+		if (svcodec->availableMem == 0)
+			svcodec->availableMem = 1;
+		else
+			svcodec->availableMem = -1;
+
+	} else if (cmd == EMUL_UNLOCK_MEM_REGION) {
+		svcodec->availableMem = 0;
+	} else {
+		CODEC_LOG(KERN_ERR, "there is no command.\n");
+	}
+
+	if (copy_to_user((void *)arg,
+			&svcodec->availableMem,
+			sizeof(int)))
+		CODEC_LOG(KERN_ERR, "failed to copy data to user\n");
+
+	mutex_unlock(&codec_mutex);
+
+	return 0;
+}
 
 static ssize_t svcodec_read(struct file *file, char __user *buf,
 			size_t count, loff_t *fops)
@@ -143,61 +169,19 @@ static ssize_t svcodec_write(struct file *file, const char __user *buf,
 		CODEC_LOG(KERN_ERR,
 			"failed to get codec parameter info from user\n");
 
-
-	if (paramInfo.apiIndex == EMUL_GET_MMAP_INDEX) {
-		int i = 0;
-		int max_size = USABLE_MMAP_MAX_SIZE;
-		int *mmapIndex = (int *)paramInfo.ret;
-		uint8_t *useMmapSize = &svcodec->useMmap[max_size];
-
-		CODEC_LOG(KERN_DEBUG, "before available useMmap count:%d\n",
-			(max_size - *useMmapSize));
-
-	for (; i < max_size; i++) {
-		if (svcodec->useMmap[i] == 1) {
-			svcodec->useMmap[i] = 0;
-			(*useMmapSize)++;
-			file->private_data = &svcodec->useMmap[i];
-			CODEC_LOG(KERN_DEBUG,
-				"useMmap[%d]=%d\n", i, svcodec->useMmap[i]);
-			CODEC_LOG(KERN_DEBUG,
-				"file:%p private_data:%p\n",
-				file, file->private_data);
-			CODEC_LOG(KERN_DEBUG,
-				"after available useMmap count:%d\n",
-				(max_size - *useMmapSize));
-			CODEC_LOG(KERN_DEBUG,
-				"return %d as the index of mmap\n", i);
-			break;
-		}
-	}
-
-	if (i == max_size) {
-		CODEC_LOG(KERN_DEBUG,
-			"Usable mmap is none! struct file:%p\n", file);
-		i = -1;
-	}
-
-	if (copy_to_user((void *)mmapIndex, &i, sizeof(int)))
-		CODEC_LOG(KERN_ERR,
-			"failed to copy the index value to user.\n");
-		mutex_unlock(&codec_mutex);
-		return 0;
-	}
-
-	if (paramInfo.apiIndex == EMUL_AVCODEC_ALLOC_CONTEXT)
+	if (paramInfo.api_index == EMUL_AVCODEC_ALLOC_CONTEXT)
 		writel((uint32_t)file, svcodec->ioaddr + CODEC_FILE_INDEX);
 
-	writel((uint32_t)paramInfo.ctxIndex,
+	writel((uint32_t)paramInfo.ctx_index,
 		svcodec->ioaddr + CODEC_CONTEXT_INDEX);
-	writel((uint32_t)paramInfo.mmapOffset,
+	writel((uint32_t)paramInfo.mmap_offset,
 		svcodec->ioaddr + CODEC_MMAP_OFFSET);
-	writel((uint32_t)paramInfo.apiIndex,
+	writel((uint32_t)paramInfo.api_index,
 		svcodec->ioaddr + CODEC_API_INDEX);
 
 	/* wait decoding or encoding job */
-	if (paramInfo.apiIndex >= EMUL_AVCODEC_DECODE_VIDEO &&
-		paramInfo.apiIndex <= EMUL_AVCODEC_ENCODE_AUDIO) {
+	if (paramInfo.api_index >= EMUL_AVCODEC_DECODE_VIDEO &&
+		paramInfo.api_index <= EMUL_AVCODEC_ENCODE_AUDIO) {
 		wait_event_interruptible(svcodec->codec_wq,
 					svcodec->sleep_flag != 0);
 		svcodec->sleep_flag = 0;
@@ -243,14 +227,15 @@ static irqreturn_t svcodec_irq_handler (int irq, void *dev_id)
 	int val = 0;
 	unsigned long flags;
 
+/*	spin_lock_irqsave(&dev->lock, flags); */
+
 	val = readl(dev->ioaddr + CODEC_QUERY_STATE);
 	if (!(val & CODEC_IRQ)) {
-		CODEC_LOG(KERN_DEBUG, "this irq is not for this module.\n");
+		spin_unlock_irqrestore(&dev->lock, flags);
 		return IRQ_NONE;
 	}
 
 	spin_lock_irqsave(&dev->lock, flags);
-	CODEC_LOG(KERN_DEBUG, "irq is for this module.\n");
 
 	dev->sleep_flag = 1;
 	wake_up_interruptible(&dev->codec_wq);
@@ -262,28 +247,16 @@ static irqreturn_t svcodec_irq_handler (int irq, void *dev_id)
 
 static int svcodec_open(struct inode *inode, struct file *file)
 {
-	int i, max_size = USABLE_MMAP_MAX_SIZE;
-
 	mutex_lock(&codec_mutex);
 	CODEC_LOG(KERN_DEBUG, "open! struct file:%p\n", file);
 
 	svcodec->sleep_flag = 0;
 
-	CODEC_LOG(KERN_DEBUG, "register irq handler\n");
 	/* register interrupt handler */
 	if (request_irq(svcodec->dev->irq, svcodec_irq_handler,
 		IRQF_SHARED, DRIVER_NAME, svcodec)) {
 		CODEC_LOG(KERN_ERR, "failed to register irq handle\n");
 		return -EBUSY;
-	}
-
-	/* reset useMmap array */
-	if (svcodec->useMmap[max_size] == 0) {
-		for (i = 0; i < max_size; i++) {
-			svcodec->useMmap[i] = 1;
-			CODEC_LOG(KERN_DEBUG, "reset useMmap[%d]=%d\n",
-				i, svcodec->useMmap[i]);
-		}
 	}
 
 	try_module_get(THIS_MODULE);
@@ -294,9 +267,6 @@ static int svcodec_open(struct inode *inode, struct file *file)
 
 static int svcodec_release(struct inode *inode, struct file *file)
 {
-	int max_size = USABLE_MMAP_MAX_SIZE;
-	uint8_t *useMmap;
-
 	mutex_lock(&codec_mutex);
 
 	/* free irq */
@@ -304,29 +274,12 @@ static int svcodec_release(struct inode *inode, struct file *file)
 		CODEC_LOG(KERN_DEBUG, "free registered irq\n");
 		free_irq(svcodec->dev->irq, svcodec);
 	}
+	svcodec->availableMem = 0;
 
-	/* manage codec context */
-	useMmap  = (uint8_t *)file->private_data;
-	CODEC_LOG(KERN_DEBUG,
-		"close! struct file:%p, priv_data:%p\n", file, useMmap);
-
-	if (file && file->private_data) {
-		if (svcodec->useMmap[max_size] > 0)
-			(svcodec->useMmap[max_size])--;
-		*useMmap = 1;
-		CODEC_LOG(KERN_DEBUG, "available useMmap count:%d\n",
-			(max_size - svcodec->useMmap[max_size]));
-
-		/* notify closing codec device of qemu. */
+	/* notify closing codec device of qemu. */
+	if (file)
 		writel((uint32_t)file, svcodec->ioaddr + CODEC_CLOSED);
-	}
 
-#ifdef CODEC_DEBUG
-	int i;
-	for (i = 0; i < max_size; i++)
-		CODEC_LOG(KERN_DEBUG, "useMmap[%d]=%d\n",
-			i, svcodec->useMmap[i]);
-#endif
 	module_put(THIS_MODULE);
 	mutex_unlock(&codec_mutex);
 
@@ -335,12 +288,13 @@ static int svcodec_release(struct inode *inode, struct file *file)
 
 /* define file opertion for CODEC */
 const struct file_operations svcodec_fops = {
-	.owner	 = THIS_MODULE,
-	.read	 = svcodec_read,
-	.write	 = svcodec_write,
-	.open	 = svcodec_open,
-	.mmap	 = svcodec_mmap,
-	.release = svcodec_release,
+	.owner			 = THIS_MODULE,
+	.read			 = svcodec_read,
+	.write			 = svcodec_write,
+	.unlocked_ioctl	 = svcodec_ioctl,
+	.open			 = svcodec_open,
+	.mmap			 = svcodec_mmap,
+	.release		 = svcodec_release,
 };
 
 static int __devinit svcodec_probe(struct pci_dev *pci_dev,
