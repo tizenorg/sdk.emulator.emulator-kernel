@@ -48,10 +48,10 @@ MODULE_DESCRIPTION("Emulator Virtio Touchscreen driver");
 #define DEVICE_NAME "virtio-touchscreen"
 
 /* This structure must match the qemu definitions */
-typedef struct EmulTouchState {
+typedef struct EmulTouchEvent {
     uint16_t x, y, z;
     uint8_t state;
-} EmulTouchState;
+} EmulTouchEvent;
 
 typedef struct virtio_touchscreen
 {
@@ -81,21 +81,21 @@ static struct virtio_device_id id_table[] = {
 static int run_touchscreen(void *_vtouchscreen)
 {
     virtio_touchscreen *vt = NULL;
-    EmulTouchState *vbuf = NULL;
-    EmulTouchState *event = NULL;
+    EmulTouchEvent *vbuf = NULL;
+    EmulTouchEvent *event = NULL;
     struct scatterlist sg;
     int count = 0; // remaining capacity of queue
 
     struct input_dev *input_dev = NULL;
 
     vt = _vtouchscreen;
-    vbuf = kzalloc(sizeof(EmulTouchState), GFP_KERNEL);
+    vbuf = kzalloc(sizeof(EmulTouchEvent), GFP_KERNEL);
     vbuf->x = MAX_TRKID; // max touch point
 
     input_dev = vt->idev;
 
     while (!kthread_should_stop()) {
-        sg_init_one(&sg, vbuf, sizeof(EmulTouchState));
+        sg_init_one(&sg, vbuf, sizeof(EmulTouchEvent));
 
         if (virtqueue_add_buf(vt->vq, &sg, 0, 1, (void*)vbuf, GFP_ATOMIC) >= 0) {
             virtqueue_kick(vt->vq);
