@@ -231,7 +231,7 @@ static irqreturn_t svcodec_irq_handler (int irq, void *dev_id)
 
 	val = readl(dev->ioaddr + CODEC_QUERY_STATE);
 	if (!(val & CODEC_IRQ)) {
-		spin_unlock_irqrestore(&dev->lock, flags);
+/*		spin_unlock_irqrestore(&dev->lock, flags); */
 		return IRQ_NONE;
 	}
 
