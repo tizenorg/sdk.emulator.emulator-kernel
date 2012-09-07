@@ -228,8 +228,10 @@ static struct videobuf_buffer *__videobuf_alloc_vb(size_t size)
 	struct videobuf_buffer *vb;
 
 	vb = kzalloc(size + sizeof(*mem), GFP_KERNEL);
-	if (vb == NULL)
+	if (vb == NULL) {
+		marucam_err("failed to memalloc\n");
 		return vb;
+	}
 
 	mem = vb->priv = ((char *)vb) + size;
 	mem->magic = MAGIC_MARUCAM_MEM;
@@ -270,8 +272,10 @@ static int __videobuf_mmap_mapper(struct videobuf_queue *q,
 	int retval, pages;
 
 	map = kzalloc(sizeof(struct videobuf_mapping), GFP_KERNEL);
-	if (NULL == map)
+	if (NULL == map) {
+		marucam_err("failed to memalloc\n");
 		return -ENOMEM;
+	}
 
 	buf->map = map;
 	map->q = q;
@@ -366,14 +370,20 @@ static void marucam_fillbuf(struct marucam_device *dev)
 	unsigned long flags = 0;
 
 	spin_lock_irqsave(q->irqlock, flags);
-	if (dev->opstate != S_RUNNING)
+	if (dev->opstate != S_RUNNING) {
+		marucam_err("state is not S_RUNNING\n");
 		goto done;
-	if (list_empty(&dev->active))
+	}
+	if (list_empty(&dev->active)) {
+		marucam_err("list_empty failed\n");
 		goto done;
+	}
 
 	buf = list_entry(dev->active.next, struct videobuf_buffer, queue);
-	if (!waitqueue_active(&buf->done))
+	if (!waitqueue_active(&buf->done)) {
+		marucam_err("waitqueue_active failed\n");
 		goto done;
+	}
 
 	list_del(&buf->queue);
 
@@ -392,8 +402,10 @@ static irqreturn_t marucam_irq_handler(int irq, void *dev_id)
 	uint32_t isr = 0;
 
 	isr = ioread32(dev->mmregs + MARUCAM_ISR);
-	if (!isr)
+	if (!isr) {
+		marucam_info("this irq is not for this module\n");
 		return IRQ_NONE;
+	}
 
 	marucam_fillbuf(dev);
 	return IRQ_HANDLED;
@@ -572,32 +584,52 @@ static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 static int vidioc_reqbufs(struct file *file, void *priv,
 			  struct v4l2_requestbuffers *p)
 {
+	int ret;
 	struct marucam_device *dev = priv;
 
 	dev->type = p->type;
 
-	return videobuf_reqbufs(&dev->vb_vidq, p);
+	ret = videobuf_reqbufs(&dev->vb_vidq, p);
+	if (ret < 0)
+		marucam_err("failed to videobuf_reqbufs\n");
+
+	return ret;
 }
 
 static int vidioc_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
+	int ret;
 	struct marucam_device *dev = priv;
 
-	return videobuf_querybuf(&dev->vb_vidq, p);
+	ret = videobuf_querybuf(&dev->vb_vidq, p);
+	if (ret < 0)
+		marucam_err("failed to videobuf_querybuf\n");
+
+	return ret;
 }
 
 static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
+	int ret;
 	struct marucam_device *dev = priv;
 
-	return videobuf_qbuf(&dev->vb_vidq, p);
+	ret = videobuf_qbuf(&dev->vb_vidq, p);
+	if (ret < 0)
+		marucam_err("failed to videobuf_qbuf\n");
+
+	return ret;
 }
 
 static int vidioc_dqbuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
+	int ret;
 	struct marucam_device *dev = priv;
 
-	return videobuf_dqbuf(&dev->vb_vidq, p, file->f_flags & O_NONBLOCK);
+	ret = videobuf_dqbuf(&dev->vb_vidq, p, file->f_flags & O_NONBLOCK);
+	if (ret < 0)
+		marucam_err("failed to videobuf_dqbuf\n");
+
+	return ret;
 }
 
 static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
@@ -610,19 +642,11 @@ static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 	if (i != dev->type)
 		return -EINVAL;
 
-        mutex_lock(&dev->mlock);
-        if (dev->opstate != S_IDLE) {
-                marucam_err("device state is not S_IDLE.\n");
-                mutex_unlock(&dev->mlock);
-                return -EBUSY;
-        }
-
-        INIT_LIST_HEAD(&dev->active);
-	ret = videobuf_streamon(&dev->vb_vidq);
-	if (ret) {
-		marucam_err("videobuf_streamon failed, reti(%d)\n", ret);
-                mutex_unlock(&dev->mlock);
-                return ret;
+	mutex_lock(&dev->mlock);
+	if (dev->opstate != S_IDLE) {
+		marucam_err("device state is not S_IDLE.\n");
+		mutex_unlock(&dev->mlock);
+		return -EBUSY;
 	}
 
 	iowrite32(1, dev->mmregs + MARUCAM_START_PREVIEW);
@@ -631,6 +655,14 @@ static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 		marucam_err("MARUCAM_START_PREVIEW failed!\n");
 		mutex_unlock(&dev->mlock);
 		return -ret;
+	}
+
+	INIT_LIST_HEAD(&dev->active);
+	ret = videobuf_streamon(&dev->vb_vidq);
+	if (ret) {
+		marucam_err("videobuf_streamon failed, reti(%d)\n", ret);
+		mutex_unlock(&dev->mlock);
+		return ret;
 	}
 
 	dev->opstate = S_RUNNING;
@@ -650,9 +682,9 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 
 	mutex_lock(&dev->mlock);
 	if (dev->opstate != S_RUNNING) {
-		marucam_err("device state is not S_RUNNING.\n");
+		marucam_err("Device state is not S_RUNNING. Do nothing!\n");
 		mutex_unlock(&dev->mlock);
-		return -EBUSY;
+		return 0;
 	}
 
 	iowrite32(1, dev->mmregs + MARUCAM_STOP_PREVIEW);
@@ -922,13 +954,17 @@ buffer_prepare(struct videobuf_queue *vq, struct videobuf_buffer *vb,
 
 	vb->size = get_image_size(dev);
 
-	if (0 != vb->baddr  &&  vb->bsize < vb->size)
+	if (0 != vb->baddr  &&  vb->bsize < vb->size) {
+		marucam_err("video buffer size is invalid\n");
 		return -EINVAL;
+	}
 
 	if (vb->state == VIDEOBUF_NEEDS_INIT) {
 		rc = videobuf_iolock(vq, vb, NULL);
-		if (rc < 0)
+		if (rc < 0) {
+			marucam_err("faile dto videobuf_iolock\n");
 			goto fail;
+		}
 	}
 
 	vb->width	= dev->width;
@@ -1084,8 +1120,10 @@ marucam_poll(struct file *file, struct poll_table_struct *wait)
 			buf = list_entry(q->stream.next,
 						struct videobuf_buffer, stream);
 	}
-	if (!buf)
+	if (!buf) {
+		marucam_err("video buffer list is empty\n");
 		ret = POLLERR;
+	}
 
 	if (ret == 0) {
 		poll_wait(file, &buf->done, wait);
