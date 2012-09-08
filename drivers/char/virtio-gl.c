@@ -22,6 +22,7 @@
 #include <linux/fs.h>
 #include <linux/dma-mapping.h>
 #include <linux/sched.h>
+#include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/miscdevice.h>
 #include <linux/virtio.h>
@@ -62,6 +63,7 @@ struct virtio_gl_header {
 
 static struct virtqueue *vq;
 
+static DEFINE_MUTEX(gl_mutex);
 
 /* This is videobuf_vmalloc_to_sg() from videobuf-dma-sg.c with
  * some modifications
@@ -99,6 +101,8 @@ static int put_data(struct virtio_gl_data *gldata)
 	unsigned int count, ret, o_page, i_page, sg_entries;
 	struct virtio_gl_header *header =
 				(struct virtio_gl_header *)gldata->buffer;
+
+	mutex_lock(&gl_mutex);
 
 	ret = header->buf_size;
 
@@ -162,6 +166,7 @@ static int put_data(struct virtio_gl_data *gldata)
 out_free:
 	kfree(sg_list);
 out:
+	mutex_unlock(&gl_mutex);
 	return ret;
 }
 
