@@ -181,17 +181,17 @@ static int yagl_misc_mmap(struct file *file, struct vm_area_struct *vma)
 
     mutex_lock(&yfile->device->mutex);
 
-    if (num_pages != 1) {
-        dprintk("%s: mmap must be called for 1 page only\n",
-                yfile->device->miscdev.name);
-        ret = -EINVAL;
-        goto out;
-    }
-
     if (vma->vm_pgoff == 0) {
         /*
          * First page is 'regs'.
          */
+
+        if (num_pages != 1) {
+            dprintk("%s: mmap must be called for 1 page only\n",
+                    yfile->device->miscdev.name);
+            ret = -EINVAL;
+            goto out;
+        }
 
         vma->vm_flags |= VM_IO | VM_RESERVED;
         vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
@@ -220,7 +220,7 @@ static int yagl_misc_mmap(struct file *file, struct vm_area_struct *vma)
             goto out;
         }
 
-        buff = vmalloc_user(PAGE_SIZE);
+        buff = vmalloc_user(vma->vm_end - vma->vm_start);
 
         if (!buff) {
             dprintk("%s: unable to alloc memory\n",
