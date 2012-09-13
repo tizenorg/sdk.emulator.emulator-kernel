@@ -93,8 +93,8 @@ static void emul_touchscreen_sys_irq(struct urb *urb)
     if (packet->state != 0)
     { /* pressed */
         input_mt_slot(input_dev, id);
-        input_report_abs(input_dev, ABS_MT_TRACKING_ID, id);
-        input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 10);
+        input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, true);
+        input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 5);
         input_report_abs(input_dev, ABS_MT_POSITION_X, packet->x);
         input_report_abs(input_dev, ABS_MT_POSITION_Y, packet->y);
         //printk(KERN_INFO "!!pressed x=%d, y=%d, z=%d",
@@ -103,7 +103,7 @@ static void emul_touchscreen_sys_irq(struct urb *urb)
     else
     { /* release */
         input_mt_slot(input_dev, id);
-        input_report_abs(input_dev, ABS_MT_TRACKING_ID, -1);
+        input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, false);
         //printk(KERN_INFO "!!released x=%d, y=%d, z=%d",
             //packet->x, packet->y, packet->z);
     }
