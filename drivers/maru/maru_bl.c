@@ -64,6 +64,7 @@ struct marubl {
 static struct marubl *marubl_device;
 /* ============================================================================== */
 
+static int min_brightness = 1;
 static int max_brightness = 24;
 
 static int marubl_get_intensity(struct backlight_device *bd)
@@ -150,6 +151,7 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 	 * register backlight device
 	 */
 	memset(&props, 0, sizeof(struct backlight_properties));
+	props.min_brightness = min_brightness;
 	props.max_brightness = max_brightness;
 	props.type = BACKLIGHT_PLATFORM;
 	bd = backlight_device_register ("emulator",	&pci_dev->dev, NULL, &marubl_ops, &props);

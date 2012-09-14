@@ -1,12 +1,12 @@
 /*
- * Maru Virtual USB Touchscreen device driver
+ * Maru USB Touchscreen Device Driver
  * Based on drivers/input/tablet/wacom_sys.c:
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact: 
  *  GiWoong Kim <giwoong.kim@samsung.com>
- *  Hyunjun Son <hj79.son@samsung.com>
+ *  HyunJun Son <hj79.son@samsung.com>
  *  DongKyun Yun <dk77.yun@samsung.com>
  *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
  *
@@ -33,6 +33,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/usb/input.h>
+#include <linux/input/mt.h>
 #include <linux/slab.h>
 
 MODULE_LICENSE("GPL");
@@ -40,7 +41,7 @@ MODULE_AUTHOR("s-core");
 MODULE_DESCRIPTION("Emulator Touchscreen driver for x86");
 
 /* touchscreen device features */
-#define MAX_TRKID 3
+#define MAX_TRKID 6
 #define EMUL_TOUCHSCREEN_PACKET_LEN 7
 #define TOUCHSCREEN_RESOLUTION_X 5040
 #define TOUCHSCREEN_RESOLUTION_Y 3780
@@ -67,10 +68,11 @@ typedef struct USBEmulTouchscreenPacket {
 
 static void emul_touchscreen_sys_irq(struct urb *urb)
 {
+    int retval = 0;
     struct emul_touchscreen *usb_ts = urb->context;
     struct input_dev *input_dev = usb_ts->emuldev;
     USBEmulTouchscreenPacket *packet = (USBEmulTouchscreenPacket *)usb_ts->data;
-    int retval;
+    int id = packet->z;
 
     switch (urb->status) {
         case 0:
@@ -87,25 +89,23 @@ static void emul_touchscreen_sys_irq(struct urb *urb)
             goto exit;
     }
 
-    if (packet->state != 0) { //pressed
-        input_report_abs(input_dev, ABS_MT_TRACKING_ID, packet->z);
+    /* Multi-touch Protocol B */
+    if (packet->state != 0)
+    { /* pressed */
+        input_mt_slot(input_dev, id);
+        input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, true);
         input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 5);
         input_report_abs(input_dev, ABS_MT_POSITION_X, packet->x);
         input_report_abs(input_dev, ABS_MT_POSITION_Y, packet->y);
-        //printk(KERN_INFO "!!pressed x=%d, y=%d, z=%d", packet->x, packet->y, packet->z);
-        input_mt_sync(input_dev);
-    } else { //release
-#if 0
-        if (packet->z == 1) {
-            input_report_abs(input_dev, ABS_MT_TRACKING_ID, 1);
-            input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
-            input_mt_sync(input_dev);
-        }
-#endif
-        input_report_abs(input_dev, ABS_MT_TRACKING_ID, packet->z);
-        input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
-        //printk(KERN_INFO "!!released x=%d, y=%d, z=%d", packet->x, packet->y, packet->z);
-        input_mt_sync(input_dev);
+        //printk(KERN_INFO "!!pressed x=%d, y=%d, z=%d",
+            //packet->x, packet->y, packet->z);
+    }
+    else
+    { /* release */
+        input_mt_slot(input_dev, id);
+        input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, false);
+        //printk(KERN_INFO "!!released x=%d, y=%d, z=%d",
+            //packet->x, packet->y, packet->z);
     }
 
     input_sync(input_dev);
@@ -121,6 +121,8 @@ static void emul_touchscreen_sys_irq(struct urb *urb)
 static int emul_touchscreen_open(struct input_dev *dev)
 {
     struct emul_touchscreen *usb_ts = input_get_drvdata(dev);
+
+    printk(KERN_INFO "usb touchscreen device is opened\n");
 
     mutex_lock(&usb_ts->lock);
     usb_ts->irq->dev = usb_ts->usbdev;
@@ -147,11 +149,15 @@ static void emul_touchscreen_close(struct input_dev *dev)
 {
     struct emul_touchscreen *usb_ts = input_get_drvdata(dev);
 
+    printk(KERN_INFO "usb touchscreen device is closed\n");
+
     mutex_lock(&usb_ts->lock);
     usb_kill_urb(usb_ts->irq);
     usb_ts->open = 0;
     usb_ts->intf->needs_remote_wakeup = 0;
     mutex_unlock(&usb_ts->lock);
+
+    input_mt_destroy_slots(usb_ts->emuldev);
 }
 
 static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_device_id *id)
@@ -159,6 +165,8 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
     struct usb_endpoint_descriptor *endpoint;
     struct emul_touchscreen *usb_ts;
     int error = -ENOMEM;
+
+    printk(KERN_INFO "usb touchscreen driver is probed\n");
 
     usb_ts = kzalloc(sizeof(struct emul_touchscreen), GFP_KERNEL);
     if (!usb_ts) {
@@ -187,7 +195,7 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
     usb_make_path(usb_ts->usbdev, usb_ts->phys, sizeof(usb_ts->phys));
     strlcat(usb_ts->phys, "/input0", sizeof(usb_ts->phys));
 
-    usb_ts->emuldev->name = "Maru Virtual Touchscreen";
+    usb_ts->emuldev->name = "Maru USB Touchscreen";
     usb_to_input_id(usb_ts->usbdev, &usb_ts->emuldev->id);
 
     usb_ts->emuldev->dev.parent = &intf->dev;
@@ -203,14 +211,21 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
     usb_ts->emuldev->absbit[BIT_WORD(ABS_MISC)] |= BIT_MASK(ABS_MISC);
     usb_ts->emuldev->keybit[BIT_WORD(BTN_TOUCH)] |= BIT_MASK(BTN_TOUCH);
 
-    input_set_abs_params(usb_ts->emuldev, ABS_X, 0, TOUCHSCREEN_RESOLUTION_X, 4, 0);
-    input_set_abs_params(usb_ts->emuldev, ABS_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 4, 0);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_X, 0, TOUCHSCREEN_RESOLUTION_X, 4, 0);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 4, 0);
 
     /* for multitouch */
-    input_set_abs_params(usb_ts->emuldev, ABS_MT_TRACKING_ID, 0, MAX_TRKID, 0, 0);
-    input_set_abs_params(usb_ts->emuldev, ABS_MT_TOUCH_MAJOR, 0, ABS_PRESSURE_MAX, 0, 0);
-    input_set_abs_params(usb_ts->emuldev, ABS_MT_POSITION_X, 0, TOUCHSCREEN_RESOLUTION_X, 0, 0);
-    input_set_abs_params(usb_ts->emuldev, ABS_MT_POSITION_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 0, 0);
+    input_mt_init_slots(usb_ts->emuldev, MAX_TRKID);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_MT_TRACKING_ID, 0, MAX_TRKID, 0, 0);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_MT_TOUCH_MAJOR, 0, ABS_PRESSURE_MAX, 0, 0);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_MT_POSITION_X, 0, TOUCHSCREEN_RESOLUTION_X, 0, 0);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_MT_POSITION_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 0, 0);
 
     usb_fill_int_urb(usb_ts->irq, usb_ts->usbdev,
              usb_rcvintpipe(usb_ts->usbdev, endpoint->bEndpointAddress),
@@ -238,6 +253,8 @@ static void emul_touchscreen_disconnect(struct usb_interface *intf)
 {
     struct emul_touchscreen *usb_ts = usb_get_intfdata(intf);
 
+    printk(KERN_INFO "usb touchscreen device is disconnected\n");
+
     usb_set_intfdata(intf, NULL);
     if (usb_ts) {
         usb_kill_urb(usb_ts->irq);
@@ -252,6 +269,8 @@ static int emul_touchscreen_suspend(struct usb_interface *intf, pm_message_t mes
 {
     struct emul_touchscreen *usb_ts = usb_get_intfdata(intf);
 
+    printk(KERN_INFO "usb touchscreen device is suspended\n");
+
     mutex_lock(&usb_ts->lock);
     usb_kill_urb(usb_ts->irq);
     mutex_unlock(&usb_ts->lock);
@@ -262,7 +281,9 @@ static int emul_touchscreen_suspend(struct usb_interface *intf, pm_message_t mes
 static int emul_touchscreen_resume(struct usb_interface *intf)
 {
     struct emul_touchscreen *usb_ts = usb_get_intfdata(intf);
-    int rv;
+    int rv = 0;
+
+    printk(KERN_INFO "usb touchscreen device is resumed\n");
 
     mutex_lock(&usb_ts->lock);
     if (usb_ts->open) {
@@ -295,8 +316,12 @@ static struct usb_driver emul_touchscreen_driver = {
 
 static int __init emul_touchscreen_init(void)
 {
-    int result = usb_register(&emul_touchscreen_driver);
-    if (result == 0) {
+    int result = 0;
+
+    printk(KERN_INFO "usb touchscreen device is initialized\n");
+
+    result = usb_register(&emul_touchscreen_driver);
+    if (result != 0) {
         printk(KERN_ERR "emul_touchscreen_init: usb_register=%d\n", result);
     }
 
@@ -305,6 +330,7 @@ static int __init emul_touchscreen_init(void)
 
 static void __exit emul_touchscreen_exit(void)
 {
+    printk(KERN_INFO "usb touchscreen device is destroyed\n");
     usb_deregister(&emul_touchscreen_driver);
 }
 

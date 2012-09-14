@@ -1,0 +1,31 @@
+#!/bin/sh -xe
+# clean
+clean()
+{
+	echo "$SRCDIR"
+	make clean
+	rm -rf $SRCDIR/*.zip
+	rm -rf $SRCDIR/*.tar.gz
+}
+
+# build
+build()
+{
+	make i386_emul_defconfig
+	make
+}
+
+# install
+install()
+{
+	BIN_DIR=$SRCDIR/package/emulator-kernel-x86.package.${TARGET_OS}/data/tools/emulator/data/kernel
+	mkdir -p $BIN_DIR
+
+	cp arch/x86/boot/bzImage $BIN_DIR/bzImage.x86
+}
+
+[ "$1" = "clean" ] && clean
+[ "$1" = "build" ] && build
+[ "$1" = "install" ] && install
+
+echo "success"

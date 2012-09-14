@@ -180,6 +180,7 @@ static ssize_t vdpram_read (struct file *filp, char __user *buf, size_t count,
 	struct vdpram_dev *dev = filp->private_data;
 	int index = dev->adj_index ;
 	char *curr_rp, *curr_adj_wp;
+	int restData_len = 0, data_len = 0;	
 #if 0
 	int i = 0; /* for debug */
 #endif
@@ -220,6 +221,7 @@ static ssize_t vdpram_read (struct file *filp, char __user *buf, size_t count,
 	if (dev->adj->wp > dev->rp)
 	{
 		count = min(count, (size_t)(dev->adj->wp - dev->rp));
+		data_len = count;
 		if (copy_to_user(buf, dev->rp, count)) {
 #ifdef VDPRAM_LOCK_ENABLE
 			up (&buffer[index].sem);
@@ -229,35 +231,34 @@ static ssize_t vdpram_read (struct file *filp, char __user *buf, size_t count,
 
 		dev->rp += count;
 		if (dev->rp >= buffer[index].end)
+		{
 			dev->rp = buffer[index].begin; /* wrapped */
+		}
 	}
 	else /* the write pointer has wrapped, return data up to dev->end */
 	{
-		int tmp_count ;
-		
-		tmp_count = min(count, (size_t)(buffer[index].end - dev->rp + 1));
-		if (copy_to_user(buf, dev->rp,tmp_count)) {
+		data_len = min(count, (size_t)(buffer[index].end - dev->rp));
+		if (copy_to_user(buf, dev->rp, data_len)) {
 #ifdef VDPRAM_LOCK_ENABLE
 			up (&buffer[index].sem);
 #endif //VDPRAM_LOCK_ENABLE
 			return -EFAULT;
 		}
 
-		dev->rp += tmp_count;
+		dev->rp += data_len;
+		if(dev->rp >= buffer[index].end)
+			dev->rp = buffer[index].begin;
 
-		if ( count - tmp_count > 0)
+		if ( count - data_len > 0)
 		{
-			tmp_count = min ( count - tmp_count, sizeof(dev->adj->wp - buffer[index].begin));
-			if (copy_to_user(buf,dev->rp,tmp_count)) {
+			restData_len = min ( count - data_len, (size_t)(dev->adj->wp - buffer[index].begin));
+			if (copy_to_user(buf + data_len, dev->rp, restData_len)) {
 #ifdef VDPRAM_LOCK_ENABLE
 				up (&buffer[index].sem);
 #endif //VDPRAM_LOCK_ENABLE
 				return -EFAULT;
 			}
-			dev->rp += tmp_count;
-			
-			if (dev->rp != dev->adj->wp)
-				dev->rp = buffer[index].begin; /* wrapped */
+			dev->rp += restData_len;
 		}
 	}
 
@@ -275,7 +276,9 @@ static ssize_t vdpram_read (struct file *filp, char __user *buf, size_t count,
 
 	dev->rp += count;
 	if(dev->rp >= buffer[index].end)
+	{
 		dev->rp = buffer[index].begin; /* wrapped */
+	}
 #ifdef VDPRAM_LOCK_ENABLE
 	up (&buffer[index].sem);
 #endif //VDPRAM_LOCK_ENABLE
@@ -284,7 +287,7 @@ static ssize_t vdpram_read (struct file *filp, char __user *buf, size_t count,
 //	printk("%s:%d rp[%d]=%d cnt=%d \n", __FUNCTION__,current->pid,dev->index, dev->rp-buffer[index].begin,count);
 	/* finally, awake any writers and return */
 	wake_up_interruptible(&queue[index].outq);
-	return count;
+	return data_len + restData_len;
 }
 
 /* Wait for space for writing; caller must hold device semaphore.  On
@@ -328,6 +331,7 @@ static int vdpram_getwritespace(struct vdpram_dev *dev, struct file *filp)
 static int spacefree(struct vdpram_dev *dev)
 {
 	int index = dev->index;
+	
 	if (dev->wp == dev->adj->rp)
 		return buffer[index].buffersize - 1;
 	return ((dev->adj->rp + buffer[index].buffersize - dev->wp) % buffer[index].buffersize) - 1;
@@ -357,10 +361,10 @@ static ssize_t vdpram_write(struct file *filp, const char __user *buf, size_t co
 	{
 		if (dev->wp >= dev->adj->rp)
 		{
-			int tmp_count ;
-			tmp_count = min(count, (size_t)(buffer[index].end - dev->wp)); /* to end-of-buf */
+			int data_len;
+			data_len = min(count, (size_t)(buffer[index].end - dev->wp)); /* to end-of-buf */
 
-			if (tmp_count != 0 && copy_from_user(dev->wp, buf, tmp_count))
+			if (data_len != 0 && copy_from_user(dev->wp, buf, data_len))
 			{
 #ifdef VDPRAM_LOCK_ENABLE
 				up (&buffer[index].sem);
@@ -368,23 +372,25 @@ static ssize_t vdpram_write(struct file *filp, const char __user *buf, size_t co
 				return -EFAULT;
 			}
 
-			dev->wp += tmp_count;
-			if (dev->wp > buffer[index].end  )
+			dev->wp += data_len;
+			if (dev->wp >= buffer[index].end)
 			{
 //				printk("%s: back 0 !! \n",__FUNCTION__);
 				dev->wp = buffer[index].begin; /* wrapped */
 			}
 
-			if (count-tmp_count > 0 )
-			{
-				tmp_count = min ( count - tmp_count, sizeof(dev->adj->rp - buffer[index].begin));
-				if(copy_from_user(dev->wp, buf + tmp_count, tmp_count)) 
+			if (count - data_len > 0 )
+			{	
+				int restData_len = 0;
+				restData_len = min ( count - data_len, (size_t)(dev->adj->rp - buffer[index].begin) - 1 );
+				if(copy_from_user(dev->wp, buf + data_len, restData_len)) 
 				{
 #ifdef VDPRAM_LOCK_ENABLE
 				up (&buffer[index].sem);
 #endif //VDPRAM_LOCK_ENABLE
 				return -EFAULT;
 				}
+				dev->wp += restData_len;
 			}
 		}
 		else /* the write pointer has wrapped, fill up to rp-1 */
@@ -409,6 +415,7 @@ static ssize_t vdpram_write(struct file *filp, const char __user *buf, size_t co
 	}
 	/* for debug */
 #if 0
+	int i;
         printk("write[%d]: ", index);
         for(i=0; i<count; ++i) {
                 printk("%x ", *(dev->wp+i));
@@ -425,7 +432,9 @@ static ssize_t vdpram_write(struct file *filp, const char __user *buf, size_t co
 	}
 	dev->wp += count;
 	if (dev->wp == buffer[index].end)
+	{
 		dev->wp = buffer[index].begin; /* wrapped */
+	}
 #endif  // NOT_CIRCLE_QUEUE
 
 
@@ -519,7 +528,6 @@ long vdpram_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 	struct vdpram_dev *dev;
 	struct vdpram_status_dev dev_status;
 	int index;
-
 	dev = (struct vdpram_dev*)filp->private_data;
 	index = dev->index ;
 
@@ -603,7 +611,7 @@ int vdpram_init(void)
 //	dev_t dev;
 	dev_t dev = MKDEV(vdpram_major, 0);
 
-//	printk("Initializing vdpram device driver ...\n");
+	printk("Initializing vdpram device driver ...\n");
 	result = register_chrdev_region(dev, vdpram_nr_devs, "vdpram");
 //	result = alloc_chrdev_region(&dev, 0, vdpram_nr_devs, "vdpram");
 	if (result < 0) {

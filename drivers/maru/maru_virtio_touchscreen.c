@@ -1,0 +1,292 @@
+/*
+ * Maru Virtio Touchscreen Device Driver
+ *
+ * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
+ *
+ * Contact: 
+ *  GiWoong Kim <giwoong.kim@samsung.com>
+ *  SeokYeon Hwang <syeon.hwang@samsung.com>
+ *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
+ * Contributors:
+ * - S-Core Co., Ltd
+ *
+ */
+
+
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/fs.h>
+#include <linux/input.h>
+#include <linux/miscdevice.h>
+#include <linux/slab.h>
+#include <linux/virtio.h>
+#include <linux/virtio_ids.h>
+#include <linux/virtio_config.h>
+#include <linux/kthread.h>
+
+MODULE_LICENSE("GPL2");
+MODULE_AUTHOR("GiWoong Kim <giwoong.kim@samsung.com>");
+MODULE_DESCRIPTION("Emulator Virtio Touchscreen driver");
+
+
+#define DEVICE_NAME "virtio-touchscreen"
+
+/* This structure must match the qemu definitions */
+typedef struct EmulTouchEvent {
+    uint16_t x, y, z;
+    uint8_t state;
+} EmulTouchEvent;
+
+typedef struct virtio_touchscreen
+{
+    struct virtio_device *vdev;
+    struct virtqueue *vq;
+    struct input_dev *idev;
+
+    /* The thread servicing the touchscreen */
+    struct task_struct *thread;
+} virtio_touchscreen;
+
+
+#define MAX_TRKID 6
+#define TOUCHSCREEN_RESOLUTION_X 5040
+#define TOUCHSCREEN_RESOLUTION_Y 3780
+#define ABS_PRESSURE_MAX 255
+
+
+static struct virtio_device_id id_table[] = {
+    { VIRTIO_ID_TOUCHSCREEN, VIRTIO_DEV_ANY_ID },
+    { 0 },
+};
+
+/**
+ * @brief : event polling
+ */
+static int run_touchscreen(void *_vtouchscreen)
+{
+    virtio_touchscreen *vt = NULL;
+    EmulTouchEvent *vbuf = NULL;
+    EmulTouchEvent *event = NULL;
+    struct scatterlist sg;
+    int count = 0; // remaining capacity of queue
+
+    struct input_dev *input_dev = NULL;
+
+    vt = _vtouchscreen;
+    vbuf = kzalloc(sizeof(EmulTouchEvent), GFP_KERNEL);
+    vbuf->x = MAX_TRKID; // max touch point
+
+    input_dev = vt->idev;
+
+    while (!kthread_should_stop()) {
+        sg_init_one(&sg, vbuf, sizeof(EmulTouchEvent));
+
+        if (virtqueue_add_buf(vt->vq, &sg, 0, 1, (void*)vbuf, GFP_ATOMIC) >= 0) {
+            virtqueue_kick(vt->vq);
+
+            while (!(event = virtqueue_get_buf(vt->vq, &count))) {
+                cpu_relax();
+            }
+
+            printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d\n", event->x, event->y, event->z, event->state);
+
+            if (event->state != 0) { // pressed
+                input_report_abs(input_dev, ABS_MT_TRACKING_ID, event->z);
+                input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 10);
+                input_report_abs(input_dev, ABS_MT_POSITION_X, event->x);
+                input_report_abs(input_dev, ABS_MT_POSITION_Y, event->y);
+                input_mt_sync(input_dev);
+            } else { // released
+                input_report_abs(input_dev, ABS_MT_TRACKING_ID, event->z);
+                input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
+                input_mt_sync(input_dev);
+            }
+
+            input_sync(input_dev);
+        }
+
+    }
+
+    printk(KERN_INFO "virtio touchscreen thread is stopped\n");
+    kfree(vbuf);
+
+    return 0;
+}
+
+#if 0
+static void vq_touchscreen_callback(struct virtqueue *vq)
+{
+    printk(KERN_INFO "vq touchscreen callback\n");
+}
+#endif
+
+static int virtio_touchscreen_open(struct inode *inode, struct file *file)
+{
+    printk(KERN_INFO "virtio touchscreen device is opened\n");
+    return 0;
+}
+
+static int virtio_touchscreen_release(struct inode *inode, struct file *file)
+{
+    printk(KERN_INFO "virtio touchscreen device is closed\n");
+    return 0;
+}
+
+static int input_touchscreen_open(struct input_dev *dev)
+{
+    printk(KERN_INFO "input touchscreen device is opened\n");
+    return 0;
+}
+
+static void input_touchscreen_close(struct input_dev *dev)
+{
+    printk(KERN_INFO "input touchscreen device is closed\n");
+}
+
+struct file_operations virtio_touchscreen_fops = {
+    .owner      = THIS_MODULE,
+    .open       = virtio_touchscreen_open,
+    .release    = virtio_touchscreen_release,
+};
+
+static int virtio_touchscreen_probe(struct virtio_device *vdev)
+{
+    struct virtio_touchscreen *vt = NULL;
+    int ret = 0;
+
+    printk(KERN_INFO "virtio touchscreen driver is probed\n");
+
+    /* init virtio */
+    vdev->priv = vt = kmalloc(sizeof(*vt), GFP_KERNEL);
+    if (!vt) {
+        return -ENOMEM;
+    }
+
+    vt->vdev = vdev;
+
+    vt->vq = virtio_find_single_vq(vt->vdev, NULL, "virtio-touchscreen-vq");
+    if (IS_ERR(vt->vq)) {
+        ret = PTR_ERR(vt->vq);
+        goto fail1;
+    }
+
+    //vt->vq->callback = vq_touchscreen_callback;
+    //virtqueue_enable_cb(vt->vq);
+
+    /* register for input device */
+    vt->idev = input_allocate_device();
+    if (!vt->idev) {
+        printk(KERN_ERR "failed to allocate a input touchscreen device\n");
+        ret = -1;
+        goto fail1;
+    }
+
+    vt->idev->name = "Maru Virtio Touchscreen";
+    vt->idev->dev.parent = &(vdev->dev);
+
+    input_set_drvdata(vt->idev, vt);
+    vt->idev->open = input_touchscreen_open;
+    vt->idev->close = input_touchscreen_close;
+
+    vt->idev->evbit[0] |= BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
+    vt->idev->absbit[BIT_WORD(ABS_MISC)] |= BIT_MASK(ABS_MISC);
+    vt->idev->keybit[BIT_WORD(BTN_TOUCH)] |= BIT_MASK(BTN_TOUCH);
+
+    input_set_abs_params(vt->idev, ABS_X, 0, TOUCHSCREEN_RESOLUTION_X, 4, 0);
+    input_set_abs_params(vt->idev, ABS_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 4, 0);
+    input_set_abs_params(vt->idev, ABS_MT_TRACKING_ID, 0, MAX_TRKID, 0, 0);
+    input_set_abs_params(vt->idev, ABS_MT_TOUCH_MAJOR, 0, ABS_PRESSURE_MAX, 0, 0);
+    input_set_abs_params(vt->idev, ABS_MT_POSITION_X, 0, TOUCHSCREEN_RESOLUTION_X, 0, 0);
+    input_set_abs_params(vt->idev, ABS_MT_POSITION_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 0, 0);
+
+    ret = input_register_device(vt->idev);
+    if (ret) {
+        printk(KERN_ERR "input touchscreen driver cannot registered\n");
+        ret = -1;
+        goto fail2;
+    }
+
+    /* Responses from the hypervisor occur through the get_buf function */
+    vt->thread = kthread_run(run_touchscreen, vt, "vtouchscreen");
+    if (IS_ERR(vt->thread)) {
+        printk(KERN_ERR "unable to start the virtio touchscreen thread\n");
+        ret = PTR_ERR(vt->thread);
+        goto fail3;
+    }
+
+    return 0;
+
+fail3: input_unregister_device(vt->idev);
+fail2: input_free_device(vt->idev);
+fail1: kfree(vt);
+    vdev->priv = NULL;
+
+    return ret;
+}
+
+static void __devexit virtio_touchscreen_remove(struct virtio_device *vdev)
+{
+    virtio_touchscreen *vt = NULL;
+
+    printk(KERN_INFO "virtio touchscreen driver is removed\n");
+
+    vt = vdev->priv;
+
+    kthread_stop(vt->thread);
+
+    vdev->config->reset(vdev); // reset device
+    vdev->config->del_vqs(vdev); // clean up the queues
+
+    kfree(vt);
+}
+
+MODULE_DEVICE_TABLE(virtio, id_table);
+
+static struct virtio_driver virtio_touchscreen_driver = {
+    //.feature_table = features,
+    //.feature_table_size = ARRAY_SIZE(features),
+    .driver.name = KBUILD_MODNAME,
+    .driver.owner = THIS_MODULE,
+    .id_table = id_table,
+    .probe = virtio_touchscreen_probe,
+    .remove = __devexit_p(virtio_touchscreen_remove),
+#if 0
+    .config_changed =
+#ifdef CONFIG_PM
+    .freeze =   
+    .restore =
+#endif
+#endif
+};
+
+static int __init virtio_touchscreen_init(void)
+{
+    printk(KERN_INFO "virtio touchscreen device is initialized\n");
+    return register_virtio_driver(&virtio_touchscreen_driver);
+}
+
+static void __exit virtio_touchscreen_exit(void)
+{
+    printk(KERN_INFO "virtio touchscreen device is destroyed\n");
+    unregister_virtio_driver(&virtio_touchscreen_driver);
+}
+
+module_init(virtio_touchscreen_init);
+module_exit(virtio_touchscreen_exit);
+
