@@ -423,6 +423,7 @@ static struct pci_device_id svcodec_pci_table[] __devinitdata = {
 		.subvendor = PCI_ANY_ID,
 		.subdevice = PCI_ANY_ID,
 	},
+	{},
 };
 MODULE_DEVICE_TABLE(pci, svcodec_pci_table);
 
