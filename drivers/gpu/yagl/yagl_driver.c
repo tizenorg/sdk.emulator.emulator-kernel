@@ -71,6 +71,9 @@ struct yagl_file
 
     /* Buffer used for marshalling, allocated in mmap */
     u8 *buff;
+
+    /* Buffer size */
+    unsigned long buff_size;
 };
 
 static void yagl_user_activate(void __iomem *regs,
@@ -154,7 +157,7 @@ static int yagl_misc_release(struct inode *inode, struct file *file)
     if (yfile->buff) {
         yagl_user_deactivate(yfile->device->regs, index);
 
-        vfree(yfile->buff);
+        free_pages((unsigned long)yfile->buff, get_order(yfile->buff_size));
         yfile->buff = NULL;
 
         dprintk("%s: YaGL exited\n", yfile->device->miscdev.name);
@@ -210,8 +213,11 @@ static int yagl_misc_mmap(struct file *file, struct vm_area_struct *vma)
         }
     } else if (vma->vm_pgoff == 1) {
         /*
-         * Second page is marshalling buffer.
+         * Marshalling buffer.
          */
+
+        int i;
+        unsigned long addr;
 
         if (yfile->buff) {
             dprintk("%s: marshalling buffer already mapped\n",
@@ -220,7 +226,8 @@ static int yagl_misc_mmap(struct file *file, struct vm_area_struct *vma)
             goto out;
         }
 
-        buff = vmalloc_user(vma->vm_end - vma->vm_start);
+        buff = (u8*)__get_free_pages(GFP_USER|__GFP_COMP,
+                                     get_order(vma->vm_end - vma->vm_start));
 
         if (!buff) {
             dprintk("%s: unable to alloc memory\n",
@@ -229,18 +236,26 @@ static int yagl_misc_mmap(struct file *file, struct vm_area_struct *vma)
             goto out;
         }
 
-        ret = remap_vmalloc_range(vma, buff, 0);
+        vma->vm_flags |= VM_RESERVED | VM_DONTEXPAND;
 
-        if (ret != 0) {
-            dprintk("%s: unable to remap marshalling memory: %d\n",
-                    yfile->device->miscdev.name,
-                    ret );
-            goto out;
+        addr = vma->vm_start;
+
+        for (i = 0; i < num_pages; i++) {
+            ret = vm_insert_page(vma,
+                                 addr,
+                                 virt_to_page((unsigned long)buff + (i * PAGE_SIZE)));
+            if (ret != 0) {
+                dprintk("%s: unable to remap marshalling memory: %d\n",
+                        yfile->device->miscdev.name,
+                        ret );
+                goto out;
+            }
+
+            addr += PAGE_SIZE;
         }
 
-        vma->vm_flags |= VM_DONTEXPAND;
-
         yfile->buff = buff;
+        yfile->buff_size = vma->vm_end - vma->vm_start;
 
         process_id = task_tgid_vnr(current);
         thread_id = task_pid_vnr(current);
@@ -251,7 +266,7 @@ static int yagl_misc_mmap(struct file *file, struct vm_area_struct *vma)
 
         yagl_user_activate(yfile->device->regs,
                            yfile->index,
-                           vmalloc_to_pfn(yfile->buff) << PAGE_SHIFT);
+                           virt_to_phys(yfile->buff));
 
         buff = yfile->buff;
 
@@ -283,7 +298,9 @@ static int yagl_misc_mmap(struct file *file, struct vm_area_struct *vma)
     ret = 0;
 
 out:
-    vfree(buff);
+    if (buff) {
+        free_pages((unsigned long)buff, get_order(vma->vm_end - vma->vm_start));
+    }
     mutex_unlock(&yfile->device->mutex);
 
     return ret;
