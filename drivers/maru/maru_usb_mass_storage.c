@@ -28,6 +28,7 @@
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/platform_device.h>
+#include <linux/slab.h>
 
 static char mode[1024];
 static char file0[1024];

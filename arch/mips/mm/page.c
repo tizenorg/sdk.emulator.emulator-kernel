@@ -22,7 +22,6 @@
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/prefetch.h>
-#include <asm/system.h>
 #include <asm/bootinfo.h>
 #include <asm/mipsregs.h>
 #include <asm/mmu_context.h>
@@ -35,7 +34,7 @@
 #include <asm/sibyte/sb1250_dma.h>
 #endif
 
-#include "uasm.h"
+#include <asm/uasm.h>
 
 /* Registers used in the assembled routines. */
 #define ZERO 0

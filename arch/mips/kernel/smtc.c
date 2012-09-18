@@ -25,11 +25,12 @@
 #include <linux/interrupt.h>
 #include <linux/kernel_stat.h>
 #include <linux/module.h>
+#include <linux/ftrace.h>
+#include <linux/slab.h>
 
 #include <asm/cpu.h>
 #include <asm/processor.h>
-#include <asm/atomic.h>
-#include <asm/system.h>
+#include <linux/atomic.h>
 #include <asm/hardirq.h>
 #include <asm/hazards.h>
 #include <asm/irq.h>
@@ -180,7 +181,7 @@ static int vpemask[2][8] = {
 	{0, 0, 0, 0, 0, 0, 0, 1}
 };
 int tcnoprog[NR_CPUS];
-static atomic_t idle_hook_initialized = {0};
+static atomic_t idle_hook_initialized = ATOMIC_INIT(0);
 static int clock_hang_reported[NR_CPUS];
 
 #endif /* CONFIG_SMTC_IDLE_HOOK_DEBUG */
@@ -290,7 +291,7 @@ static void smtc_configure_tlb(void)
  * possibly leave some TCs/VPEs as "slave" processors.
  *
  * Use c0_MVPConf0 to find out how many TCs are available, setting up
- * cpu_possible_map and the logical/physical mappings.
+ * cpu_possible_mask and the logical/physical mappings.
  */
 
 int __init smtc_build_cpu_map(int start_cpu_slot)
@@ -557,7 +558,7 @@ void smtc_prepare_cpus(int cpus)
 
 	pipi = kmalloc(nipi *sizeof(struct smtc_ipi), GFP_KERNEL);
 	if (pipi == NULL)
-		panic("kmalloc of IPI message buffers failed\n");
+		panic("kmalloc of IPI message buffers failed");
 	else
 		printk("IPI buffer pool of %d buffers\n", nipi);
 	for (i = 0; i < nipi; i++) {
@@ -675,8 +676,9 @@ void smtc_set_irq_affinity(unsigned int irq, cpumask_t affinity)
 	 */
 }
 
-void smtc_forward_irq(unsigned int irq)
+void smtc_forward_irq(struct irq_data *d)
 {
+	unsigned int irq = d->irq;
 	int target;
 
 	/*
@@ -690,7 +692,7 @@ void smtc_forward_irq(unsigned int irq)
 	 * and efficiency, we just pick the easiest one to find.
 	 */
 
-	target = cpumask_first(irq_desc[irq].affinity);
+	target = cpumask_first(d->affinity);
 
 	/*
 	 * We depend on the platform code to have correctly processed
@@ -705,12 +707,10 @@ void smtc_forward_irq(unsigned int irq)
 	 */
 
 	/* If no one is eligible, service locally */
-	if (target >= NR_CPUS) {
+	if (target >= NR_CPUS)
 		do_IRQ_no_affinity(irq);
-		return;
-	}
-
-	smtc_send_ipi(target, IRQ_AFFINITY_IPI, irq);
+	else
+		smtc_send_ipi(target, IRQ_AFFINITY_IPI, irq);
 }
 
 #endif /* CONFIG_MIPS_MT_SMTC_IRQAFF */
@@ -812,7 +812,7 @@ void smtc_send_ipi(int cpu, int type, unsigned int action)
 	if (pipi == NULL) {
 		bust_spinlocks(1);
 		mips_mt_regdump(dvpe());
-		panic("IPI Msg. Buffers Depleted\n");
+		panic("IPI Msg. Buffers Depleted");
 	}
 	pipi->type = type;
 	pipi->arg = (void *)action;
@@ -928,7 +928,7 @@ static void post_direct_ipi(int cpu, struct smtc_ipi *pipi)
 
 static void ipi_resched_interrupt(void)
 {
-	/* Return from interrupt should be enough to cause scheduler check */
+	scheduler_ipi();
 }
 
 static void ipi_call_interrupt(void)
@@ -939,23 +939,29 @@ static void ipi_call_interrupt(void)
 
 DECLARE_PER_CPU(struct clock_event_device, mips_clockevent_device);
 
-void ipi_decode(struct smtc_ipi *pipi)
+static void __irq_entry smtc_clock_tick_interrupt(void)
 {
 	unsigned int cpu = smp_processor_id();
 	struct clock_event_device *cd;
+	int irq = MIPS_CPU_IRQ_BASE + 1;
+
+	irq_enter();
+	kstat_incr_irqs_this_cpu(irq, irq_to_desc(irq));
+	cd = &per_cpu(mips_clockevent_device, cpu);
+	cd->event_handler(cd);
+	irq_exit();
+}
+
+void ipi_decode(struct smtc_ipi *pipi)
+{
 	void *arg_copy = pipi->arg;
 	int type_copy = pipi->type;
-	int irq = MIPS_CPU_IRQ_BASE + 1;
 
 	smtc_ipi_nq(&freeIPIq, pipi);
 
 	switch (type_copy) {
 	case SMTC_CLOCK_TICK:
-		irq_enter();
-		kstat_incr_irqs_this_cpu(irq, irq_to_desc(irq));
-		cd = &per_cpu(mips_clockevent_device, cpu);
-		cd->event_handler(cd);
-		irq_exit();
+		smtc_clock_tick_interrupt();
 		break;
 
 	case LINUX_SMP_IPI:
@@ -967,8 +973,7 @@ void ipi_decode(struct smtc_ipi *pipi)
 			ipi_call_interrupt();
 			break;
 		default:
-			printk("Impossible SMTC IPI Argument 0x%x\n",
-				(int)arg_copy);
+			printk("Impossible SMTC IPI Argument %p\n", arg_copy);
 			break;
 		}
 		break;
@@ -1031,7 +1036,7 @@ void deferred_smtc_ipi(void)
 		 * but it's more efficient, given that we're already
 		 * running down the IPI queue.
 		 */
-		__raw_local_irq_restore(flags);
+		__arch_local_irq_restore(flags);
 	}
 }
 
@@ -1124,7 +1129,7 @@ static void ipi_irq_dispatch(void)
 
 static struct irqaction irq_ipi = {
 	.handler	= ipi_interrupt,
-	.flags		= IRQF_DISABLED | IRQF_PERCPU,
+	.flags		= IRQF_PERCPU,
 	.name		= "SMTC_IPI"
 };
 
@@ -1140,7 +1145,7 @@ static void setup_cross_vpe_interrupts(unsigned int nvpe)
 
 	setup_irq_smtc(cpu_ipi_irq, &irq_ipi, (0x100 << MIPS_CPU_IPI_IRQ));
 
-	set_irq_handler(cpu_ipi_irq, handle_percpu_irq);
+	irq_set_handler(cpu_ipi_irq, handle_percpu_irq);
 }
 
 /*
@@ -1183,7 +1188,7 @@ void smtc_ipi_replay(void)
 		/*
 		 ** But use a raw restore here to avoid recursion.
 		 */
-		__raw_local_irq_restore(flags);
+		__arch_local_irq_restore(flags);
 
 		if (pipi) {
 			self_ipi(pipi);
@@ -1331,7 +1336,7 @@ void smtc_get_new_mmu_context(struct mm_struct *mm, unsigned long cpu)
 		if (!((asid += ASID_INC) & ASID_MASK) ) {
 			if (cpu_has_vtag_icache)
 				flush_icache_all();
-			/* Traverse all online CPUs (hack requires contigous range) */
+			/* Traverse all online CPUs (hack requires contiguous range) */
 			for_each_online_cpu(i) {
 				/*
 				 * We don't need to worry about our own CPU, nor those of

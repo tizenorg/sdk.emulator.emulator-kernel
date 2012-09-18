@@ -11,7 +11,6 @@
 #include <linux/seq_file.h>
 
 #include <asm/addrspace.h>
-#include <asm/system.h>
 #include <asm/traps.h>
 #include <asm/branch.h>
 #include <asm/irq_regs.h>
@@ -453,7 +452,7 @@ mips_be_fatal:
 
 void ip22_be_interrupt(int irq)
 {
-	const struct pt_regs *regs = get_irq_regs();
+	struct pt_regs *regs = get_irq_regs();
 
 	count_be_interrupt++;
 
