@@ -69,7 +69,6 @@ typedef struct virtio_touchscreen
 #define TOUCHSCREEN_RESOLUTION_Y 3780
 #define ABS_PRESSURE_MAX 255
 
-
 static struct virtio_device_id id_table[] = {
     { VIRTIO_ID_TOUCHSCREEN, VIRTIO_DEV_ANY_ID },
     { 0 },
@@ -80,51 +79,60 @@ static struct virtio_device_id id_table[] = {
  */
 static int run_touchscreen(void *_vtouchscreen)
 {
+#define MAX_BUF_COUNT 10
     virtio_touchscreen *vt = NULL;
-    EmulTouchEvent *vbuf = NULL;
+    struct scatterlist sg[MAX_BUF_COUNT];
+    EmulTouchEvent vbuf[MAX_BUF_COUNT];
     EmulTouchEvent *event = NULL;
-    struct scatterlist sg;
-    int count = 0; // remaining capacity of queue
+    int len = 0; // not used
+    int index = 0;
 
     struct input_dev *input_dev = NULL;
 
     vt = _vtouchscreen;
-    vbuf = kzalloc(sizeof(EmulTouchEvent), GFP_KERNEL);
-    vbuf->x = MAX_TRKID; // max touch point
-
     input_dev = vt->idev;
 
+    sg_init_table(sg, MAX_BUF_COUNT);
+
+    for (index = 0; index < MAX_BUF_COUNT; index++) {
+        sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
+        virtqueue_add_buf(vt->vq, sg, 0, index + 1, &vbuf[index], GFP_ATOMIC);
+    }
+    index = 0;
+
     while (!kthread_should_stop()) {
-        sg_init_one(&sg, vbuf, sizeof(EmulTouchEvent));
+        //virtqueue_kick(vt->vq);
 
-        if (virtqueue_add_buf(vt->vq, &sg, 0, 1, (void*)vbuf, GFP_ATOMIC) >= 0) {
-            virtqueue_kick(vt->vq);
-
-            while (!(event = virtqueue_get_buf(vt->vq, &count))) {
-                cpu_relax();
-            }
-
-            printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d\n", event->x, event->y, event->z, event->state);
-
-            if (event->state != 0) { // pressed
-                input_report_abs(input_dev, ABS_MT_TRACKING_ID, event->z);
-                input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 10);
-                input_report_abs(input_dev, ABS_MT_POSITION_X, event->x);
-                input_report_abs(input_dev, ABS_MT_POSITION_Y, event->y);
-                input_mt_sync(input_dev);
-            } else { // released
-                input_report_abs(input_dev, ABS_MT_TRACKING_ID, event->z);
-                input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
-                input_mt_sync(input_dev);
-            }
-
-            input_sync(input_dev);
+        while (!(event = virtqueue_get_buf(vt->vq, &len))) {
+            cpu_relax();
         }
 
+        index++;
+        if (index > MAX_BUF_COUNT) {
+            index = 1;
+        }
+
+        printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d, index=%d\n",
+            event->x, event->y, event->z, event->state, index);
+
+        if (event->state != 0) { /* pressed */
+            input_report_abs(input_dev, ABS_MT_TRACKING_ID, event->z);
+            input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 10);
+            input_report_abs(input_dev, ABS_MT_POSITION_X, event->x);
+            input_report_abs(input_dev, ABS_MT_POSITION_Y, event->y);
+            input_mt_sync(input_dev);
+        } else { /* released */
+            input_report_abs(input_dev, ABS_MT_TRACKING_ID, event->z);
+            input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
+            input_mt_sync(input_dev);
+        }
+
+        input_sync(input_dev);
+
+        virtqueue_add_buf(vt->vq, sg, 0, index, (void*)event, GFP_ATOMIC);
     }
 
     printk(KERN_INFO "virtio touchscreen thread is stopped\n");
-    kfree(vbuf);
 
     return 0;
 }
