@@ -33,6 +33,7 @@
 #include <linux/init.h>
 #include <linux/fs.h>
 #include <linux/input.h>
+#include <linux/input/mt.h>
 #include <linux/miscdevice.h>
 #include <linux/slab.h>
 #include <linux/virtio.h>
@@ -84,8 +85,9 @@ static int run_touchscreen(void *_vtouchscreen)
     struct scatterlist sg[MAX_BUF_COUNT];
     EmulTouchEvent vbuf[MAX_BUF_COUNT];
     EmulTouchEvent *event = NULL;
-    int len = 0; // not used
+    int len = 0; /* not used */
     int index = 0;
+    int id = 0; /* finger id */
 
     struct input_dev *input_dev = NULL;
 
@@ -115,16 +117,21 @@ static int run_touchscreen(void *_vtouchscreen)
         printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d, index=%d\n",
             event->x, event->y, event->z, event->state, index);
 
-        if (event->state != 0) { /* pressed */
-            input_report_abs(input_dev, ABS_MT_TRACKING_ID, event->z);
+        id = event->z;
+
+        /* Multi-touch Protocol is B */
+        if (event->state != 0)
+        { /* pressed */
+            input_mt_slot(input_dev, id);
+            input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, true);
             input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 10);
             input_report_abs(input_dev, ABS_MT_POSITION_X, event->x);
             input_report_abs(input_dev, ABS_MT_POSITION_Y, event->y);
-            input_mt_sync(input_dev);
-        } else { /* released */
-            input_report_abs(input_dev, ABS_MT_TRACKING_ID, event->z);
-            input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
-            input_mt_sync(input_dev);
+        }
+        else
+        { /* released */
+            input_mt_slot(input_dev, id);
+            input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, false);
         }
 
         input_sync(input_dev);
@@ -216,6 +223,8 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     vt->idev->absbit[BIT_WORD(ABS_MISC)] |= BIT_MASK(ABS_MISC);
     vt->idev->keybit[BIT_WORD(BTN_TOUCH)] |= BIT_MASK(BTN_TOUCH);
 
+    input_mt_init_slots(vt->idev, MAX_TRKID);
+
     input_set_abs_params(vt->idev, ABS_X, 0, TOUCHSCREEN_RESOLUTION_X, 4, 0);
     input_set_abs_params(vt->idev, ABS_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 4, 0);
     input_set_abs_params(vt->idev, ABS_MT_TRACKING_ID, 0, MAX_TRKID, 0, 0);
@@ -240,9 +249,13 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
 
     return 0;
 
-fail3: input_unregister_device(vt->idev);
-fail2: input_free_device(vt->idev);
-fail1: kfree(vt);
+fail3:
+    input_unregister_device(vt->idev);
+fail2:
+    input_mt_destroy_slots(vt->idev);
+    input_free_device(vt->idev);
+fail1:
+    kfree(vt);
     vdev->priv = NULL;
 
     return ret;
@@ -260,6 +273,10 @@ static void __devexit virtio_touchscreen_remove(struct virtio_device *vdev)
 
     vdev->config->reset(vdev); // reset device
     vdev->config->del_vqs(vdev); // clean up the queues
+
+    input_unregister_device(vt->idev);
+    input_mt_destroy_slots(vt->idev);
+    input_free_device(vt->idev);
 
     kfree(vt);
 }
