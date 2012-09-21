@@ -85,8 +85,10 @@ static int run_touchscreen(void *_vtouchscreen)
     struct scatterlist sg[MAX_BUF_COUNT];
     EmulTouchEvent vbuf[MAX_BUF_COUNT];
     EmulTouchEvent *event = NULL;
+    int err = 0;
     int len = 0; /* not used */
     int index = 0;
+    int recv_index = 0;
     int id = 0; /* finger id */
 
     struct input_dev *input_dev = NULL;
@@ -98,24 +100,23 @@ static int run_touchscreen(void *_vtouchscreen)
 
     for (index = 0; index < MAX_BUF_COUNT; index++) {
         sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
-        virtqueue_add_buf(vt->vq, sg, 0, index + 1, &vbuf[index], GFP_ATOMIC);
+        err = virtqueue_add_buf(vt->vq, sg, 0, index + 1, (void *)index + 1, GFP_ATOMIC);
+        if (err < 0) {
+            printk(KERN_ERR "failed to add buf\n");
+        }
     }
     index = 0;
 
     while (!kthread_should_stop()) {
         //virtqueue_kick(vt->vq);
 
-        while (!(event = virtqueue_get_buf(vt->vq, &len))) {
+        while (!(recv_index = virtqueue_get_buf(vt->vq, &len))) {
             cpu_relax();
         }
 
-        index++;
-        if (index > MAX_BUF_COUNT) {
-            index = 1;
-        }
-
-        printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d, index=%d\n",
-            event->x, event->y, event->z, event->state, index);
+        event = &vbuf[recv_index - 1];
+        printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d, recv_index=%d\n",
+            event->x, event->y, event->z, event->state, recv_index);
 
         id = event->z;
 
@@ -136,7 +137,10 @@ static int run_touchscreen(void *_vtouchscreen)
 
         input_sync(input_dev);
 
-        virtqueue_add_buf(vt->vq, sg, 0, index, (void*)event, GFP_ATOMIC);
+        err = virtqueue_add_buf(vt->vq, sg, 0, recv_index, (void *)recv_index, GFP_ATOMIC);
+        if (err < 0) {
+            printk(KERN_ERR "failed to add buf\n");
+        }
     }
 
     printk(KERN_INFO "virtio touchscreen thread is stopped\n");
@@ -144,12 +148,10 @@ static int run_touchscreen(void *_vtouchscreen)
     return 0;
 }
 
-#if 0
 static void vq_touchscreen_callback(struct virtqueue *vq)
 {
     printk(KERN_INFO "vq touchscreen callback\n");
 }
-#endif
 
 static int virtio_touchscreen_open(struct inode *inode, struct file *file)
 {
@@ -195,14 +197,12 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
 
     vt->vdev = vdev;
 
-    vt->vq = virtio_find_single_vq(vt->vdev, NULL, "virtio-touchscreen-vq");
+    vt->vq = virtio_find_single_vq(vt->vdev,
+        vq_touchscreen_callback, "virtio-touchscreen-vq");
     if (IS_ERR(vt->vq)) {
         ret = PTR_ERR(vt->vq);
         goto fail1;
     }
-
-    //vt->vq->callback = vq_touchscreen_callback;
-    //virtqueue_enable_cb(vt->vq);
 
     /* register for input device */
     vt->idev = input_allocate_device();
