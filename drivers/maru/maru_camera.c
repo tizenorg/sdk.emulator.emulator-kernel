@@ -363,7 +363,7 @@ static int get_image_size(struct marucam_device *dev)
 	return size;
 }
 
-static void marucam_fillbuf(struct marucam_device *dev)
+static void marucam_fillbuf(struct marucam_device *dev, uint32_t isr)
 {
 	struct videobuf_queue *q = &dev->vb_vidq;
 	struct videobuf_buffer *buf = NULL;
@@ -387,7 +387,14 @@ static void marucam_fillbuf(struct marucam_device *dev)
 
 	list_del(&buf->queue);
 
-	buf->state = VIDEOBUF_DONE;
+	if (isr & 0x08) {
+		marucam_err("device state is invalid\n");
+		buf->state = 0xFF; /* invalid state */
+	} else {
+		marucam_dbg(2, "video buffer is filled\n");
+		buf->state = VIDEOBUF_DONE;
+	}
+
 	do_gettimeofday(&buf->ts);
 	buf->field_count++;
 	wake_up_interruptible(&buf->done);
@@ -403,11 +410,11 @@ static irqreturn_t marucam_irq_handler(int irq, void *dev_id)
 
 	isr = ioread32(dev->mmregs + MARUCAM_ISR);
 	if (!isr) {
-		marucam_info("this irq is not for this module\n");
+		marucam_dbg(1, "this irq is not for this module\n");
 		return IRQ_NONE;
 	}
 
-	marucam_fillbuf(dev);
+	marucam_fillbuf(dev, isr);
 	return IRQ_HANDLED;
 }
 
@@ -1059,8 +1066,6 @@ static int marucam_close(struct file *file)
 	struct marucam_device *dev = file->private_data;
 	uint32_t ret;
 
-	int minor = video_devdata(file)->minor;
-
 	mutex_lock(&dev->mlock);
 	if (dev->opstate == S_RUNNING) {
 		marucam_err("The device has been terminated unexpectedly.\n");
@@ -1096,8 +1101,6 @@ static int marucam_close(struct file *file)
 		return -(ret);
 	}
 
-	marucam_dbg(1, "close called (minor=%d)\n", minor);
-
 	dev->in_use = 0;
 	mutex_unlock(&dev->mlock);
 	return 0;
@@ -1127,7 +1130,9 @@ marucam_poll(struct file *file, struct poll_table_struct *wait)
 
 	if (ret == 0) {
 		poll_wait(file, &buf->done, wait);
-		if (buf->state == VIDEOBUF_DONE || buf->state == VIDEOBUF_ERROR)
+		if (buf->state == VIDEOBUF_DONE ||
+				buf->state == VIDEOBUF_ERROR ||
+				buf->state == 0xFF)
 			ret = POLLIN | POLLRDNORM;
 		else
 			iowrite32(buf->i, dev->mmregs + MARUCAM_REQFRAME);
