@@ -33,6 +33,7 @@
 #include <linux/init.h>
 #include <linux/fs.h>
 #include <linux/input.h>
+#include <linux/input/mt.h>
 #include <linux/miscdevice.h>
 #include <linux/slab.h>
 #include <linux/virtio.h>
@@ -69,11 +70,14 @@ typedef struct virtio_touchscreen
 #define TOUCHSCREEN_RESOLUTION_Y 3780
 #define ABS_PRESSURE_MAX 255
 
-
 static struct virtio_device_id id_table[] = {
     { VIRTIO_ID_TOUCHSCREEN, VIRTIO_DEV_ANY_ID },
     { 0 },
 };
+
+#define MAX_BUF_COUNT 10
+struct scatterlist sg[MAX_BUF_COUNT];
+EmulTouchEvent vbuf[MAX_BUF_COUNT];
 
 /**
  * @brief : event polling
@@ -81,60 +85,88 @@ static struct virtio_device_id id_table[] = {
 static int run_touchscreen(void *_vtouchscreen)
 {
     virtio_touchscreen *vt = NULL;
-    EmulTouchEvent *vbuf = NULL;
-    EmulTouchEvent *event = NULL;
-    struct scatterlist sg;
-    int count = 0; // remaining capacity of queue
+    int err = 0;
+    unsigned int len = 0; /* not used */
+    unsigned int index = 0;
+    unsigned int recv_index = 0;
+    unsigned int id = 0; /* finger id */
 
     struct input_dev *input_dev = NULL;
+    EmulTouchEvent *event = NULL;
 
-    vt = _vtouchscreen;
-    vbuf = kzalloc(sizeof(EmulTouchEvent), GFP_KERNEL);
-    vbuf->x = MAX_TRKID; // max touch point
-
+    vt = (virtio_touchscreen *)_vtouchscreen;
     input_dev = vt->idev;
 
-    while (!kthread_should_stop()) {
-        sg_init_one(&sg, vbuf, sizeof(EmulTouchEvent));
+    sg_init_table(sg, MAX_BUF_COUNT);
 
-        if (virtqueue_add_buf(vt->vq, &sg, 0, 1, (void*)vbuf, GFP_ATOMIC) >= 0) {
-            virtqueue_kick(vt->vq);
+    for (index = 0; index < MAX_BUF_COUNT; index++) {
+        sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
 
-            while (!(event = virtqueue_get_buf(vt->vq, &count))) {
-                cpu_relax();
-            }
+        err = virtqueue_add_buf(vt->vq, sg, 0, index + 1, (void *)index + 1, GFP_ATOMIC);
+        if (err < 0) {
+            printk(KERN_ERR "failed to add buf\n");
+        }
+    }
+    virtqueue_kick(vt->vq);
 
-            printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d\n", event->x, event->y, event->z, event->state);
+    index = 0;
 
-            if (event->state != 0) { // pressed
-                input_report_abs(input_dev, ABS_MT_TRACKING_ID, event->z);
+    while (!kthread_should_stop())
+    {
+        while ((recv_index = (unsigned int)virtqueue_get_buf(vt->vq, &len)) == 0) {
+            cpu_relax();
+        }
+
+        do {
+            event = &vbuf[recv_index - 1];
+#if 0
+            printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d, recv_index=%d\n",
+                event->x, event->y, event->z, event->state, recv_index);
+#endif
+
+            id = event->z;
+
+            /* Multi-touch Protocol is B */
+            if (event->state != 0)
+            { /* pressed */
+                input_mt_slot(input_dev, id);
+                input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, true);
                 input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 10);
                 input_report_abs(input_dev, ABS_MT_POSITION_X, event->x);
                 input_report_abs(input_dev, ABS_MT_POSITION_Y, event->y);
-                input_mt_sync(input_dev);
-            } else { // released
-                input_report_abs(input_dev, ABS_MT_TRACKING_ID, event->z);
-                input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
-                input_mt_sync(input_dev);
+            }
+            else
+            { /* released */
+                input_mt_slot(input_dev, id);
+                input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, false);
             }
 
             input_sync(input_dev);
-        }
 
+            /* expose buffer to other end */
+            err = virtqueue_add_buf(vt->vq, sg, 0, recv_index, (void *)recv_index, GFP_ATOMIC);
+            if (err < 0) {
+                printk(KERN_ERR "failed to add buf\n");
+            }
+
+            recv_index = (unsigned int)virtqueue_get_buf(vt->vq, &len);
+            if (recv_index == 0) {
+                break;
+            }
+        } while(true);
+
+        virtqueue_kick(vt->vq);
     }
 
     printk(KERN_INFO "virtio touchscreen thread is stopped\n");
-    kfree(vbuf);
 
     return 0;
 }
 
-#if 0
 static void vq_touchscreen_callback(struct virtqueue *vq)
 {
     printk(KERN_INFO "vq touchscreen callback\n");
 }
-#endif
 
 static int virtio_touchscreen_open(struct inode *inode, struct file *file)
 {
@@ -160,9 +192,9 @@ static void input_touchscreen_close(struct input_dev *dev)
 }
 
 struct file_operations virtio_touchscreen_fops = {
-    .owner      = THIS_MODULE,
-    .open       = virtio_touchscreen_open,
-    .release    = virtio_touchscreen_release,
+    .owner   = THIS_MODULE,
+    .open    = virtio_touchscreen_open,
+    .release = virtio_touchscreen_release,
 };
 
 static int virtio_touchscreen_probe(struct virtio_device *vdev)
@@ -180,14 +212,13 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
 
     vt->vdev = vdev;
 
-    vt->vq = virtio_find_single_vq(vt->vdev, NULL, "virtio-touchscreen-vq");
+    vt->vq = virtio_find_single_vq(vt->vdev,
+        vq_touchscreen_callback, "virtio-touchscreen-vq");
     if (IS_ERR(vt->vq)) {
         ret = PTR_ERR(vt->vq);
         goto fail1;
     }
-
-    //vt->vq->callback = vq_touchscreen_callback;
-    //virtqueue_enable_cb(vt->vq);
+    virtqueue_disable_cb(vt->vq); /* disable callback */
 
     /* register for input device */
     vt->idev = input_allocate_device();
@@ -208,12 +239,20 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     vt->idev->absbit[BIT_WORD(ABS_MISC)] |= BIT_MASK(ABS_MISC);
     vt->idev->keybit[BIT_WORD(BTN_TOUCH)] |= BIT_MASK(BTN_TOUCH);
 
-    input_set_abs_params(vt->idev, ABS_X, 0, TOUCHSCREEN_RESOLUTION_X, 4, 0);
-    input_set_abs_params(vt->idev, ABS_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 4, 0);
-    input_set_abs_params(vt->idev, ABS_MT_TRACKING_ID, 0, MAX_TRKID, 0, 0);
-    input_set_abs_params(vt->idev, ABS_MT_TOUCH_MAJOR, 0, ABS_PRESSURE_MAX, 0, 0);
-    input_set_abs_params(vt->idev, ABS_MT_POSITION_X, 0, TOUCHSCREEN_RESOLUTION_X, 0, 0);
-    input_set_abs_params(vt->idev, ABS_MT_POSITION_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 0, 0);
+    input_mt_init_slots(vt->idev, MAX_TRKID);
+
+    input_set_abs_params(vt->idev, ABS_X, 0,
+        TOUCHSCREEN_RESOLUTION_X, 4, 0);
+    input_set_abs_params(vt->idev, ABS_Y, 0,
+        TOUCHSCREEN_RESOLUTION_Y, 4, 0);
+    input_set_abs_params(vt->idev, ABS_MT_TRACKING_ID, 0,
+        MAX_TRKID, 0, 0);
+    input_set_abs_params(vt->idev, ABS_MT_TOUCH_MAJOR, 0,
+        ABS_PRESSURE_MAX, 0, 0);
+    input_set_abs_params(vt->idev, ABS_MT_POSITION_X, 0,
+        TOUCHSCREEN_RESOLUTION_X, 0, 0);
+    input_set_abs_params(vt->idev, ABS_MT_POSITION_Y, 0,
+        TOUCHSCREEN_RESOLUTION_Y, 0, 0);
 
     ret = input_register_device(vt->idev);
     if (ret) {
@@ -232,9 +271,13 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
 
     return 0;
 
-fail3: input_unregister_device(vt->idev);
-fail2: input_free_device(vt->idev);
-fail1: kfree(vt);
+fail3:
+    input_unregister_device(vt->idev);
+fail2:
+    input_mt_destroy_slots(vt->idev);
+    input_free_device(vt->idev);
+fail1:
+    kfree(vt);
     vdev->priv = NULL;
 
     return ret;
@@ -250,8 +293,12 @@ static void __devexit virtio_touchscreen_remove(struct virtio_device *vdev)
 
     kthread_stop(vt->thread);
 
-    vdev->config->reset(vdev); // reset device
-    vdev->config->del_vqs(vdev); // clean up the queues
+    vdev->config->reset(vdev); /* reset device */
+    vdev->config->del_vqs(vdev); /* clean up the queues */
+
+    input_unregister_device(vt->idev);
+    input_mt_destroy_slots(vt->idev);
+    input_free_device(vt->idev);
 
     kfree(vt);
 }
@@ -259,14 +306,14 @@ static void __devexit virtio_touchscreen_remove(struct virtio_device *vdev)
 MODULE_DEVICE_TABLE(virtio, id_table);
 
 static struct virtio_driver virtio_touchscreen_driver = {
-    //.feature_table = features,
-    //.feature_table_size = ARRAY_SIZE(features),
     .driver.name = KBUILD_MODNAME,
     .driver.owner = THIS_MODULE,
     .id_table = id_table,
     .probe = virtio_touchscreen_probe,
     .remove = __devexit_p(virtio_touchscreen_remove),
 #if 0
+    .feature_table = features,
+    .feature_table_size = ARRAY_SIZE(features),
     .config_changed =
 #ifdef CONFIG_PM
     .freeze =   
