@@ -53,6 +53,7 @@ typedef struct EmulTouchEvent {
     uint16_t x, y, z;
     uint8_t state;
 } EmulTouchEvent;
+EmulTouchEvent *event;
 
 typedef struct virtio_touchscreen
 {
@@ -63,6 +64,7 @@ typedef struct virtio_touchscreen
     /* The thread servicing the touchscreen */
     struct task_struct *thread;
 } virtio_touchscreen;
+virtio_touchscreen *vt;
 
 
 #define MAX_TRKID 6
@@ -79,6 +81,8 @@ static struct virtio_device_id id_table[] = {
 struct scatterlist sg[MAX_BUF_COUNT];
 EmulTouchEvent vbuf[MAX_BUF_COUNT];
 
+
+#if 0
 /**
  * @brief : event polling
  */
@@ -162,10 +166,67 @@ static int run_touchscreen(void *_vtouchscreen)
 
     return 0;
 }
+#endif
 
+
+int err = 0;
+unsigned int len = 0; /* not used */
+unsigned int index = 0;
+unsigned int recv_index = 0;
+unsigned int finger_id = 0; /* finger id */
+
+/**
+* @brief : callback for virtqueue
+*/
 static void vq_touchscreen_callback(struct virtqueue *vq)
 {
-    printk(KERN_INFO "vq touchscreen callback\n");
+    //printk(KERN_INFO "vq touchscreen callback\n");
+
+    recv_index = (unsigned int)virtqueue_get_buf(vt->vq, &len);
+    if (recv_index == 0) {
+        printk(KERN_ERR "failed to get buffer\n");
+        return;
+    }
+
+    do {
+        event = &vbuf[recv_index - 1];
+#if 0
+        printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d, recv_index=%d\n",
+            event->x, event->y, event->z, event->state, recv_index);
+#endif
+
+        finger_id = event->z;
+
+        /* Multi-touch Protocol is B */
+        if (event->state != 0)
+        { /* pressed */
+            input_mt_slot(vt->idev, finger_id);
+            input_mt_report_slot_state(vt->idev, MT_TOOL_FINGER, true);
+            input_report_abs(vt->idev, ABS_MT_TOUCH_MAJOR, 10);
+            input_report_abs(vt->idev, ABS_MT_POSITION_X, event->x);
+            input_report_abs(vt->idev, ABS_MT_POSITION_Y, event->y);
+        }
+        else
+        { /* released */
+            input_mt_slot(vt->idev, finger_id);
+            input_mt_report_slot_state(vt->idev, MT_TOOL_FINGER, false);
+        }
+
+        input_sync(vt->idev);
+
+        /* expose buffer to other end */
+        err = virtqueue_add_buf(vt->vq, sg, 0, recv_index, (void *)recv_index, GFP_ATOMIC);
+        if (err < 0) {
+            printk(KERN_ERR "failed to add buffer!\n");
+        }
+
+        recv_index = (unsigned int)virtqueue_get_buf(vt->vq, &len);
+        if (recv_index == 0) {
+            break;
+        }
+    } while(true);
+
+    virtqueue_kick(vt->vq);
 }
 
 static int virtio_touchscreen_open(struct inode *inode, struct file *file)
@@ -199,7 +260,7 @@ struct file_operations virtio_touchscreen_fops = {
 
 static int virtio_touchscreen_probe(struct virtio_device *vdev)
 {
-    struct virtio_touchscreen *vt = NULL;
+    //struct virtio_touchscreen *vt = NULL;
     int ret = 0;
 
     printk(KERN_INFO "virtio touchscreen driver is probed\n");
@@ -218,7 +279,9 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
         ret = PTR_ERR(vt->vq);
         goto fail1;
     }
-    virtqueue_disable_cb(vt->vq); /* disable callback */
+
+    /* enable callback */
+    virtqueue_enable_cb(vt->vq);
 
     /* register for input device */
     vt->idev = input_allocate_device();
@@ -261,6 +324,8 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
         goto fail2;
     }
 
+#if 0 /* using a thread */
+
     /* Responses from the hypervisor occur through the get_buf function */
     vt->thread = kthread_run(run_touchscreen, vt, "vtouchscreen");
     if (IS_ERR(vt->thread)) {
@@ -268,6 +333,26 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
         ret = PTR_ERR(vt->thread);
         goto fail3;
     }
+
+#else /* using a callback */
+
+    sg_init_table(sg, MAX_BUF_COUNT);
+
+    /* prepare the buffers */
+    for (index = 0; index < MAX_BUF_COUNT; index++) {
+        sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
+
+        err = virtqueue_add_buf(vt->vq, sg, 0, index + 1, (void *)index + 1, GFP_ATOMIC);
+        if (err < 0) {
+            printk(KERN_ERR "failed to add buffer\n");
+            goto fail3;
+        }
+    }
+    virtqueue_kick(vt->vq);
+
+    index = 0;
+
+#endif
 
     return 0;
 
