@@ -63,8 +63,8 @@ struct marubl {
 static struct marubl *marubl_device;
 /* ============================================================================== */
 
-static int min_brightness = 1;
-static int max_brightness = 24;
+static int min_brightness = 0;
+static int max_brightness = 100;
 
 static int marubl_get_intensity(struct backlight_device *bd)
 {
