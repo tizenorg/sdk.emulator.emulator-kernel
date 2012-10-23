@@ -1,0 +1,4 @@
+* 1.3.19
+- Enable devtmpfs config.
+- Since udev module has been updated kernel need to enable devtmfs config.
+== Kitae Kim <kt920.kim@samsung.com> 2012-10-23
