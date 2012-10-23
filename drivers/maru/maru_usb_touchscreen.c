@@ -6,7 +6,7 @@
  *
  * Contact: 
  *  GiWoong Kim <giwoong.kim@samsung.com>
- *  Hyunjun Son <hj79.son@samsung.com>
+ *  HyunJun Son <hj79.son@samsung.com>
  *  DongKyun Yun <dk77.yun@samsung.com>
  *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
  *
@@ -33,6 +33,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/usb/input.h>
+#include <linux/input/mt.h>
 #include <linux/slab.h>
 
 MODULE_LICENSE("GPL");
@@ -67,10 +68,11 @@ typedef struct USBEmulTouchscreenPacket {
 
 static void emul_touchscreen_sys_irq(struct urb *urb)
 {
+    int retval = 0;
     struct emul_touchscreen *usb_ts = urb->context;
     struct input_dev *input_dev = usb_ts->emuldev;
     USBEmulTouchscreenPacket *packet = (USBEmulTouchscreenPacket *)usb_ts->data;
-    int retval;
+    int id = packet->z;
 
     switch (urb->status) {
         case 0:
@@ -87,25 +89,23 @@ static void emul_touchscreen_sys_irq(struct urb *urb)
             goto exit;
     }
 
-    if (packet->state != 0) { //pressed
-        input_report_abs(input_dev, ABS_MT_TRACKING_ID, packet->z);
+    /* Multi-touch Protocol B */
+    if (packet->state != 0)
+    { /* pressed */
+        input_mt_slot(input_dev, id);
+        input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, true);
         input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 5);
         input_report_abs(input_dev, ABS_MT_POSITION_X, packet->x);
         input_report_abs(input_dev, ABS_MT_POSITION_Y, packet->y);
-        //printk(KERN_INFO "!!pressed x=%d, y=%d, z=%d", packet->x, packet->y, packet->z);
-        input_mt_sync(input_dev);
-    } else { //release
-#if 0
-        if (packet->z == 1) {
-            input_report_abs(input_dev, ABS_MT_TRACKING_ID, 1);
-            input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
-            input_mt_sync(input_dev);
-        }
-#endif
-        input_report_abs(input_dev, ABS_MT_TRACKING_ID, packet->z);
-        input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 0);
-        //printk(KERN_INFO "!!released x=%d, y=%d, z=%d", packet->x, packet->y, packet->z);
-        input_mt_sync(input_dev);
+        //printk(KERN_INFO "!!pressed x=%d, y=%d, z=%d",
+            //packet->x, packet->y, packet->z);
+    }
+    else
+    { /* release */
+        input_mt_slot(input_dev, id);
+        input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, false);
+        //printk(KERN_INFO "!!released x=%d, y=%d, z=%d",
+            //packet->x, packet->y, packet->z);
     }
 
     input_sync(input_dev);
@@ -156,6 +156,8 @@ static void emul_touchscreen_close(struct input_dev *dev)
     usb_ts->open = 0;
     usb_ts->intf->needs_remote_wakeup = 0;
     mutex_unlock(&usb_ts->lock);
+
+    input_mt_destroy_slots(usb_ts->emuldev);
 }
 
 static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_device_id *id)
@@ -209,14 +211,21 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
     usb_ts->emuldev->absbit[BIT_WORD(ABS_MISC)] |= BIT_MASK(ABS_MISC);
     usb_ts->emuldev->keybit[BIT_WORD(BTN_TOUCH)] |= BIT_MASK(BTN_TOUCH);
 
-    input_set_abs_params(usb_ts->emuldev, ABS_X, 0, TOUCHSCREEN_RESOLUTION_X, 4, 0);
-    input_set_abs_params(usb_ts->emuldev, ABS_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 4, 0);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_X, 0, TOUCHSCREEN_RESOLUTION_X, 4, 0);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 4, 0);
 
     /* for multitouch */
-    input_set_abs_params(usb_ts->emuldev, ABS_MT_TRACKING_ID, 0, MAX_TRKID, 0, 0);
-    input_set_abs_params(usb_ts->emuldev, ABS_MT_TOUCH_MAJOR, 0, ABS_PRESSURE_MAX, 0, 0);
-    input_set_abs_params(usb_ts->emuldev, ABS_MT_POSITION_X, 0, TOUCHSCREEN_RESOLUTION_X, 0, 0);
-    input_set_abs_params(usb_ts->emuldev, ABS_MT_POSITION_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 0, 0);
+    input_mt_init_slots(usb_ts->emuldev, MAX_TRKID);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_MT_TRACKING_ID, 0, MAX_TRKID, 0, 0);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_MT_TOUCH_MAJOR, 0, ABS_PRESSURE_MAX, 0, 0);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_MT_POSITION_X, 0, TOUCHSCREEN_RESOLUTION_X, 0, 0);
+    input_set_abs_params(usb_ts->emuldev,
+        ABS_MT_POSITION_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 0, 0);
 
     usb_fill_int_urb(usb_ts->irq, usb_ts->usbdev,
              usb_rcvintpipe(usb_ts->usbdev, endpoint->bEndpointAddress),
@@ -307,9 +316,11 @@ static struct usb_driver emul_touchscreen_driver = {
 
 static int __init emul_touchscreen_init(void)
 {
+    int result = 0;
+
     printk(KERN_INFO "usb touchscreen device is initialized\n");
 
-    int result = usb_register(&emul_touchscreen_driver);
+    result = usb_register(&emul_touchscreen_driver);
     if (result != 0) {
         printk(KERN_ERR "emul_touchscreen_init: usb_register=%d\n", result);
     }

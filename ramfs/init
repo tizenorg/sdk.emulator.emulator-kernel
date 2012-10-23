@@ -176,7 +176,6 @@ echo "create device filesystem"
 /bin/mkdir -p /new_root/sys
 
 #/bin/mknod /new_root/dev/opengl c 240 0
-/bin/mknod -m 666 /new_root/dev/codec c 240 0
 
 
 >${CONSOLE} <${CONSOLE} 2>&1

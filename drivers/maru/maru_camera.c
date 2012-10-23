@@ -394,7 +394,6 @@ static void marucam_fillbuf(struct marucam_device *dev, uint32_t isr)
 		marucam_dbg(2, "video buffer is filled\n");
 		buf->state = VIDEOBUF_DONE;
 	}
-
 	do_gettimeofday(&buf->ts);
 	buf->field_count++;
 	wake_up_interruptible(&buf->done);

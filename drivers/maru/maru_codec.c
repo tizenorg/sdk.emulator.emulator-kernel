@@ -36,6 +36,7 @@
 #include <linux/io.h>
 #include <linux/ioport.h>
 #include <linux/kernel.h>
+#include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/types.h>
@@ -44,8 +45,9 @@
 #include <linux/uaccess.h>
 #include <linux/workqueue.h>
 #include <linux/wait.h>
+#include <linux/slab.h>
 
-#define DRIVER_NAME	 "codec"
+#define DEVICE_NAME	 "codec"
 #define CODEC_MAJOR	 240
 
 MODULE_DESCRIPTION("Virtual Codec Device Driver");
@@ -53,7 +55,7 @@ MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_LICENSE("GPL2");
 
 #define CODEC_LOG(log_level, fmt, ...) \
-	printk(log_level "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
+	printk(log_level "%s: " fmt, DEVICE_NAME, ##__VA_ARGS__)
 
 #define CODEC_IRQ 0x7f
 
@@ -254,7 +256,7 @@ static int svcodec_open(struct inode *inode, struct file *file)
 
 	/* register interrupt handler */
 	if (request_irq(svcodec->dev->irq, svcodec_irq_handler,
-		IRQF_SHARED, DRIVER_NAME, svcodec)) {
+		IRQF_SHARED, DEVICE_NAME, svcodec)) {
 		CODEC_LOG(KERN_ERR, "failed to register irq handle\n");
 		return -EBUSY;
 	}
@@ -297,9 +299,18 @@ const struct file_operations svcodec_fops = {
 	.release		 = svcodec_release,
 };
 
+static struct miscdevice codec_dev = {
+	.minor			= MISC_DYNAMIC_MINOR,
+	.name			= DEVICE_NAME,
+	.fops			= &svcodec_fops,
+	.mode			= S_IRUGO | S_IWUGO,
+};
+
 static int __devinit svcodec_probe(struct pci_dev *pci_dev,
 	const struct pci_device_id *pci_id)
 {
+	int ret;
+
 	svcodec = kmalloc(sizeof(struct svcodec_device), GFP_KERNEL);
 	memset(svcodec, 0x00, sizeof(struct svcodec_device));
 
@@ -325,7 +336,7 @@ static int __devinit svcodec_probe(struct pci_dev *pci_dev,
 
 	if (!request_mem_region(svcodec->mem_start,
 				svcodec->mem_size,
-				DRIVER_NAME)) {
+				DEVICE_NAME)) {
 		CODEC_LOG(KERN_ERR, "request_mem_region failed\n");
 		goto err_out;
 	}
@@ -340,7 +351,7 @@ static int __devinit svcodec_probe(struct pci_dev *pci_dev,
 
 	if (!request_mem_region(svcodec->io_start,
 				svcodec->io_size,
-				DRIVER_NAME)) {
+				DEVICE_NAME)) {
 		CODEC_LOG(KERN_ERR, "request_io_region failed\n");
 		goto err_mem_region;
 	}
@@ -359,9 +370,16 @@ static int __devinit svcodec_probe(struct pci_dev *pci_dev,
 		goto err_io_region;
 	}
 
+#if 0
 	/* register chrdev */
-	if (register_chrdev(CODEC_MAJOR, DRIVER_NAME, &svcodec_fops)) {
+	if (register_chrdev(CODEC_MAJOR, DEVICE_NAME, &svcodec_fops)) {
 		CODEC_LOG(KERN_ERR, "register_chrdev failed\n");
+		goto err_io_unmap;
+	}
+#endif
+	ret = misc_register(&codec_dev);
+	if (ret) {
+		CODEC_LOG(KERN_ERR, "cannot register codec as misc\n");
 		goto err_io_unmap;
 	}
 
@@ -412,6 +430,8 @@ static void __devinit svcodec_remove(struct pci_dev *pci_dev)
 
 		kfree(svcodec);
 	}
+
+	misc_deregister(&codec_dev);
 	pci_disable_device(pci_dev);
 }
 
@@ -422,12 +442,13 @@ static struct pci_device_id svcodec_pci_table[] __devinitdata = {
 		.subvendor = PCI_ANY_ID,
 		.subdevice = PCI_ANY_ID,
 	},
+	{},
 };
 MODULE_DEVICE_TABLE(pci, svcodec_pci_table);
 
 /* define PCI Driver for CODEC */
 static struct pci_driver driver = {
-	.name = DRIVER_NAME,
+	.name = DEVICE_NAME,
 	.id_table = svcodec_pci_table,
 	.probe = svcodec_probe,
 	.remove = svcodec_remove,
