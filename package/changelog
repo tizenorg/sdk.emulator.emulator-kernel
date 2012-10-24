@@ -1,0 +1,4 @@
+* 1.3.21
+- Change kernel keycode of KEY_MENU.
+- Since X key mapping has been changed, kernel keycode has to be changed.
+== GiWoong Kim <giwoong.kim@samsung.com> 2012-10-23
