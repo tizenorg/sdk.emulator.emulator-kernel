@@ -342,12 +342,12 @@ static struct platform_driver sec_input_bridge_driver = {
 static const struct sec_input_bridge_mkey emul_mkey_map[] = {
 	{ .type = EV_KEY , .code = KEY_VOLUMEUP 	 },
 	{ .type = EV_KEY , .code = KEY_VOLUMEDOWN	 },
-	{ .type = EV_KEY , .code = KEY_FRONT 		 },
-	{ .type = EV_KEY , .code = KEY_FRONT 		 },
+	{ .type = EV_KEY , .code = KEY_MENU 		 },
+	{ .type = EV_KEY , .code = KEY_MENU 		 },
 	{ .type = EV_KEY , .code = KEY_VOLUMEUP 	 },
 	{ .type = EV_KEY , .code = KEY_VOLUMEDOWN	},
 	{ .type = EV_KEY , .code = KEY_VOLUMEUP 	 },
-	{ .type = EV_KEY , .code = KEY_FRONT 		 },
+	{ .type = EV_KEY , .code = KEY_MENU 		 },
 };
 
 static struct sec_input_bridge_platform_data emul_input_bridge_data = {
