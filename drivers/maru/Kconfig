@@ -55,3 +55,7 @@ config MARU_USB_MASS_STORAGE
 config MARU_USB_MODE
 	tristate "MARU Usb mode Driver"
 	depends on MARU != n
+
+config MARU_VIRTIO_KEYBOARD
+	tristate "MARU VirtIO Keyboard Driver"
+	depends on MARU != n
