@@ -60,7 +60,9 @@ int tick_is_oneshot_available(void)
 /*
  * Periodic tick
  */
+#ifndef CONFIG_ARM
 #define UNDER_HYPERVISOR
+#endif
 static void tick_periodic(int cpu)
 {
 	if (tick_do_timer_cpu == cpu) {

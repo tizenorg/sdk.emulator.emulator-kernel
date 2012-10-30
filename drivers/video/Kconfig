@@ -23,6 +23,10 @@ source "drivers/gpu/drm/Kconfig"
 
 source "drivers/gpu/stub/Kconfig"
 
+source "drivers/gpu/fgles/Kconfig"
+
+source "drivers/gpu/yagl/Kconfig"
+
 config VGASTATE
        tristate
        default n

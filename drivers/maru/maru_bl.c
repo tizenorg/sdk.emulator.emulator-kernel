@@ -47,7 +47,8 @@ static struct pci_device_id marubl_pci_table[] __devinitdata =
 		.device     = PCI_DEVICE_ID_VIRTUAL_BRIGHTNESS,
 		.subvendor	= PCI_ANY_ID,
 		.subdevice	= PCI_ANY_ID,
-	}
+	},
+	{ 0, },
 };
 MODULE_DEVICE_TABLE(pci, marubl_pci_table);
 

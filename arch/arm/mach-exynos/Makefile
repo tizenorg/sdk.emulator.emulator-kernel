@@ -27,6 +27,7 @@ obj-$(CONFIG_ARCH_EXYNOS4)	+= pmu.o
 obj-$(CONFIG_SMP)		+= platsmp.o headsmp.o
 
 obj-$(CONFIG_EXYNOS4_MCT)	+= mct.o
+obj-$(CONFIG_TIZEN_PWM)		+= tizen-pwm.o
 
 obj-$(CONFIG_HOTPLUG_CPU)	+= hotplug.o
 
@@ -37,6 +38,7 @@ obj-$(CONFIG_MACH_SMDKV310)		+= mach-smdkv310.o
 obj-$(CONFIG_MACH_ARMLEX4210)		+= mach-armlex4210.o
 obj-$(CONFIG_MACH_UNIVERSAL_C210)	+= mach-universal_c210.o
 obj-$(CONFIG_MACH_NURI)			+= mach-nuri.o
+obj-$(CONFIG_MACH_TIZEN)		+= mach-tizen.o
 obj-$(CONFIG_MACH_ORIGEN)		+= mach-origen.o
 
 obj-$(CONFIG_MACH_SMDK4212)		+= mach-smdk4x12.o
@@ -69,3 +71,4 @@ obj-$(CONFIG_EXYNOS4_SETUP_KEYPAD)	+= setup-keypad.o
 obj-$(CONFIG_EXYNOS4_SETUP_SDHCI_GPIO)	+= setup-sdhci-gpio.o
 obj-$(CONFIG_EXYNOS4_SETUP_USB_PHY)	+= setup-usb-phy.o
 obj-$(CONFIG_EXYNOS4_SETUP_SPI)		+= setup-spi.o
+obj-$(CONFIG_TIZEN_VPCI)		+= tizen-vpci.o

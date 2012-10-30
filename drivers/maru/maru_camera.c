@@ -43,6 +43,7 @@
 #include <linux/version.h>
 #include <linux/mutex.h>
 #include <linux/pagemap.h>
+#include <linux/sched.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <linux/interrupt.h>

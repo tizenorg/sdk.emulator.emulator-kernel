@@ -47,6 +47,9 @@
 #include <plat/regs-serial.h>
 
 #include "common.h"
+#ifdef CONFIG_TIZEN_VPCI
+#include "tizen-vpci.h"
+#endif
 #define L2_AUX_VAL 0x7C470001
 #define L2_AUX_MASK 0xC200ffff
 
@@ -304,9 +307,29 @@ void __init exynos_init_io(struct map_desc *mach_desc, int size)
 	s3c_init_cpu(samsung_cpu_id, cpu_ids, ARRAY_SIZE(cpu_ids));
 }
 
+#ifdef CONFIG_TIZEN_VPCI
+static struct map_desc tizen_vpci_iodesc[] __initdata = {
+    {
+        .virtual    = (unsigned long)TIZEN_VPCI_IO_VIRT_BASE,
+        .pfn        = __phys_to_pfn(TIZEN_VPCI_IO_BASE),
+        .length     = TIZEN_VPCI_IO_BASE_SIZE,
+        .type       = MT_DEVICE,
+    },
+    {
+        .virtual    = (unsigned long)TIZEN_VPCI_CFG_VIRT_BASE,
+        .pfn        = __phys_to_pfn(TIZEN_VPCI_CFG_BASE),
+        .length     = TIZEN_VPCI_CFG_BASE_SIZE,
+        .type       = MT_DEVICE,
+    }
+};
+#endif
+
 static void __init exynos4_map_io(void)
 {
 	iotable_init(exynos4_iodesc, ARRAY_SIZE(exynos4_iodesc));
+#ifdef CONFIG_TIZEN_VPCI
+	iotable_init(tizen_vpci_iodesc, ARRAY_SIZE(tizen_vpci_iodesc));
+#endif
 
 	if (soc_is_exynos4210() && samsung_rev() == EXYNOS4210_REV_0)
 		iotable_init(exynos4_iodesc0, ARRAY_SIZE(exynos4_iodesc0));
