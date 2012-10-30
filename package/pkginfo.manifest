@@ -1,7 +1,13 @@
-Package: emulator-kernel-x86
-Version: 1.3.21
-OS: ubuntu-32, ubuntu-64, windows-32, windows-64, macos-64
-Build-host-os: ubuntu-32
+Version: 1.3.22
 Maintainer: Yeong-Kyoon, Lee <yeongkyoon.lee@samsung.com>
 Source: emulator-kernel
-Description: Tizen Emulator Kernel
+
+Package: emulator-kernel-x86
+OS: ubuntu-32, ubuntu-64, windows-32, windows-64, macos-64
+Build-host-os: ubuntu-32
+Description: Tizen x86 Emulator Kernel
+
+#Package: emulator-kernel-arm
+#OS: ubuntu-32, ubuntu-64, windows-32, windows-64, macos-64
+#Build-host-os: ubuntu-32
+#Description: Tizen ARM Emulator Kernel
