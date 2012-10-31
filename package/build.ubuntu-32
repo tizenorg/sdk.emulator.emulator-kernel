@@ -15,22 +15,27 @@ build()
 	make ARCH=i386 i386_tizen_emul_defconfig
 	make ARCH=i386 -j4
 
+	ARM_TOOLCHAIN=`which arm-linux-gnueabi-gcc`
+	if [ $ARM_TOOLCHAIN = "" ]
+	then
+		echo "There is no a toolchain for arm."
+		exit 1
+	fi
 	# arm kernel
-#	TOOLCHAIN_BIN_DIR=$ROOTDIR/tools/arm-linux-gnueabi-gcc-4.5/bin/arm-linux-gnueabi-
-#	make ARCH=arm tizen_defconfig
-#	make -j4 ARCH=arm CROSS_COMPILE=$TOOLCHAIN_BIN_DIR 
+	make ARCH=arm arm_tizen_emul_defconfig
+	make -j4 ARCH=arm CROSS_COMPILE=arm-linux-gnueabi-
 }
 
 # install
 install()
 {
 	X86_BIN_DIR=$SRCDIR/package/emulator-kernel-x86.package.${TARGET_OS}/data/tools/emulator/data/kernel
-#	ARM_BIN_DIR=$SRCDIR/package/emulator-kernel-arm.package.${TARGET_OS}/data/tools/emulator/data/kernel
+	ARM_BIN_DIR=$SRCDIR/package/emulator-kernel-arm.package.${TARGET_OS}/data/tools/emulator/data/kernel
 	mkdir -p $X86_BIN_DIR
-#	mkdir -p $ARM_BIN_DIR
+	mkdir -p $ARM_BIN_DIR
 
 	cp arch/x86/boot/bzImage $X86_BIN_DIR/bzImage.x86
-#	cp arch/arm/boot/zImage $ARM_BIN_DIR/bzImage.arm
+	cp arch/arm/boot/zImage $ARM_BIN_DIR/bzImage.arm
 }
 
 [ "$1" = "clean" ] && clean
