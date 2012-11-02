@@ -13,6 +13,9 @@
 #define __ARCH_ARM_MACH_EXYNOS_COMMON_H
 
 extern struct sys_timer exynos4_timer;
+#ifdef CONFIG_MACH_TIZEN
+extern struct sys_timer tizen_timer;
+#endif
 
 void exynos_init_io(struct map_desc *mach_desc, int size);
 void exynos4_init_irq(void);

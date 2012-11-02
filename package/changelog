@@ -1,3 +1,18 @@
+* 1.4.0
+- Merge develop into release branch.
+- Some features or bug fixes are merged from develop.
+== Kitae Kim <kt920.kim@samsung.com> 2012-11-02
+* 1.3.24
+- The range of brightness level has been changed.(1 ~ 24 => 0 ~ 100)
+== Jinhyung.jo <jinhyung.jo@samsung.com> 2012-10-31
+* 1.3.23
+- Modify dibs build script for arm package.
+- Since arm toolchain has been installed on build environment, kernel source can support arm package.
+== Kitae Kim <kt920.kim@samsung.com> 2012-10-31
+* 1.3.22
+- Merge tizen_arm branch into develop branch.
+- Merge arm kernel source for emulator into x86 kernel source.
+== Kitae Kim <kt920.kim@samsung.com> 2012-10-30
 * 1.3.20
 - Change kernel keycode of KEY_MENU.
 - Since X key mapping has been changed, kernel keycode has to be changed.

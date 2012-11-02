@@ -890,6 +890,7 @@ config ARCH_EXYNOS
 	select HAVE_S3C_RTC if RTC_CLASS
 	select HAVE_S3C2410_I2C if I2C
 	select HAVE_S3C2410_WATCHDOG if WATCHDOG
+	select NEED_MACH_IO_H
 	select NEED_MACH_MEMORY_H
 	help
 	  Support for SAMSUNG's EXYNOS SoCs (EXYNOS4/5)
@@ -1466,6 +1467,13 @@ config PCI_HOST_ITE8152
 	select DMABOUNCE
 
 source "drivers/pci/Kconfig"
+
+config TIZEN_VPCI
+	bool "Tizen VPCI"
+	depends on PCI && MACH_TIZEN
+	default n
+	help
+	  Support for Tizen Virtual PCI Bus.
 
 source "drivers/pcmcia/Kconfig"
 
