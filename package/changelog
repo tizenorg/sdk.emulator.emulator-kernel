@@ -1,4 +1,8 @@
-* 1.3.24
+* 1.4.1
+- Do not ignore a touch event on emulator.
+- The current touch event may be same as the previous coordinate data.
+== GiWoong.kim <giwoong.kim@samsung.com> 2012-11-05
+ 1.3.24
 - The range of brightness level has been changed.(1 ~ 24 => 0 ~ 100)
 == Jinhyung.jo <jinhyung.jo@samsung.com> 2012-10-31
 * 1.3.23
