@@ -1,3 +1,7 @@
+* 1.4.2
+- Do not ignore a touch event on emulator
+- The current touch event may be same as the previous coordinate data.
+== GiWoong Kim <giwoong.kim@samsung.com> 2012-10-23
 * 1.4.0
 - Merge develop into release branch.
 - Some features or bug fixes are merged from develop.
