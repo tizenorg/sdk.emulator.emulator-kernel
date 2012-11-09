@@ -1,3 +1,7 @@
+* 1.4.2
+- enable virtio-pci, virtio-touchscreen, net-9p, 9pfs drivers for arm kernel.
+- Those drivers are necessary for host fileshare feature and virtio-touchscreen-pci device on arm emulator.
+== Kita Kim <kt920.kim@samsung.com> 2012-11-09
 * 1.4.1
 - Do not ignore a touch event on emulator.
 - The current touch event may be same as the previous coordinate data.
