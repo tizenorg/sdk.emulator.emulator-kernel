@@ -1,3 +1,7 @@
+* 1.4.3
+- Removed an invalid symbolic-link in init script
+- touchscreen0, keyboard0, smotion node
+== GiWoong Kim <giwoong.kim@samsung.com> 2012-11-12
 * 1.4.2
 - Do not ignore a touch event on emulator
 - The current touch event may be same as the previous coordinate data.
