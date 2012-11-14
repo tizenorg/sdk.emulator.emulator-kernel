@@ -86,7 +86,7 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 	VKBD_LOG(KERN_DEBUG, "virtqueue callback.\n");
 	data = virtqueue_get_buf(vq, &len);
 	if (!data) {
-		VKBD_LOG(KERN_INFO, "there is no available buffer.\n");
+		VKBD_LOG(KERN_ERR, "there is no available buffer.\n");
 		return;
 	}
 
@@ -95,7 +95,6 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 
 #if 1 
 		if (kbdevent.code == 0) {
-//			VKBD_LOG(KERN_INFO, "no input data.\n");
 			index++;
 			continue;
 		}
@@ -117,6 +116,18 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 	virtqueue_kick(vkbd->vq);
 }
 
+static int input_keyboard_open(struct input_dev *dev)
+{
+	VKBD_LOG(KERN_DEBUG, "input_keyboard_open\n");
+	return 0;
+}
+
+static void input_keyboard_close(struct input_dev *dev)
+{
+	VKBD_LOG(KERN_DEBUG, "input_keyboard_close\n");
+}
+
+#if 0
 static int virtio_keyboard_open(struct inode *inode, struct file *file)
 {
 	VKBD_LOG(KERN_DEBUG, "opened.\n");
@@ -129,22 +140,12 @@ static int virtio_keyboard_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static int input_keyboard_open(struct input_dev *dev)
-{
-	VKBD_LOG(KERN_DEBUG, "input_keyboard_open\n");
-	return 0;
-}
-
-static void input_keyboard_close(struct input_dev *dev)
-{
-	VKBD_LOG(KERN_DEBUG, "input_keyboard_close\n");
-}
-
 struct file_operations virtio_keyboard_fops = {
 	.owner   = THIS_MODULE,
 	.open	= virtio_keyboard_open,
 	.release = virtio_keyboard_release,
 };
+#endif
 
 static int virtio_keyboard_probe(struct virtio_device *vdev)
 {
@@ -169,6 +170,18 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 	}
 
 	memset(&vkbd->kbdevt, 0x00, sizeof(vkbd->kbdevt));
+
+	for (; index < KBD_BUF_SIZE; index++) {
+		sg_set_buf(&vkbd->sg[index],
+				&vkbd->kbdevt[index],
+				sizeof(struct EmulKbdEvent));
+	}
+
+	ret = virtqueue_add_buf(vkbd->vq, &vkbd->sg, 0, 10, (void *)(10), GFP_ATOMIC);
+	if (ret < 0) {
+		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
+		goto error1;
+	}
 
 	/* register for input device */
 	vkbd->idev = input_allocate_device();
@@ -217,18 +230,10 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 				sizeof(struct EmulKbdEvent));
 	}
 
-	ret = virtqueue_add_buf(vkbd->vq, &vkbd->sg, 0, 10, (void *)(10), GFP_ATOMIC);
-	if (ret < 0) {
-		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
-		goto error3;
-	}
-
 	virtqueue_kick(vkbd->vq);
 
 	return 0;
 
-error3:
-	input_unregister_device(vkbd->idev);
 error2:
 	input_free_device(vkbd->idev);
 error1:
@@ -243,12 +248,18 @@ static void __devexit virtio_keyboard_remove(struct virtio_device *vdev)
 	struct virtio_keyboard *vkbd = vdev->priv;
 
 	VKBD_LOG(KERN_INFO, "driver is removed.\n");
+	if (!vkbd) {
+		VKBD_LOG(KERN_ERR, "vkbd is NULL.\n");
+		return;
+	}
 
 	vdev->config->reset(vdev);
 	vdev->config->del_vqs(vdev);
 
 	input_unregister_device(vkbd->idev);
-	input_free_device(vkbd->idev);
+
+	kfree(vkbd);
+	vkbd = NULL;
 }
 
 MODULE_DEVICE_TABLE(virtio, id_table);
