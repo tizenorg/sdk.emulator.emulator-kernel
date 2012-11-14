@@ -283,6 +283,19 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     /* enable callback */
     virtqueue_enable_cb(vt->vq);
 
+    sg_init_table(sg, MAX_BUF_COUNT);
+
+    /* prepare the buffers */
+    for (index = 0; index < MAX_BUF_COUNT; index++) {
+        sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
+
+        err = virtqueue_add_buf(vt->vq, sg, 0, index + 1, (void *)index + 1, GFP_ATOMIC);
+        if (err < 0) {
+            printk(KERN_ERR "failed to add buffer\n");
+            goto fail1;
+        }
+    }
+
     /* register for input device */
     vt->idev = input_allocate_device();
     if (!vt->idev) {
@@ -336,18 +349,6 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
 
 #else /* using a callback */
 
-    sg_init_table(sg, MAX_BUF_COUNT);
-
-    /* prepare the buffers */
-    for (index = 0; index < MAX_BUF_COUNT; index++) {
-        sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
-
-        err = virtqueue_add_buf(vt->vq, sg, 0, index + 1, (void *)index + 1, GFP_ATOMIC);
-        if (err < 0) {
-            printk(KERN_ERR "failed to add buffer\n");
-            goto fail3;
-        }
-    }
     virtqueue_kick(vt->vq);
 
     index = 0;
@@ -356,8 +357,6 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
 
     return 0;
 
-fail3:
-    input_unregister_device(vt->idev);
 fail2:
     input_mt_destroy_slots(vt->idev);
     input_free_device(vt->idev);
@@ -383,7 +382,6 @@ static void __devexit virtio_touchscreen_remove(struct virtio_device *vdev)
 
     input_unregister_device(vt->idev);
     input_mt_destroy_slots(vt->idev);
-    input_free_device(vt->idev);
 
     kfree(vt);
 }
