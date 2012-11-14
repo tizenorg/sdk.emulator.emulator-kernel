@@ -1,3 +1,7 @@
+* 1.4.3
+- fixed a bug when virtio-keyboard is removed.
+- input_free_device function cannot be used after calling input_unregister_device function.
+== Kita Kim <kt920.kim@samsung.com> 2012-11-13
 * 1.4.2
 - enable virtio-pci, virtio-touchscreen, net-9p, 9pfs drivers for arm kernel.
 - Those drivers are necessary for host fileshare feature and virtio-touchscreen-pci device on arm emulator.
