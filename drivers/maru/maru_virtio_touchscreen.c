@@ -318,9 +318,9 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     input_mt_init_slots(vt->idev, MAX_TRKID);
 
     input_set_abs_params(vt->idev, ABS_X, 0,
-        TOUCHSCREEN_RESOLUTION_X, 4, 0);
+        /*TOUCHSCREEN_RESOLUTION_X*/0, 0, 0); //TODO:
     input_set_abs_params(vt->idev, ABS_Y, 0,
-        TOUCHSCREEN_RESOLUTION_Y, 4, 0);
+        /*TOUCHSCREEN_RESOLUTION_Y*/0, 0, 0); //TODO:
     input_set_abs_params(vt->idev, ABS_MT_TRACKING_ID, 0,
         MAX_TRKID, 0, 0);
     input_set_abs_params(vt->idev, ABS_MT_TOUCH_MAJOR, 0,
