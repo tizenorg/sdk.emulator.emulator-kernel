@@ -1,3 +1,6 @@
+* 1.4.4
+- Modified touchscreen range
+== GiWoong Kim <giwoong.kim@samsung.com> 2012-11-27
 * 1.4.3
 - Removed an invalid symbolic-link in init script
 - touchscreen0, keyboard0, smotion node
