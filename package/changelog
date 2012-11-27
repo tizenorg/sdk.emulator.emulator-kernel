@@ -1,3 +1,6 @@
+* 1.4.5
+- Modified touchscreen range
+== GiWoong Kim <giwoong.kim@samsung.com> 2012-11-27
 * 1.4.3
 - fixed a bug when virtio-keyboard is removed.
 - input_free_device function cannot be used after calling input_unregister_device function.
