@@ -218,6 +218,7 @@ static int yagl_misc_mmap(struct file *file, struct vm_area_struct *vma)
 
         int i;
         unsigned long addr;
+        u32 render_type;
 
         if (yfile->buff) {
             dprintk("%s: marshalling buffer already mapped\n",
@@ -280,9 +281,12 @@ static int yagl_misc_mmap(struct file *file, struct vm_area_struct *vma)
             goto out;
         }
 
+        render_type = yagl_marshal_get_uint32(&buff);
+
         buff = yfile->buff;
 
         yagl_marshal_put_uint32(&buff, yfile->index);
+        yagl_marshal_put_uint32(&buff, render_type);
 
         buff = NULL;
 
