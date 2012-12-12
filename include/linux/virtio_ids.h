@@ -43,6 +43,7 @@
 /* Maru devices */
 #define VIRTIO_ID_TOUCHSCREEN	11 /* virtio touchscreen */
 #define VIRTIO_ID_KEYBOARD	12 /* virtio keyboard */
+#define VIRTIO_ID_ESM		13 /* virtio ESM */
 #endif
 
 #endif /* _LINUX_VIRTIO_IDS_H */
