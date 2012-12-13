@@ -62,10 +62,11 @@ static ssize_t show_file(struct device *dev,
 {
 	ssize_t ret = 0;
 	printk("[%s] \n", __FUNCTION__);
-	if(*(dev->dma_mask) == file0_mask)
+	if(*(dev->dma_mask) == file0_mask) {
 		ret = snprintf(buf, PAGE_SIZE, "%s", file0);
-	else
+	} else {
 		ret = snprintf(buf, PAGE_SIZE, "%s", file1);
+	}
 
 	return ret;
 }
@@ -75,16 +76,18 @@ static ssize_t store_file(struct device *dev,
 {
 	size_t ret;
 	printk("[%s]\n", __FUNCTION__);
-	if(*(dev->dma_mask) == file0_mask)
+	if(*(dev->dma_mask) == file0_mask) {
 		sscanf(buf, "%s", file0);
-	else
+	} else {
 		sscanf(buf, "%s", file1);
+	}
 	
 	ret = strnlen(buf, PAGE_SIZE);
-	if(ret == 0)
+	if(ret == 0) {
 		return 1;
-	else
+	} else {
 		return strnlen(buf, PAGE_SIZE);
+	}
 }
 
 static DEVICE_ATTR(mode, S_IRUGO | S_IWUSR, show_mode, store_mode);
