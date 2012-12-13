@@ -190,7 +190,8 @@ static int __init sysfs_test_init(void)
 	if (!data) {
 		printk("[%s] kzalloc error\n", __FUNCTION__);
 		err = -ENOMEM;
-		goto alloc_err;
+		platform_device_unregister(&the_pdev);
+        	return err;
 	}
 
 	dev_set_drvdata(&the_pdev.dev, (void*)data);
@@ -200,23 +201,16 @@ static int __init sysfs_test_init(void)
 	err = sysfs_lun0_create_file(&the_pdev_sub1.dev);
 	if (err) {
 		printk("sysfs_create_file error\n");
-		goto sysfs_err;
+		kfree(data);
 	}
 	
 	err = sysfs_lun1_create_file(&the_pdev_sub2.dev);
 	if (err) {
 		printk("sysfs_create_file error\n");
-		goto sysfs_err;
+		kfree(data);
 	}
-
+	
 	return 0;
-
-sysfs_err:
-	kfree(data);
-
-alloc_err:
-	platform_device_unregister(&the_pdev);
-	return err;
 }
 
 static void __exit sysfs_test_exit(void) 
