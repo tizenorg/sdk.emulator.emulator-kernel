@@ -99,16 +99,23 @@ struct device new_device_dev;
 
 static int __init sysfs_test_init(void) 
 {
-	int err;
+	int err, i;
 	printk("[%s] \n", __FUNCTION__);
 
 	mtd_class = class_create(THIS_MODULE, "power_supply");
 	mtd_device = device_create(mtd_class, NULL, (dev_t)NULL, NULL, "battery");
 	
-	err = device_create_file(mtd_device, &ps_device_attributes[0]);
-	err = device_create_file(mtd_device, &ps_device_attributes[1]);
-	err = device_create_file(mtd_device, &ps_device_attributes[2]);
-
+	for (i = 0; i < 3; i++) {
+		err = device_create_file(mtd_device, &ps_device_attributes[i]);
+		if (err) {
+			while (--i >= 0)
+				device_remove_file(mtd_device, &ps_device_attributes[i]);
+		
+			device_unregister(mtd_device);
+			return err;
+		}
+	}
+	
 	return 0;
 }
 
