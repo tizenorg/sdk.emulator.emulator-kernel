@@ -63,13 +63,11 @@ struct virtio_keyboard
 
 	struct EmulKbdEvent kbdevt[KBD_BUF_SIZE];
 	struct scatterlist sg[KBD_BUF_SIZE];
-//	int	sg_index;
 
 	struct mutex event_mutex;
 };
 
 struct virtio_keyboard *vkbd;
-
 
 static struct virtio_device_id id_table[] = {
 	{ VIRTIO_ID_KEYBOARD, VIRTIO_DEV_ANY_ID },
@@ -93,7 +91,7 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 	while (index < KBD_BUF_SIZE) {
 		memcpy(&kbdevent, &vkbd->kbdevt[index], sizeof(kbdevent));
 
-#if 1 
+#if 1
 		if (kbdevent.code == 0) {
 			index++;
 			continue;
@@ -158,18 +156,18 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 	if (!vkbd) {
 		return -ENOMEM;
 	}
+	memset(&vkbd->kbdevt, 0x00, sizeof(vkbd->kbdevt));
 
 	vkbd->vdev = vdev;
 	mutex_init(&vkbd->event_mutex);
 
-	/* determine whether callback func needs or not */
 	vkbd->vq = virtio_find_single_vq(vkbd->vdev, vq_keyboard_handle, "virtio-keyboard-vq");
 	if (IS_ERR(vkbd->vq)) {
 		ret = PTR_ERR(vkbd->vq);
-		goto error1;
+		kfree(vkbd);
+		vdev->priv = NULL;
+		return ret;
 	}
-
-	memset(&vkbd->kbdevt, 0x00, sizeof(vkbd->kbdevt));
 
 	for (; index < KBD_BUF_SIZE; index++) {
 		sg_set_buf(&vkbd->sg[index],
@@ -180,15 +178,18 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 	ret = virtqueue_add_buf(vkbd->vq, &vkbd->sg, 0, 10, (void *)(10), GFP_ATOMIC);
 	if (ret < 0) {
 		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
-		goto error1;
+		kfree(vkbd);
+		vdev->priv = NULL;
+		return ret;
 	}
 
 	/* register for input device */
 	vkbd->idev = input_allocate_device();
 	if (!vkbd->idev) {
 		VKBD_LOG(KERN_ERR, "failed to allocate a input device.\n");
-		ret = -1;
-		goto error1;
+		kfree(vkbd);
+		vdev->priv = NULL;
+		return -ENOMEM;
 	}
 
 	vkbd->idev->name = "Maru VirtIO Keyboard";
@@ -207,7 +208,7 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 				| BIT_MASK(LED_KANA);
 	set_bit(MSC_SCAN, vkbd->idev->mscbit);
 
-	// TODO : need to change keybit field. not to input fixed value.
+	/* set keybit field as xinput keyboard. */
 	vkbd->idev->keybit[0] = 0xfffffffe;
 	vkbd->idev->keybit[1] = 0xffffffff;
 	vkbd->idev->keybit[2] = 0xffefffff;
@@ -220,8 +221,10 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 	ret = input_register_device(vkbd->idev);
 	if (ret) {
 		VKBD_LOG(KERN_ERR, "failed to register a input device.\n");
-		ret = -1;
-		goto error2;
+		input_free_device(vkbd->idev);
+		kfree(vkbd);
+		vdev->priv = NULL;
+		return ret;
 	}
 
 	for (; index < KBD_BUF_SIZE; index++) {
@@ -233,20 +236,10 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 	virtqueue_kick(vkbd->vq);
 
 	return 0;
-
-error2:
-	input_free_device(vkbd->idev);
-error1:
-	kfree(vkbd);
-	vdev->priv = NULL;
-
-	return ret;
 }
 
 static void __devexit virtio_keyboard_remove(struct virtio_device *vdev)
 {
-	struct virtio_keyboard *vkbd = vdev->priv;
-
 	VKBD_LOG(KERN_INFO, "driver is removed.\n");
 	if (!vkbd) {
 		VKBD_LOG(KERN_ERR, "vkbd is NULL.\n");
