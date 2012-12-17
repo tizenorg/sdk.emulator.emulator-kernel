@@ -771,6 +771,7 @@ static int vidioc_queryctrl(struct file *file, void *priv,
 	case V4L2_CID_SHARPNESS:
 		break;
 	default:
+		mutex_unlock(&dev->mlock);
 		return -EINVAL;
 	}
 
