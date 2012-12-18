@@ -180,7 +180,9 @@ unsigned int finger_id = 0; /* finger id */
 */
 static void vq_touchscreen_callback(struct virtqueue *vq)
 {
-    //printk(KERN_INFO "vq touchscreen callback\n");
+#if 0
+    printk(KERN_INFO "vq touchscreen callback\n");
+#endif
 
     recv_index = (unsigned int)virtqueue_get_buf(vt->vq, &len);
     if (recv_index == 0) {
@@ -215,7 +217,9 @@ static void vq_touchscreen_callback(struct virtqueue *vq)
         input_sync(vt->idev);
 
         /* expose buffer to other end */
-        err = virtqueue_add_buf(vt->vq, sg, 0, recv_index, (void *)recv_index, GFP_ATOMIC);
+        err = virtqueue_add_buf(vt->vq, sg, 0,
+            recv_index, (void *)recv_index, GFP_ATOMIC);
+
         if (err < 0) {
             printk(KERN_ERR "failed to add buffer!\n");
         }
@@ -260,7 +264,6 @@ struct file_operations virtio_touchscreen_fops = {
 
 static int virtio_touchscreen_probe(struct virtio_device *vdev)
 {
-    //struct virtio_touchscreen *vt = NULL;
     int ret = 0;
 
     printk(KERN_INFO "virtio touchscreen driver is probed\n");
@@ -277,7 +280,10 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
         vq_touchscreen_callback, "virtio-touchscreen-vq");
     if (IS_ERR(vt->vq)) {
         ret = PTR_ERR(vt->vq);
-        goto fail1;
+
+        kfree(vt);
+        vdev->priv = NULL;
+        return ret;
     }
 
     /* enable callback */
@@ -289,10 +295,15 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     for (index = 0; index < MAX_BUF_COUNT; index++) {
         sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
 
-        err = virtqueue_add_buf(vt->vq, sg, 0, index + 1, (void *)index + 1, GFP_ATOMIC);
+        err = virtqueue_add_buf(vt->vq, sg, 0,
+            index + 1, (void *)index + 1, GFP_ATOMIC);
+
         if (err < 0) {
             printk(KERN_ERR "failed to add buffer\n");
-            goto fail1;
+
+            kfree(vt);
+            vdev->priv = NULL;
+            return ret;
         }
     }
 
@@ -301,7 +312,10 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     if (!vt->idev) {
         printk(KERN_ERR "failed to allocate a input touchscreen device\n");
         ret = -1;
-        goto fail1;
+
+        kfree(vt);
+        vdev->priv = NULL;
+        return ret;
     }
 
     vt->idev->name = "Maru Virtio Touchscreen";
@@ -334,7 +348,12 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     if (ret) {
         printk(KERN_ERR "input touchscreen driver cannot registered\n");
         ret = -1;
-        goto fail2;
+
+        input_mt_destroy_slots(vt->idev);
+        input_free_device(vt->idev);
+        kfree(vt);
+        vdev->priv = NULL;
+        return ret;
     }
 
 #if 0 /* using a thread */
@@ -344,9 +363,13 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     if (IS_ERR(vt->thread)) {
         printk(KERN_ERR "unable to start the virtio touchscreen thread\n");
         ret = PTR_ERR(vt->thread);
-        goto fail3;
-    }
 
+        input_mt_destroy_slots(vt->idev);
+        input_free_device(vt->idev);
+        kfree(vt);
+        vdev->priv = NULL;
+        return ret;
+    }
 #else /* using a callback */
 
     virtqueue_kick(vt->vq);
@@ -356,34 +379,25 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
 #endif
 
     return 0;
-
-fail2:
-    input_mt_destroy_slots(vt->idev);
-    input_free_device(vt->idev);
-fail1:
-    kfree(vt);
-    vdev->priv = NULL;
-
-    return ret;
 }
 
 static void __devexit virtio_touchscreen_remove(struct virtio_device *vdev)
 {
-    virtio_touchscreen *vt = NULL;
+    virtio_touchscreen *vts = NULL;
 
     printk(KERN_INFO "virtio touchscreen driver is removed\n");
 
-    vt = vdev->priv;
+    vts = vdev->priv;
 
-    kthread_stop(vt->thread);
+    kthread_stop(vts->thread);
 
     vdev->config->reset(vdev); /* reset device */
     vdev->config->del_vqs(vdev); /* clean up the queues */
 
-    input_unregister_device(vt->idev);
-    input_mt_destroy_slots(vt->idev);
+    input_unregister_device(vts->idev);
+    input_mt_destroy_slots(vts->idev);
 
-    kfree(vt);
+    kfree(vts);
 }
 
 MODULE_DEVICE_TABLE(virtio, id_table);

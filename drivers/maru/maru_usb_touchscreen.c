@@ -29,6 +29,7 @@
  *
  */
 
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -75,18 +76,28 @@ static void emul_touchscreen_sys_irq(struct urb *urb)
     int id = packet->z;
 
     switch (urb->status) {
-        case 0:
-            /* success */
-            break;
-        case -ECONNRESET:
-        case -ENOENT:
-        case -ESHUTDOWN:
-            /* this urb is terminated, clean up */
-            dbg("%s - urb shutting down with status: %d", __func__, urb->status);
-            return;
-        default:
-            dbg("%s - nonzero urb status received: %d", __func__, urb->status);
-            goto exit;
+    case 0:
+        /* success */
+        break;
+    case -ECONNRESET:
+    case -ENOENT:
+    case -ESHUTDOWN:
+        /* this urb is terminated, clean up */
+        dbg("%s - urb shutting down with status: %d",
+            __func__, urb->status);
+        return;
+
+    default:
+        dbg("%s - nonzero urb status received: %d",
+            __func__, urb->status);
+
+        usb_mark_last_busy(usb_ts->usbdev);
+        retval = usb_submit_urb(urb, GFP_ATOMIC);
+        if (retval) {
+            err("%s - usb_submit_urb failed with result %d",
+                __func__, retval);
+        }
+        return;
     }
 
     /* Multi-touch Protocol B */
@@ -97,24 +108,30 @@ static void emul_touchscreen_sys_irq(struct urb *urb)
         input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, 5);
         input_report_abs(input_dev, ABS_MT_POSITION_X, packet->x);
         input_report_abs(input_dev, ABS_MT_POSITION_Y, packet->y);
-        //printk(KERN_INFO "!!pressed x=%d, y=%d, z=%d",
-            //packet->x, packet->y, packet->z);
+
+#if 0
+        printk(KERN_INFO "pressed x=%d, y=%d, z=%d",
+            packet->x, packet->y, packet->z);
+#endif
     }
     else
     { /* release */
         input_mt_slot(input_dev, id);
         input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, false);
-        //printk(KERN_INFO "!!released x=%d, y=%d, z=%d",
-            //packet->x, packet->y, packet->z);
+
+#if 0
+        printk(KERN_INFO "!!released x=%d, y=%d, z=%d",
+            packet->x, packet->y, packet->z);
+#endif
     }
 
     input_sync(input_dev);
 
- exit:
     usb_mark_last_busy(usb_ts->usbdev);
     retval = usb_submit_urb(urb, GFP_ATOMIC);
     if (retval) {
-        err("%s - usb_submit_urb failed with result %d", __func__, retval);
+        err("%s - usb_submit_urb failed with result %d",
+            __func__, retval);
     }
 }
 
@@ -170,23 +187,34 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
 
     usb_ts = kzalloc(sizeof(struct emul_touchscreen), GFP_KERNEL);
     if (!usb_ts) {
-        goto fail1;
+        input_free_device(usb_ts->emuldev);
+        kfree(usb_ts);
+        return error;
     }
 
     usb_ts->usbdev = interface_to_usbdev(intf);
-    usb_ts->data = usb_alloc_coherent(usb_ts->usbdev, 10, GFP_KERNEL, &usb_ts->data_dma);
+    usb_ts->data = usb_alloc_coherent(usb_ts->usbdev,
+        10, GFP_KERNEL, &usb_ts->data_dma);
     if (!usb_ts->data) {
-        goto fail1;
+        input_free_device(usb_ts->emuldev);
+        kfree(usb_ts);
+        return error;
     }
 
     usb_ts->irq = usb_alloc_urb(0, GFP_KERNEL);
     if (!usb_ts->irq) {
-        goto fail2;
+        usb_free_coherent(usb_ts->usbdev,
+            10, usb_ts->data, usb_ts->data_dma);
+        input_free_device(usb_ts->emuldev);
+        kfree(usb_ts);
+        return error;
     }
 
     usb_ts->emuldev = input_allocate_device();
     if (!usb_ts->emuldev) {
-        goto fail1;
+        input_free_device(usb_ts->emuldev);
+        kfree(usb_ts);
+        return error;
     }
     
     usb_ts->intf = intf;
@@ -212,9 +240,9 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
     usb_ts->emuldev->keybit[BIT_WORD(BTN_TOUCH)] |= BIT_MASK(BTN_TOUCH);
 
     input_set_abs_params(usb_ts->emuldev,
-        ABS_X, 0, TOUCHSCREEN_RESOLUTION_X, 4, 0);
+        ABS_X, 0, /*TOUCHSCREEN_RESOLUTION_X*/0, 0, 0);
     input_set_abs_params(usb_ts->emuldev,
-        ABS_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 4, 0);
+        ABS_Y, 0, /*TOUCHSCREEN_RESOLUTION_Y*/0, 0, 0);
 
     /* for multitouch */
     input_mt_init_slots(usb_ts->emuldev, MAX_TRKID);
@@ -228,25 +256,25 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
         ABS_MT_POSITION_Y, 0, TOUCHSCREEN_RESOLUTION_Y, 0, 0);
 
     usb_fill_int_urb(usb_ts->irq, usb_ts->usbdev,
-             usb_rcvintpipe(usb_ts->usbdev, endpoint->bEndpointAddress),
-             usb_ts->data, EMUL_TOUCHSCREEN_PACKET_LEN,
-             emul_touchscreen_sys_irq, usb_ts, endpoint->bInterval);
+         usb_rcvintpipe(usb_ts->usbdev, endpoint->bEndpointAddress),
+         usb_ts->data, EMUL_TOUCHSCREEN_PACKET_LEN,
+         emul_touchscreen_sys_irq, usb_ts, endpoint->bInterval);
+
     usb_ts->irq->transfer_dma = usb_ts->data_dma;
     usb_ts->irq->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
     error = input_register_device(usb_ts->emuldev);
     if (error) {
-        goto fail3;
+        usb_free_urb(usb_ts->irq);
+        usb_free_coherent(usb_ts->usbdev,
+            10, usb_ts->data, usb_ts->data_dma);
+        input_free_device(usb_ts->emuldev);
+        kfree(usb_ts);
+        return error;
     }
 
     usb_set_intfdata(intf, usb_ts);
     return 0;
-
- fail3:    usb_free_urb(usb_ts->irq);
- fail2:    usb_free_coherent(usb_ts->usbdev, 10, usb_ts->data, usb_ts->data_dma);
- fail1:    input_free_device(usb_ts->emuldev);
-    kfree(usb_ts);
-    return error;
 }
 
 static void emul_touchscreen_disconnect(struct usb_interface *intf)
