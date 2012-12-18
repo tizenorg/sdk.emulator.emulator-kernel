@@ -108,13 +108,16 @@ static int __init sysfs_test_init(void)
 	for (i = 0; i < 3; i++) {
 		err = device_create_file(mtd_device, &ps_device_attributes[i]);
 		if (err) {
-			while (--i >= 0) {
-				device_remove_file(mtd_device, &ps_device_attributes[i]);
-			}
-		
-			device_unregister(mtd_device);
 			break;
 		}
+	}
+
+	if (i != 3) {
+		while (--i >= 0) {
+	                device_remove_file(mtd_device, &ps_device_attributes[i]);
+                }
+ 
+                device_unregister(mtd_device);
 	}
 	
 	return err;
