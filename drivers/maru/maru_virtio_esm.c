@@ -116,7 +116,7 @@ static ssize_t esm_write(struct inode *i, const char __user *ubuf, size_t len, l
 	ret = copy_from_user(buf, ubuf, len);
 	if (ret) {
 		ret = -EFAULT;
-		return 0;
+		return ret;
 	}
 	buf[len - 1] = '\0';
 
@@ -178,7 +178,10 @@ static int virtio_esm_probe(struct virtio_device *vdev)
 	vesm->vq = virtio_find_single_vq(vesm->vdev, vq_esm_callback, "virtio-esm-vq");
 	if (IS_ERR(vesm->vq)) {
 		ret = PTR_ERR(vesm->vq);
-		goto error1;
+		kfree(vesm);
+		vdev->priv = NULL;
+
+		return ret;
 	}
 
 	memset(&vesm->progress, 0x00, sizeof(vesm->progress));
@@ -186,20 +189,14 @@ static int virtio_esm_probe(struct virtio_device *vdev)
 	sg_set_buf(vesm->sg, &vesm->progress, sizeof(struct progress_info));
 
 	return 0;
-
-error1:
-	kfree(vesm);
-	vdev->priv = NULL;
-
-	return ret;
 }
 
 static void __devexit virtio_esm_remove(struct virtio_device *vdev)
 {
-	struct virtio_esm *vesm = vdev->priv;
+	struct virtio_esm *_vesm = vdev->priv;
 
 	VESM_LOG(KERN_INFO, "driver is removed.\n");
-	if (!vesm) {
+	if (!_vesm) {
 		VESM_LOG(KERN_ERR, "vesm is NULL.\n");
 		return;
 	}
@@ -207,8 +204,8 @@ static void __devexit virtio_esm_remove(struct virtio_device *vdev)
 	vdev->config->reset(vdev);
 	vdev->config->del_vqs(vdev);
 
-	kfree(vesm);
-	vesm = NULL;
+	kfree(_vesm);
+	_vesm = NULL;
 }
 
 MODULE_DEVICE_TABLE(virtio, id_table);
