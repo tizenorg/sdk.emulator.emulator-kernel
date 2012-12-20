@@ -1,7 +1,7 @@
-* 1.4.10
+* 1.4.11
 - Fixed a bug when audio some codecs are decoded simultaneously.
 - Source cleanup and codec driver can get and set offset of device memory for audio type.
-== Kitae Kim <kt920.kim@samsung.com> 2012-12-18
+== Kitae Kim <kt920.kim@samsung.com> 2012-12-20
 * 1.4.5
 - Modified touchscreen range
 == GiWoong Kim <giwoong.kim@samsung.com> 2012-11-27
