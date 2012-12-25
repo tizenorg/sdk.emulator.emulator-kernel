@@ -1,0 +1,240 @@
+#include "vigs_device.h"
+#include "vigs_mman.h"
+#include "vigs_crtc.h"
+#include "vigs_output.h"
+#include "vigs_framebuffer.h"
+#include "vigs_comm.h"
+#include "vigs_fbdev.h"
+#include <drm/vigs_drm.h>
+
+int vigs_device_init(struct vigs_device *vigs_dev,
+                     struct drm_device *drm_dev,
+                     struct pci_dev *pci_dev,
+                     unsigned long flags)
+{
+    int ret;
+
+    DRM_DEBUG_DRIVER("enter\n");
+
+    vigs_dev->dev = &pci_dev->dev;
+    vigs_dev->drm_dev = drm_dev;
+    vigs_dev->pci_dev = pci_dev;
+
+    vigs_dev->vram_base = pci_resource_start(pci_dev, 0);
+    vigs_dev->vram_size = pci_resource_len(pci_dev, 0);
+
+    vigs_dev->ram_base = pci_resource_start(pci_dev, 1);
+    vigs_dev->ram_size = pci_resource_len(pci_dev, 1);
+
+    vigs_dev->io_base = pci_resource_start(pci_dev, 2);
+    vigs_dev->io_size = pci_resource_len(pci_dev, 2);
+
+    if (!vigs_dev->vram_base || !vigs_dev->ram_base || !vigs_dev->io_base) {
+        DRM_ERROR("VRAM, RAM or IO bar not found on device\n");
+        ret = -ENODEV;
+        goto fail1;
+    }
+
+    if ((vigs_dev->io_size < VIGS_REGS_SIZE) ||
+        ((vigs_dev->io_size % VIGS_REGS_SIZE) != 0)) {
+        DRM_ERROR("IO bar has bad size: %u bytes\n", vigs_dev->io_size);
+        ret = -ENODEV;
+        goto fail1;
+    }
+
+    ret = drm_addmap(vigs_dev->drm_dev,
+                     vigs_dev->io_base,
+                     vigs_dev->io_size,
+                     _DRM_REGISTERS,
+                     0,
+                     &vigs_dev->io_map);
+    if (ret != 0) {
+        goto fail1;
+    }
+
+    ret = vigs_mman_create(vigs_dev->vram_base, vigs_dev->vram_size,
+                           vigs_dev->ram_base, vigs_dev->ram_size,
+                           &vigs_dev->mman);
+
+    if (ret != 0) {
+        goto fail2;
+    }
+
+    vigs_dev->user_map_length = (vigs_dev->io_size / VIGS_REGS_SIZE);
+
+    vigs_dev->user_map =
+        kzalloc((sizeof(*vigs_dev->user_map) * vigs_dev->user_map_length),
+                GFP_KERNEL);
+
+    if (!vigs_dev->user_map) {
+        ret = -ENOMEM;
+        goto fail3;
+    }
+
+    mutex_init(&vigs_dev->user_mutex);
+
+    ret = vigs_comm_create(vigs_dev, &vigs_dev->comm);
+
+    if (ret != 0) {
+        goto fail4;
+    }
+
+    drm_mode_config_init(vigs_dev->drm_dev);
+
+    vigs_framebuffer_config_init(vigs_dev);
+
+    ret = vigs_crtc_init(vigs_dev);
+
+    if (ret != 0) {
+        goto fail5;
+    }
+
+    ret = vigs_output_init(vigs_dev);
+
+    if (ret != 0) {
+        goto fail5;
+    }
+
+    ret = vigs_fbdev_create(vigs_dev, &vigs_dev->fbdev);
+
+    if (ret != 0) {
+        goto fail5;
+    }
+
+    return 0;
+
+fail5:
+    drm_mode_config_cleanup(vigs_dev->drm_dev);
+    vigs_comm_destroy(vigs_dev->comm);
+fail4:
+    kfree(vigs_dev->user_map);
+fail3:
+    vigs_mman_destroy(vigs_dev->mman);
+fail2:
+    drm_rmmap(vigs_dev->drm_dev, vigs_dev->io_map);
+fail1:
+
+    return ret;
+}
+
+void vigs_device_cleanup(struct vigs_device *vigs_dev)
+{
+    DRM_DEBUG_DRIVER("enter\n");
+
+    vigs_fbdev_destroy(vigs_dev->fbdev);
+    drm_mode_config_cleanup(vigs_dev->drm_dev);
+    vigs_comm_destroy(vigs_dev->comm);
+    kfree(vigs_dev->user_map);
+    vigs_mman_destroy(vigs_dev->mman);
+    drm_rmmap(vigs_dev->drm_dev, vigs_dev->io_map);
+}
+
+int vigs_device_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+    struct drm_file *file_priv = filp->private_data;
+    struct vigs_device *vigs_dev = file_priv->minor->dev->dev_private;
+
+    if (vigs_dev == NULL) {
+        DRM_ERROR("no device\n");
+        return -EINVAL;
+    }
+
+    return vigs_mman_mmap(vigs_dev->mman, filp, vma);
+}
+
+int vigs_device_user_enter_ioctl(struct drm_device *drm_dev,
+                                 void *data,
+                                 struct drm_file *file_priv)
+{
+    struct vigs_device *vigs_dev = drm_dev->dev_private;
+    struct drm_vigs_user_enter *args = data;
+    int i;
+    int index = -1;
+
+    mutex_lock(&vigs_dev->user_mutex);
+
+    for (i = 0; i < vigs_dev->user_map_length; ++i) {
+        if (!vigs_dev->user_map[i]) {
+            index = i;
+            vigs_dev->user_map[i] = file_priv;
+            break;
+        }
+    }
+
+    if (index == -1) {
+        DRM_ERROR("no more free user slots\n");
+        mutex_unlock(&vigs_dev->user_mutex);
+        return -ENOSPC;
+    }
+
+#if defined(__i386__) || defined(__x86_64__)
+    /*
+     * Write CR registers.
+     * @{
+     */
+
+    writel(read_cr0(), VIGS_USER_PTR(vigs_dev->io_map->handle, index) + VIGS_REG_CR0);
+    writel(0, VIGS_USER_PTR(vigs_dev->io_map->handle, index) + VIGS_REG_CR1);
+    writel(read_cr2(), VIGS_USER_PTR(vigs_dev->io_map->handle, index) + VIGS_REG_CR2);
+    writel(read_cr3(), VIGS_USER_PTR(vigs_dev->io_map->handle, index) + VIGS_REG_CR3);
+    writel(read_cr4(), VIGS_USER_PTR(vigs_dev->io_map->handle, index) + VIGS_REG_CR4);
+
+    /*
+     * @}
+     */
+#endif
+
+    mutex_unlock(&vigs_dev->user_mutex);
+
+    args->index = index;
+
+    DRM_DEBUG_DRIVER("user %u entered\n", args->index);
+
+    return 0;
+}
+
+int vigs_device_user_leave_ioctl(struct drm_device *drm_dev,
+                                 void *data,
+                                 struct drm_file *file_priv)
+{
+    struct vigs_device *vigs_dev = drm_dev->dev_private;
+    struct drm_vigs_user_leave *args = data;
+
+    if (args->index >= vigs_dev->user_map_length) {
+        DRM_ERROR("invalid index: %u\n", args->index);
+        return -EINVAL;
+    }
+
+    mutex_lock(&vigs_dev->user_mutex);
+
+    if (vigs_dev->user_map[args->index] != file_priv) {
+        DRM_ERROR("user doesn't own index %u\n", args->index);
+        mutex_unlock(&vigs_dev->user_mutex);
+        return -EINVAL;
+    }
+
+    vigs_dev->user_map[args->index] = NULL;
+
+    mutex_unlock(&vigs_dev->user_mutex);
+
+    DRM_DEBUG_DRIVER("user %u left\n", args->index);
+
+    return 0;
+}
+
+void vigs_device_user_leave_all(struct vigs_device *vigs_dev,
+                                struct drm_file *file_priv)
+{
+    int i;
+
+    mutex_lock(&vigs_dev->user_mutex);
+
+    for (i = 0; i < vigs_dev->user_map_length; ++i) {
+        if (vigs_dev->user_map[i] == file_priv) {
+            vigs_dev->user_map[i] = NULL;
+            DRM_DEBUG_DRIVER("user %d left\n", i);
+        }
+    }
+
+    mutex_unlock(&vigs_dev->user_mutex);
+}
