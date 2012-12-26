@@ -1133,7 +1133,7 @@ static int marucam_close(struct file *file)
 static unsigned int marucam_poll(struct file *file,
 				 struct poll_table_struct *wait)
 {
-	unsigned int ret = 0;
+	unsigned int rval = 0;
 	struct marucam_device *poll_dev = file->private_data;
 	struct videobuf_queue *q3 = &poll_dev->vb_vidq;
 	struct videobuf_buffer *vbuf = NULL;
@@ -1151,39 +1151,39 @@ static unsigned int marucam_poll(struct file *file,
 	}
 	if (!vbuf) {
 		marucam_err("The video buffer list is empty\n");
-		ret = POLLERR;
+		rval = POLLERR;
 	}
 
-	if (ret == 0) {
+	if (rval == 0) {
 		poll_wait(file, &vbuf->done, wait);
 		if (vbuf->state == VIDEOBUF_DONE ||
 				vbuf->state == VIDEOBUF_ERROR ||
 				vbuf->state == 0xFF) {
-			ret = POLLIN | POLLRDNORM;
+			rval = POLLIN | POLLRDNORM;
 		} else {
 			iowrite32(vbuf->i,
 				  poll_dev->mmregs + MARUCAM_REQFRAME);
 		}
 	}
 	mutex_unlock(&q3->vb_lock);
-	return ret;
+	return rval;
 }
 
 static int marucam_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	int ret;
+	int return_val;
 	struct marucam_device *mmap_dev = file->private_data;
 
 	marucam_dbg(1, "mmap called, vma=0x%08lx\n", (unsigned long)vma);
 
-	ret = videobuf_mmap_mapper(&mmap_dev->vb_vidq, vma);
+	return_val = videobuf_mmap_mapper(&mmap_dev->vb_vidq, vma);
 
 	marucam_dbg(1, "vma start=0x%08lx, size=%ld, ret=%d\n",
 		(unsigned long)vma->vm_start,
 		(unsigned long)vma->vm_end-(unsigned long)vma->vm_start,
-		ret);
+		return_val);
 
-	return ret;
+	return return_val;
 }
 
 static const struct v4l2_ioctl_ops marucam_ioctl_ops = {
@@ -1241,7 +1241,7 @@ MODULE_DEVICE_TABLE(pci, marucam_pci_id_tbl);
 static int marucam_pci_initdev(struct pci_dev *pdev,
 				const struct pci_device_id *id)
 {
-	int ret;
+	int ret_val;
 	struct marucam_device *dev;
 
 	debug = MARUCAM_DEBUG_LEVEL;
@@ -1258,12 +1258,12 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 	}
 	marucam_instance = dev;
 
-	ret = v4l2_device_register(&pdev->dev, &dev->v4l2_dev);
-	if (ret) {
+	ret_val = v4l2_device_register(&pdev->dev, &dev->v4l2_dev);
+	if (ret_val) {
 		kfree(dev);
 		dev = NULL;
 		marucam_instance = NULL;
-		return ret;
+		return ret_val;
 	}
 
 	INIT_LIST_HEAD(&dev->active);
@@ -1273,7 +1273,7 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 
 	dev->pdev = pdev;
 
-	ret = -ENOMEM;
+	ret_val = -ENOMEM;
 	dev->vfd = video_device_alloc();
 	if (!dev->vfd) {
 		marucam_err("video_device_alloc() failed!!\n");
@@ -1281,7 +1281,7 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 		kfree(dev);
 		dev = NULL;
 		marucam_instance = NULL;
-		return ret;
+		return ret_val;
 	}
 
 	memcpy(dev->vfd, &marucam_video_dev, sizeof(marucam_video_dev));
@@ -1289,19 +1289,19 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 	dev->vfd->parent = &dev->pdev->dev;
 	dev->vfd->v4l2_dev = &dev->v4l2_dev;
 
-	ret = pci_enable_device(dev->pdev);
-	if (ret) {
+	ret_val = pci_enable_device(dev->pdev);
+	if (ret_val) {
 		marucam_err("pci_enable_device failed!!\n");
 		video_device_release(dev->vfd);
 		v4l2_device_unregister(&dev->v4l2_dev);
 		kfree(dev);
 		dev = NULL;
 		marucam_instance = NULL;
-		return ret;
+		return ret_val;
 	}
 	pci_set_master(dev->pdev);
 
-	ret = -EIO;
+	ret_val = -EIO;
 	dev->mem_base = pci_resource_start(dev->pdev, 0);
 	dev->mem_size = pci_resource_len(dev->pdev, 0);
 
@@ -1313,7 +1313,7 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 		kfree(dev);
 		dev = NULL;
 		marucam_instance = NULL;
-		return ret;
+		return ret_val;
 	}
 
 	if (!request_mem_region(dev->mem_base, dev->mem_size,
@@ -1325,7 +1325,7 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 		kfree(dev);
 		dev = NULL;
 		marucam_instance = NULL;
-		return ret;
+		return ret_val;
 	}
 
 	dev->io_base = pci_resource_start(dev->pdev, 1);
@@ -1340,7 +1340,7 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 		kfree(dev);
 		dev = NULL;
 		marucam_instance = NULL;
-		return ret;
+		return ret_val;
 	}
 
 	if (!request_mem_region(dev->io_base, dev->io_size,
@@ -1353,7 +1353,7 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 		kfree(dev);
 		dev = NULL;
 		marucam_instance = NULL;
-		return ret;
+		return ret_val;
 	}
 
 	dev->mmregs = ioremap(dev->io_base, dev->io_size);
@@ -1367,11 +1367,11 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 		kfree(dev);
 		dev = NULL;
 		marucam_instance = NULL;
-		return ret;
+		return ret_val;
 	}
 
-	ret = video_register_device(dev->vfd, VFL_TYPE_GRABBER, 0);
-	if (ret < 0) {
+	ret_val = video_register_device(dev->vfd, VFL_TYPE_GRABBER, 0);
+	if (ret_val < 0) {
 		marucam_err("video_register_device failed!!\n");
 		iounmap(dev->mmregs);
 		release_mem_region(dev->io_base, dev->io_size);
@@ -1382,7 +1382,7 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 		kfree(dev);
 		dev = NULL;
 		marucam_instance = NULL;
-		return ret;
+		return ret_val;
 	}
 	video_set_drvdata(dev->vfd, dev);
 	pci_set_drvdata(pdev, dev);
@@ -1435,19 +1435,19 @@ static struct pci_driver marucam_pci_driver = {
 
 static int __init marucam_init(void)
 {
-	int ret = 0;
+	int retv = 0;
 
-	ret = pci_register_driver(&marucam_pci_driver);
-	if (ret < 0) {
-		marucam_info("Error %d while loading marucam driver\n", ret);
-		return ret;
+	retv = pci_register_driver(&marucam_pci_driver);
+	if (retv < 0) {
+		marucam_info("Error %d while loading marucam driver\n", retv);
+		return retv;
 	}
 
 	marucam_info("MARU Camera Driver ver %u.%u.%u successfully loaded.\n",
 		(MARUCAM_VERSION >> 16) & 0xFF, (MARUCAM_VERSION >> 8) & 0xFF,
 		MARUCAM_VERSION & 0xFF);
 
-	return ret;
+	return retv;
 }
 
 static void __exit marucam_exit(void)
