@@ -186,11 +186,13 @@ static int emul_touchscreen_probe(struct usb_interface *intf, const struct usb_d
     printk(KERN_INFO "usb touchscreen driver is probed\n");
 
     usb_ts = kzalloc(sizeof(struct emul_touchscreen), GFP_KERNEL);
+#if 0
     if (!usb_ts) {
         input_free_device(usb_ts->emuldev);
         kfree(usb_ts);
         return error;
     }
+#endif
 
     usb_ts->usbdev = interface_to_usbdev(intf);
     usb_ts->data = usb_alloc_coherent(usb_ts->usbdev,
