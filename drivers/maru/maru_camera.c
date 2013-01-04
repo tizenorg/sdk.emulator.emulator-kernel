@@ -1103,17 +1103,11 @@ static int marucam_close(struct file *file)
 		}
 
 		dev->opstate = S_IDLE;
-		ret = videobuf_streamoff(&dev->vb_vidq);
-		if (ret) {
-			marucam_err("Failed to streamoff the videobuffer\n");
-			mutex_unlock(&dev->mlock);
-			return ret;
-		}
-		INIT_LIST_HEAD(&dev->active);
 	}
 
 	videobuf_stop(&dev->vb_vidq);
 	videobuf_mmap_free(&dev->vb_vidq);
+	INIT_LIST_HEAD(&dev->active);
 
 	free_irq(dev->pdev->irq, dev);
 
