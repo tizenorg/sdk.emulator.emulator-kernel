@@ -216,7 +216,7 @@ int vigs_output_init(struct vigs_device *vigs_dev)
     ret = drm_connector_init(vigs_dev->drm_dev,
                              &vigs_output->connector,
                              &vigs_connector_funcs,
-                             DRM_MODE_CONNECTOR_VIRTUAL);
+                             DRM_MODE_CONNECTOR_LVDS);
 
     if (ret != 0) {
         kfree(vigs_output);
@@ -226,7 +226,7 @@ int vigs_output_init(struct vigs_device *vigs_dev)
     ret = drm_encoder_init(vigs_dev->drm_dev,
                            &vigs_output->encoder,
                            &vigs_encoder_funcs,
-                           DRM_MODE_ENCODER_VIRTUAL);
+                           DRM_MODE_ENCODER_LVDS);
 
     if (ret != 0) {
         /*
