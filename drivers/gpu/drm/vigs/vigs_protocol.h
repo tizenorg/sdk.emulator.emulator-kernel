@@ -11,7 +11,7 @@
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 9
+#define VIGS_PROTOCOL_VERSION 10
 
 typedef signed char vigsp_s8;
 typedef signed short vigsp_s16;
@@ -367,6 +367,8 @@ struct vigsp_cmd_assign_resource_request
     vigsp_resource_id res_id;
     vigsp_resource_type res_type;
     vigsp_surface_id sfc_id;
+    vigsp_u32 width;
+    vigsp_u32 height;
 };
 
 /*
