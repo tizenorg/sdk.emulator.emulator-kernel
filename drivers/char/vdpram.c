@@ -580,26 +580,19 @@ long vdpram_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
  */
 static void vdpram_setup_cdev(struct vdpram_dev *dev, int index)
 {
-	int err, devno = vdpram_devno + index;
-    	
-	if (index % 2 ==0) {
-		dev->flag = 1;
-	 	cdev_init(&dev->cdev, &vdpram_even_fops);
-		dev->cdev.owner = THIS_MODULE;
-		err = cdev_add (&dev->cdev, devno, 1);
-		dev->index = index;
-	}
-	else {
-		dev->flag = 0;
-	 	cdev_init(&dev->cdev, &vdpram_odd_fops);
-		dev->cdev.owner = THIS_MODULE;
-		err = cdev_add (&dev->cdev, devno, 1);
-		dev->index = index;
-	}
+	dev_t node = MKDEV(vdpram_major, index);
+	int err;
+	int is_odd = index & 1; // "index % 2" equivalent
+
+	dev->flag = !is_odd;
+	cdev_init(&dev->cdev, is_odd ? &vdpram_odd_fops : &vdpram_even_fops);
+	dev->cdev.owner = THIS_MODULE;
+	err = cdev_add (&dev->cdev, node, 1);
+	dev->index = index;
 	
 	/* Fail gracefully if need be */
 	if (err)
-		printk(KERN_NOTICE "Error %d adding deive%d\n", err, index);
+		printk(KERN_NOTICE "Error %d adding device%d\n", err, index);
 }
 
  
