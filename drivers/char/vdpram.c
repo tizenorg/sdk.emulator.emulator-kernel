@@ -601,24 +601,26 @@ static void vdpram_setup_cdev(struct vdpram_dev *dev, int index)
 int vdpram_init(void)
 {
 	int i, result;
-//	dev_t dev;
 	dev_t dev = MKDEV(vdpram_major, 0);
 
 	printk("Initializing vdpram device driver ...\n");
 	result = register_chrdev_region(dev, vdpram_nr_devs, "vdpram");
-//	result = alloc_chrdev_region(&dev, 0, vdpram_nr_devs, "vdpram");
 	if (result < 0) {
 		printk("Unable to get vdpram region, error %d\n", result);
-		return 0;
+		goto err_out;
 	}
-//	vdpram_major = MAJOR( dev );
-	printk( " vdpram device major num = %d \n", vdpram_major );
+
+	printk("vdpram device major num = %d \n", vdpram_major);
 	vdpram_devno = dev;
+
 	vdpram_devices = kmalloc(vdpram_nr_devs * sizeof(struct vdpram_dev), GFP_KERNEL);
-	if (vdpram_devices == NULL) {
-		unregister_chrdev_region(dev, vdpram_nr_devs);
-		return 0;
+	buffer = kmalloc(vdpram_nr_devs * sizeof(struct buffer_t), GFP_KERNEL);
+	queue = kmalloc(vdpram_nr_devs * sizeof(struct queue_t), GFP_KERNEL);
+	if (!vdpram_devices || !buffer || !queue) {
+		result = -ENOMEM;
+		goto err_alloc;
 	}
+
 	memset(vdpram_devices, 0, vdpram_nr_devs * sizeof(struct vdpram_dev));
 	for (i = 0; i < vdpram_nr_devs; i++) {
 		if (i% 2 ==1) {
@@ -631,9 +633,7 @@ int vdpram_init(void)
 		vdpram_setup_cdev(vdpram_devices + i, i);
 	}
 
-	buffer = kmalloc(vdpram_nr_devs * sizeof(struct buffer_t) , GFP_KERNEL);
 	memset(buffer, 0, vdpram_nr_devs * sizeof(struct buffer_t));
-	queue = kmalloc(vdpram_nr_devs * sizeof(struct queue_t) , GFP_KERNEL);
 	// hwjang fix buffer -> queue
 	memset(queue, 0, vdpram_nr_devs * sizeof(struct queue_t));
 	for (i = 0; i < vdpram_nr_devs; i++) {
@@ -653,6 +653,16 @@ int vdpram_init(void)
 	} 
 
 	return 0;
+
+err_alloc:
+	kfree(vdpram_devices);
+	kfree(buffer);
+	kfree(queue);
+
+	unregister_chrdev_region(dev, vdpram_nr_devs);
+
+err_out:
+	return result;
 }
 
 /*
