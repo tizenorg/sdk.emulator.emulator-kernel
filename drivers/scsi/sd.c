@@ -403,7 +403,7 @@ static struct scsi_driver sd_template = {
 	.owner			= THIS_MODULE,
 	.gendrv = {
 //		.name		= "sd",
-		.name		= "mmcblk",
+		.name		= "emul_mmcblk",
 		.probe		= sd_probe,
 		.remove		= sd_remove,
 		.suspend	= sd_suspend,
@@ -1503,7 +1503,7 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 		 * error.
 		 */
 //		scsi_print_sense("sd", SCpnt);
-		scsi_print_sense("mmcblk", SCpnt);
+		scsi_print_sense("emul_mmcblk", SCpnt);
 		SCpnt->result = 0;
 		memset(SCpnt->sense_buffer, 0, SCSI_SENSE_BUFFERSIZE);
 		break;
@@ -2695,7 +2695,7 @@ static int sd_probe(struct device *dev)
 	}
 
 //	error = sd_format_disk_name("sd", index, gd->disk_name, DISK_NAME_LEN);
-	error = sd_format_disk_name("mmcblk", index, gd->disk_name, DISK_NAME_LEN);
+	error = sd_format_disk_name("emul_mmcblk", index, gd->disk_name, DISK_NAME_LEN);
 	if (error) {
 		sdev_printk(KERN_WARNING, sdp, "SCSI disk (sd) name length exceeded.\n");
 		goto out_free_index;
@@ -2913,7 +2913,7 @@ static int __init init_sd(void)
 
 	for (i = 0; i < SD_MAJORS; i++)
 //		if (register_blkdev(sd_major(i), "sd") == 0)
-		if (register_blkdev(sd_major(i), "mmcblk") == 0)
+		if (register_blkdev(sd_major(i), "emul_mmcblk") == 0)
 			majors++;
 
 	if (!majors)
@@ -2950,7 +2950,7 @@ err_out_class:
 err_out:
 	for (i = 0; i < SD_MAJORS; i++)
 //		unregister_blkdev(sd_major(i), "sd");
-		unregister_blkdev(sd_major(i), "mmcblk");
+		unregister_blkdev(sd_major(i), "emul_mmcblk");
 	return err;
 }
 
@@ -2973,7 +2973,7 @@ static void __exit exit_sd(void)
 
 	for (i = 0; i < SD_MAJORS; i++)
 //		unregister_blkdev(sd_major(i), "sd");
-		unregister_blkdev(sd_major(i), "mmcblk");
+		unregister_blkdev(sd_major(i), "emul_mmcblk");
 }
 
 module_init(init_sd);

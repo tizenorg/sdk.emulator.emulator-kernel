@@ -1,3 +1,6 @@
+* 1.4.13
+- modified block device name for sdcard
+== Sungmin Ha <sungmin82.ha@samsung.com> 2013-01-21
 * 1.4.12
 - Fixed a bug does not close when the device has been shut down with no streaming data.
 == Jinhyung Jo <jinhyung.jo@samsung.com> 2013-01-14
