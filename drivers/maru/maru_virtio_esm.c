@@ -100,7 +100,7 @@ static ssize_t esm_read(struct file *f, char __user *buf, size_t len, loff_t *of
 	return 0;
 }
 
-static ssize_t esm_write(struct inode *i, const char __user *ubuf, size_t len, loff_t *off)
+static ssize_t esm_write(struct file *f, const char __user *ubuf, size_t len, loff_t *off)
 {
 	int err = 0;
 	ssize_t ret = 0;
@@ -120,7 +120,11 @@ static ssize_t esm_write(struct inode *i, const char __user *ubuf, size_t len, l
 	}
 	buf[len - 1] = '\0';
 
-	kstrtou16(buf, 10, &vesm->progress.percentage);
+	ret = kstrtou16(buf, 10, &vesm->progress.percentage);
+	if (ret < 0) {
+		VESM_LOG(KERN_ERR, "failed to convert string to integer.\n");
+		return ret;
+	}
 
 	VESM_LOG(KERN_DEBUG, "boot up progress is [%u] percent done.\n", vesm->progress.percentage);
 

@@ -175,7 +175,7 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 				sizeof(struct EmulKbdEvent));
 	}
 
-	ret = virtqueue_add_buf(vkbd->vq, &vkbd->sg, 0, 10, (void *)(10), GFP_ATOMIC);
+	ret = virtqueue_add_buf(vkbd->vq, vkbd->sg, 0, 10, (void *)(10), GFP_ATOMIC);
 	if (ret < 0) {
 		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
 		kfree(vkbd);

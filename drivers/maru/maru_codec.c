@@ -143,7 +143,7 @@ static long svcodec_ioctl(struct file *file,
 	} else if (cmd == CODEC_CMD_GET_MMAP_OFFSET) {
 		value = readl(svcodec->ioaddr + cmd);
 		CODEC_LOG(KERN_DEBUG,
-				"ioctl: get mmap offset: %d.\n", value);
+				"ioctl: get mmap offset: %ld.\n", value);
 	} else {
 		CODEC_LOG(KERN_INFO,
 				"ioctl: no command available.\n");
