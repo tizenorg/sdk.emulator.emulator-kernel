@@ -1,10 +1,11 @@
 /*
  * Maru Virtual Overlay Driver
  *
- * Copyright (c) 2011 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2011 - 2013 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
  * Jinhyung Jo <jinhyung.jo@samsung.com>
+ * Yeongkyoon Lee <yeongkyoon.lee@samsung.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -19,7 +20,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor,
- *					Boston, MA  02110-1301, USA.
+ * Boston, MA  02110-1301, USA.
  *
  * Contributors:
  * - S-Core Co., Ltd
@@ -533,7 +534,7 @@ static int __devinit svo_initdev(struct pci_dev *pci_dev,
 		return ret;
 	}
 
-	printk(KERN_INFO "svo: Tizen Virtual Overlay Driver v%d.%d\n",
+	printk(KERN_INFO "svo: MARU Virtual Overlay Driver v%d.%d is loaded\n",
 		SVO_DRIVER_MAJORVERSION, SVO_DRIVER_MINORVERSION);
 
 	return 0;
@@ -552,9 +553,6 @@ static struct pci_driver svo_pci_driver = {
 
 static int __init svo_init(void)
 {
-	printk(KERN_INFO "svo: Maru overlay driver version %d.%d loaded\n",
-		SVO_DRIVER_MAJORVERSION, SVO_DRIVER_MINORVERSION);
-
 	return pci_register_driver(&svo_pci_driver);
 }
 
