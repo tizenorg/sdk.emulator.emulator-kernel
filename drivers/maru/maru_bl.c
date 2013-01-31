@@ -1,10 +1,12 @@
 /*
  * MARU Virtual Backlight Driver
  *
- * Copyright (c) 2011 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2011 - 2013 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
- * Dohyung Hong <don.hong@samsung.com>
+ *  Jinhyung Jo <jinhyung.jo@samsung.com>
+ *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
+ *  Dohyung Hong
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -18,7 +20,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+ * MA  02110-1301, USA.
  *
  * Contributors:
  * - S-Core Co., Ltd
@@ -35,16 +38,17 @@
 #include <linux/fb.h>
 #include <linux/backlight.h>
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
-#define MARUBL_DRIVER_NAME "svb"
-#define PCI_DEVICE_ID_VIRTUAL_BRIGHTNESS	0x1014
+#define MARUBL_DRIVER_NAME			"maru_backlight"
 
-static struct pci_device_id marubl_pci_table[] __devinitdata =
-{
+#define MIN_BRIGHTNESS	0
+#define MAX_BRIGHTNESS	100
+
+static struct pci_device_id marubl_pci_table[] __devinitdata = {
 	{
 		.vendor		= PCI_VENDOR_ID_TIZEN,
-		.device     = PCI_DEVICE_ID_VIRTUAL_BRIGHTNESS,
+		.device		= PCI_DEVICE_ID_VIRTUAL_BRIGHTNESS,
 		.subvendor	= PCI_ANY_ID,
 		.subdevice	= PCI_ANY_ID,
 	},
@@ -54,18 +58,19 @@ MODULE_DEVICE_TABLE(pci, marubl_pci_table);
 
 /* MARU virtual brightness(backlight) device structure */
 struct marubl {
-	struct backlight_device *bl_dev;
-	unsigned int brightness;
-	resource_size_t reg_start, reg_size;
-	unsigned char __iomem *marubl_mmreg;	/* marubl: memory mapped registers */
+	struct backlight_device		*bl_dev;
+	unsigned int			brightness;
+	resource_size_t			reg_start, reg_size;
+	/* memory mapped registers */
+	unsigned char __iomem		*marubl_mmreg;
 };
 
-/* ============================================================================== */
+/* ========================================================================== */
 static struct marubl *marubl_device;
-/* ============================================================================== */
+/* ========================================================================== */
 
-static int min_brightness = 0;
-static int max_brightness = 100;
+static int min_brightness = MIN_BRIGHTNESS;
+static int max_brightness = MAX_BRIGHTNESS;
 
 static int marubl_get_intensity(struct backlight_device *bd)
 {
@@ -97,16 +102,16 @@ static int marubl_send_intensity(struct backlight_device *bd)
 	return 0;
 }
 
-static struct backlight_ops marubl_ops = {
-	.options = BL_CORE_SUSPENDRESUME,
-	.get_brightness = marubl_get_intensity,
-	.update_status  = marubl_send_intensity,
+static const struct backlight_ops marubl_ops = {
+	.options	= BL_CORE_SUSPENDRESUME,
+	.get_brightness	= marubl_get_intensity,
+	.update_status	= marubl_send_intensity,
 };
 
 /* pci probe function
 */
 static int __devinit marubl_probe(struct pci_dev *pci_dev,
-			const struct pci_device_id *ent)
+				  const struct pci_device_id *ent)
 {
 	int ret;
 	struct backlight_device *bd;
@@ -129,7 +134,7 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 	}
 
 	ret = -EIO;
-	
+
 	/* 1 : IORESOURCE_MEM */
 	marubl_device->reg_start = pci_resource_start(pci_dev, 1);
 	marubl_device->reg_size  = pci_resource_len(pci_dev, 1);
@@ -143,9 +148,11 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 	}
 
 	/* memory areas mapped kernel space */
-	marubl_device->marubl_mmreg = ioremap(marubl_device->reg_start, marubl_device->reg_size);
+	marubl_device->marubl_mmreg = ioremap(marubl_device->reg_start,
+					      marubl_device->reg_size);
 	if (!marubl_device->marubl_mmreg) {
-		release_mem_region(marubl_device->reg_start, marubl_device->reg_size);
+		release_mem_region(marubl_device->reg_start,
+				   marubl_device->reg_size);
 		pci_disable_device(pci_dev);
 		kfree(marubl_device);
 		marubl_device = NULL;
@@ -162,24 +169,29 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 	props.min_brightness = min_brightness;
 	props.max_brightness = max_brightness;
 	props.type = BACKLIGHT_PLATFORM;
-	bd = backlight_device_register ("emulator",	&pci_dev->dev, NULL, &marubl_ops, &props);
+	bd = backlight_device_register("emulator",
+				       &pci_dev->dev,
+				       NULL,
+				       &marubl_ops,
+				       &props);
 	if (IS_ERR(bd)) {
 		ret = PTR_ERR(bd);
 		iounmap(marubl_device->marubl_mmreg);
-		release_mem_region(marubl_device->reg_start, marubl_device->reg_size);
+		release_mem_region(marubl_device->reg_start,
+				   marubl_device->reg_size);
 		pci_disable_device(pci_dev);
 		kfree(marubl_device);
 		marubl_device = NULL;
 		return ret;
 	}
 
-	bd->props.brightness = (unsigned int)readl(marubl_device->marubl_mmreg);;
+	bd->props.brightness = (unsigned int)readl(marubl_device->marubl_mmreg);
 	bd->props.power = FB_BLANK_UNBLANK;
 	backlight_update_status(bd);
 
 	marubl_device->bl_dev = bd;
 
-	printk(KERN_INFO "marubl: MARU Virtual Backlight driver.\n");
+	printk(KERN_INFO "marubl: MARU Virtual Backlight driver is loaded.\n");
 	return 0;
 }
 
@@ -210,13 +222,13 @@ static void __devexit marubl_exit(struct pci_dev *pcidev)
  * register pci driver
  */
 static struct pci_driver marubl_pci_driver = {
-	.name 	  = MARUBL_DRIVER_NAME,
-	.id_table = marubl_pci_table,
-	.probe	  = marubl_probe,
-	.remove   = __devexit_p(marubl_exit),
+	.name		= MARUBL_DRIVER_NAME,
+	.id_table	= marubl_pci_table,
+	.probe		= marubl_probe,
+	.remove		= __devexit_p(marubl_exit),
 #ifdef CONFIG_PM
-	//.suspend  = marubl_suspend,
-	//.resume   = marubl_resume,
+	/* .suspend  = marubl_suspend, */
+	/* .resume   = marubl_resume, */
 #endif
 };
 
@@ -238,5 +250,5 @@ module_init(marubl_module_init);
 module_exit(marubl_module_exit);
 
 MODULE_LICENSE("GPL2");
-MODULE_AUTHOR("Dohyung Hong <don.hong@samsung.com>");
+MODULE_AUTHOR("Jinhyung Jo <jinhyung.jo@samsung.com>");
 MODULE_DESCRIPTION("MARU Virtual Backlight Driver for x86");
