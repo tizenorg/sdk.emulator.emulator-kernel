@@ -1,3 +1,6 @@
+* 1.4.14
+- enable BLK_DEV_CRYPTOLOOP.
+== Kitae Kim <kt920.kim@samsung.com> 2013-02-01
 * 1.4.13
 - modified block device name for sdcard
 == Sungmin Ha <sungmin82.ha@samsung.com> 2013-01-21
