@@ -418,7 +418,8 @@ retry:
 				 * may try to recover data. FIXME: but this is
 				 * not implemented.
 				 */
-				if (err == UBI_IO_BAD_VID_HDR) {
+				if (err == UBI_IO_BAD_HDR_EBADMSG ||
+				    err == UBI_IO_BAD_HDR) {
 					ubi_warn("corrupted VID header at PEB "
 						 "%d, LEB %d:%d", pnum, vol_id,
 						 lnum);
@@ -442,7 +443,7 @@ retry:
 		if (err == UBI_IO_BITFLIPS) {
 			scrub = 1;
 			err = 0;
-		} else if (err == -EBADMSG) {
+		} else if (mtd_is_eccerr(err)) {
 			if (vol->vol_type == UBI_DYNAMIC_VOLUME)
 				goto out_unlock;
 			scrub = 1;
@@ -528,18 +529,18 @@ retry:
 
 	data_size = offset + len;
 	mutex_lock(&ubi->buf_mutex);
-	memset(ubi->peb_buf1 + offset, 0xFF, len);
+	memset(ubi->peb_buf + offset, 0xFF, len);
 
 	/* Read everything before the area where the write failure happened */
 	if (offset > 0) {
-		err = ubi_io_read_data(ubi, ubi->peb_buf1, pnum, 0, offset);
+		err = ubi_io_read_data(ubi, ubi->peb_buf, pnum, 0, offset);
 		if (err && err != UBI_IO_BITFLIPS)
 			goto out_unlock;
 	}
 
-	memcpy(ubi->peb_buf1 + offset, buf, len);
+	memcpy(ubi->peb_buf + offset, buf, len);
 
-	err = ubi_io_write_data(ubi, ubi->peb_buf1, new_pnum, 0, data_size);
+	err = ubi_io_write_data(ubi, ubi->peb_buf, new_pnum, 0, data_size);
 	if (err) {
 		mutex_unlock(&ubi->buf_mutex);
 		goto write_error;
@@ -961,8 +962,8 @@ write_error:
  */
 static int is_error_sane(int err)
 {
-	if (err == -EIO || err == -ENOMEM || err == UBI_IO_BAD_VID_HDR ||
-	    err == -ETIMEDOUT)
+	if (err == -EIO || err == -ENOMEM || err == UBI_IO_BAD_HDR ||
+	    err == UBI_IO_BAD_HDR_EBADMSG || err == -ETIMEDOUT)
 		return 0;
 	return 1;
 }
@@ -978,7 +979,7 @@ static int is_error_sane(int err)
  * physical eraseblock @to. The @vid_hdr buffer may be changed by this
  * function. Returns:
  *   o %0 in case of success;
- *   o %MOVE_CANCEL_RACE, %MOVE_TARGET_WR_ERR, %MOVE_CANCEL_BITFLIPS, etc;
+ *   o %MOVE_CANCEL_RACE, %MOVE_TARGET_WR_ERR, %MOVE_TARGET_BITFLIPS, etc;
  *   o a negative error code in case of failure.
  */
 int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
@@ -1027,12 +1028,14 @@ int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
 	 * 'ubi_wl_put_peb()' function on the @ubi->move_mutex. In turn, we are
 	 * holding @ubi->move_mutex and go sleep on the LEB lock. So, if the
 	 * LEB is already locked, we just do not move it and return
-	 * %MOVE_CANCEL_RACE, which means that UBI will re-try, but later.
+	 * %MOVE_RETRY. Note, we do not return %MOVE_CANCEL_RACE here because
+	 * we do not know the reasons of the contention - it may be just a
+	 * normal I/O on this LEB, so we want to re-try.
 	 */
 	err = leb_write_trylock(ubi, vol_id, lnum);
 	if (err) {
 		dbg_wl("contention on LEB %d:%d, cancel", vol_id, lnum);
-		return MOVE_CANCEL_RACE;
+		return MOVE_RETRY;
 	}
 
 	/*
@@ -1050,13 +1053,13 @@ int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
 
 	/*
 	 * OK, now the LEB is locked and we can safely start moving it. Since
-	 * this function utilizes the @ubi->peb_buf1 buffer which is shared
+	 * this function utilizes the @ubi->peb_buf buffer which is shared
 	 * with some other functions - we lock the buffer by taking the
 	 * @ubi->buf_mutex.
 	 */
 	mutex_lock(&ubi->buf_mutex);
 	dbg_wl("read %d bytes of data", aldata_size);
-	err = ubi_io_read_data(ubi, ubi->peb_buf1, from, 0, aldata_size);
+	err = ubi_io_read_data(ubi, ubi->peb_buf, from, 0, aldata_size);
 	if (err && err != UBI_IO_BITFLIPS) {
 		ubi_warn("error %d while reading data from PEB %d",
 			 err, from);
@@ -1076,10 +1079,10 @@ int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
 	 */
 	if (vid_hdr->vol_type == UBI_VID_DYNAMIC)
 		aldata_size = data_size =
-			ubi_calc_data_len(ubi, ubi->peb_buf1, data_size);
+			ubi_calc_data_len(ubi, ubi->peb_buf, data_size);
 
 	cond_resched();
-	crc = crc32(UBI_CRC32_INIT, ubi->peb_buf1, data_size);
+	crc = crc32(UBI_CRC32_INIT, ubi->peb_buf, data_size);
 	cond_resched();
 
 	/*
@@ -1113,12 +1116,12 @@ int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
 			if (is_error_sane(err))
 				err = MOVE_TARGET_RD_ERR;
 		} else
-			err = MOVE_CANCEL_BITFLIPS;
+			err = MOVE_TARGET_BITFLIPS;
 		goto out_unlock_buf;
 	}
 
 	if (data_size > 0) {
-		err = ubi_io_write_data(ubi, ubi->peb_buf1, to, 0, aldata_size);
+		err = ubi_io_write_data(ubi, ubi->peb_buf, to, 0, aldata_size);
 		if (err) {
 			if (err == -EIO)
 				err = MOVE_TARGET_WR_ERR;
@@ -1131,8 +1134,8 @@ int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
 		 * We've written the data and are going to read it back to make
 		 * sure it was written correctly.
 		 */
-
-		err = ubi_io_read_data(ubi, ubi->peb_buf2, to, 0, aldata_size);
+		memset(ubi->peb_buf, 0xFF, aldata_size);
+		err = ubi_io_read_data(ubi, ubi->peb_buf, to, 0, aldata_size);
 		if (err) {
 			if (err != UBI_IO_BITFLIPS) {
 				ubi_warn("error %d while reading data back "
@@ -1140,13 +1143,13 @@ int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
 				if (is_error_sane(err))
 					err = MOVE_TARGET_RD_ERR;
 			} else
-				err = MOVE_CANCEL_BITFLIPS;
+				err = MOVE_TARGET_BITFLIPS;
 			goto out_unlock_buf;
 		}
 
 		cond_resched();
 
-		if (memcmp(ubi->peb_buf1, ubi->peb_buf2, aldata_size)) {
+		if (crc != crc32(UBI_CRC32_INIT, ubi->peb_buf, data_size)) {
 			ubi_warn("read data back from PEB %d and it is "
 				 "different", to);
 			err = -EINVAL;
@@ -1162,6 +1165,47 @@ out_unlock_buf:
 out_unlock_leb:
 	leb_write_unlock(ubi, vol_id, lnum);
 	return err;
+}
+
+/**
+ * print_rsvd_warning - warn about not having enough reserved PEBs.
+ * @ubi: UBI device description object
+ *
+ * This is a helper function for 'ubi_eba_init_scan()' which is called when UBI
+ * cannot reserve enough PEBs for bad block handling. This function makes a
+ * decision whether we have to print a warning or not. The algorithm is as
+ * follows:
+ *   o if this is a new UBI image, then just print the warning
+ *   o if this is an UBI image which has already been used for some time, print
+ *     a warning only if we can reserve less than 10% of the expected amount of
+ *     the reserved PEB.
+ *
+ * The idea is that when UBI is used, PEBs become bad, and the reserved pool
+ * of PEBs becomes smaller, which is normal and we do not want to scare users
+ * with a warning every time they attach the MTD device. This was an issue
+ * reported by real users.
+ */
+static void print_rsvd_warning(struct ubi_device *ubi,
+			       struct ubi_scan_info *si)
+{
+	/*
+	 * The 1 << 18 (256KiB) number is picked randomly, just a reasonably
+	 * large number to distinguish between newly flashed and used images.
+	 */
+	if (si->max_sqnum > (1 << 18)) {
+		int min = ubi->beb_rsvd_level / 10;
+
+		if (!min)
+			min = 1;
+		if (ubi->beb_rsvd_pebs > min)
+			return;
+	}
+
+	ubi_warn("cannot reserve enough PEBs for bad PEB handling, reserved %d,"
+		 " need %d", ubi->beb_rsvd_pebs, ubi->beb_rsvd_level);
+	if (ubi->corr_peb_count)
+		ubi_warn("%d PEBs are corrupted and not used",
+			ubi->corr_peb_count);
 }
 
 /**
@@ -1224,6 +1268,9 @@ int ubi_eba_init_scan(struct ubi_device *ubi, struct ubi_scan_info *si)
 	if (ubi->avail_pebs < EBA_RESERVED_PEBS) {
 		ubi_err("no enough physical eraseblocks (%d, need %d)",
 			ubi->avail_pebs, EBA_RESERVED_PEBS);
+		if (ubi->corr_peb_count)
+			ubi_err("%d PEBs are corrupted and not used",
+				ubi->corr_peb_count);
 		err = -ENOSPC;
 		goto out_free;
 	}
@@ -1236,9 +1283,7 @@ int ubi_eba_init_scan(struct ubi_device *ubi, struct ubi_scan_info *si)
 		if (ubi->avail_pebs < ubi->beb_rsvd_level) {
 			/* No enough free physical eraseblocks */
 			ubi->beb_rsvd_pebs = ubi->avail_pebs;
-			ubi_warn("cannot reserve enough PEBs for bad PEB "
-				 "handling, reserved %d, need %d",
-				 ubi->beb_rsvd_pebs, ubi->beb_rsvd_level);
+			print_rsvd_warning(ubi, si);
 		} else
 			ubi->beb_rsvd_pebs = ubi->beb_rsvd_level;
 
