@@ -5,9 +5,9 @@
  * Copyright (C) 2000 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
- * Hyunjun Son <hj79.son@samsung.com>
  * GiWoong Kim <giwoong.kim@samsung.com>
  * YeongKyoon Lee <yeongkyoon.lee@samsung.com>
+ * Hyunjun Son
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
