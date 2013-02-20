@@ -51,11 +51,6 @@ echo "create device filesystem"
 # create device filesystem
 /bin/mkdir -p /new_root/dev
 /bin/mount -t devtmpfs devtmpfs /new_root/dev
-# FIXME: W/A for boot until udev rules on platform is applied
-/bin/mkdir -p /new_root/dev/dpram       
-/bin/mknod /new_root/dev/dpram/0 c 249 0        
-/bin/mknod /new_root/dev/dpram/1 c 249 1
-#
 /bin/mkdir -p /new_root/sys
 
 >${CONSOLE} <${CONSOLE} 2>&1
