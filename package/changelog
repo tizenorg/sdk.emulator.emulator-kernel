@@ -1,3 +1,6 @@
+* 1.4.15 
+- source clean-up for overlay and backlight module. 
+== Kitae Kim <kt920.kim@samsung.com> 2013-03-08 
 * 1.4.14
 - enable BLK_DEV_CRYPTOLOOP.
 == Kitae Kim <kt920.kim@samsung.com> 2013-02-01
