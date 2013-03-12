@@ -245,7 +245,7 @@ static void __init print_ebda_hpc (void)
 
 int __init ibmphp_access_ebda (void)
 {
-	u8 format, num_ctlrs, rio_complete, hs_complete;
+	u8 format, num_ctlrs, rio_complete, hs_complete, ebda_sz;
 	u16 ebda_seg, num_entries, next_offset, offset, blk_id, sub_addr, re, rc_id, re_id, base;
 	int rc = 0;
 
@@ -260,13 +260,28 @@ int __init ibmphp_access_ebda (void)
 	iounmap (io_mem);
 	debug ("returned ebda segment: %x\n", ebda_seg);
 	
-	io_mem = ioremap(ebda_seg<<4, 1024);
+	io_mem = ioremap(ebda_seg<<4, 1);
+	if (!io_mem)
+		return -ENOMEM;
+	ebda_sz = readb(io_mem);
+	iounmap(io_mem);
+	debug("ebda size: %d(KiB)\n", ebda_sz);
+	if (ebda_sz == 0)
+		return -ENOMEM;
+
+	io_mem = ioremap(ebda_seg<<4, (ebda_sz * 1024));
 	if (!io_mem )
 		return -ENOMEM;
 	next_offset = 0x180;
 
 	for (;;) {
 		offset = next_offset;
+
+		/* Make sure what we read is still in the mapped section */
+		if (WARN(offset > (ebda_sz * 1024 - 4),
+			 "ibmphp_ebda: next read is beyond ebda_sz\n"))
+			break;
+
 		next_offset = readw (io_mem + offset);	/* offset of next blk */
 
 		offset += 2;
@@ -353,8 +368,10 @@ int __init ibmphp_access_ebda (void)
 			debug ("rio blk id: %x\n", blk_id);
 
 			rio_table_ptr = kzalloc(sizeof(struct rio_table_hdr), GFP_KERNEL);
-			if (!rio_table_ptr)
-				return -ENOMEM; 
+			if (!rio_table_ptr) {
+				rc = -ENOMEM;
+				goto out;
+			}
 			rio_table_ptr->ver_num = readb (io_mem + offset);
 			rio_table_ptr->scal_count = readb (io_mem + offset + 1);
 			rio_table_ptr->riodev_count = readb (io_mem + offset + 2);

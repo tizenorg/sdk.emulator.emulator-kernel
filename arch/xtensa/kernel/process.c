@@ -23,7 +23,6 @@
 #include <linux/stddef.h>
 #include <linux/unistd.h>
 #include <linux/ptrace.h>
-#include <linux/slab.h>
 #include <linux/elf.h>
 #include <linux/init.h>
 #include <linux/prctl.h>
@@ -31,16 +30,16 @@
 #include <linux/module.h>
 #include <linux/mqueue.h>
 #include <linux/fs.h>
+#include <linux/slab.h>
 
 #include <asm/pgtable.h>
 #include <asm/uaccess.h>
-#include <asm/system.h>
 #include <asm/io.h>
 #include <asm/processor.h>
 #include <asm/platform.h>
 #include <asm/mmu.h>
 #include <asm/irq.h>
-#include <asm/atomic.h>
+#include <linux/atomic.h>
 #include <asm/asm-offsets.h>
 #include <asm/regs.h>
 
@@ -113,9 +112,7 @@ void cpu_idle(void)
 	while (1) {
 		while (!need_resched())
 			platform_idle();
-		preempt_enable_no_resched();
-		schedule();
-		preempt_disable();
+		schedule_preempt_disabled();
 	}
 }
 
@@ -318,8 +315,9 @@ long xtensa_clone(unsigned long clone_flags, unsigned long newsp,
  */
 
 asmlinkage
-long xtensa_execve(char __user *name, char __user * __user *argv,
-                   char __user * __user *envp,
+long xtensa_execve(const char __user *name,
+		   const char __user *const __user *argv,
+                   const char __user *const __user *envp,
                    long a3, long a4, long a5,
                    struct pt_regs *regs)
 {

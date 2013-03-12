@@ -99,9 +99,9 @@ echo "create device filesystem"
 /bin/mknod /new_root/dev/input/event2 c 13 66
 /bin/mknod /new_root/dev/input/event3 c 13 67
 /bin/mknod /new_root/dev/input/event4 c 13 68
-(cd /new_root/dev/input && /bin/ln -s event1 touchscreen0)
-(cd /new_root/dev/input && /bin/ln -s event2 keyboard0)
-(cd /new_root/dev && /bin/ln -s input/event3 smotion)
+#(cd /new_root/dev/input && /bin/ln -s event1 touchscreen0)
+#(cd /new_root/dev/input && /bin/ln -s event2 keyboard0)
+#(cd /new_root/dev && /bin/ln -s input/event3 smotion)
 
 /bin/mknod /new_root/dev/mixer c 14 0
 /bin/mknod /new_root/dev/sequencer c 14 1
@@ -176,7 +176,6 @@ echo "create device filesystem"
 /bin/mkdir -p /new_root/sys
 
 #/bin/mknod /new_root/dev/opengl c 240 0
-/bin/mknod -m 666 /new_root/dev/codec c 240 0
 
 
 >${CONSOLE} <${CONSOLE} 2>&1

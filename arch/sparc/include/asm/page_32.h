@@ -8,14 +8,10 @@
 #ifndef _SPARC_PAGE_H
 #define _SPARC_PAGE_H
 
-#define PAGE_SHIFT   12
+#include <linux/const.h>
 
-#ifndef __ASSEMBLY__
-/* I have my suspicions... -DaveM */
-#define PAGE_SIZE    (1UL << PAGE_SHIFT)
-#else
-#define PAGE_SIZE    (1 << PAGE_SHIFT)
-#endif
+#define PAGE_SHIFT   12
+#define PAGE_SIZE    (_AC(1, UL) << PAGE_SHIFT)
 #define PAGE_MASK    (~(PAGE_SIZE-1))
 
 #include <asm/btfixup.h>
@@ -143,7 +139,7 @@ extern unsigned long pfn_base;
 #define phys_to_virt		__va
 
 #define ARCH_PFN_OFFSET		(pfn_base)
-#define virt_to_page(kaddr)	(mem_map + ((((unsigned long)(kaddr)-PAGE_OFFSET)>>PAGE_SHIFT)))
+#define virt_to_page(kaddr)	pfn_to_page(__pa(kaddr) >> PAGE_SHIFT)
 
 #define pfn_valid(pfn)		(((pfn) >= (pfn_base)) && (((pfn)-(pfn_base)) < max_mapnr))
 #define virt_addr_valid(kaddr)	((((unsigned long)(kaddr)-PAGE_OFFSET)>>PAGE_SHIFT) < max_mapnr)
