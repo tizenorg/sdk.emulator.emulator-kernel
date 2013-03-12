@@ -79,3 +79,7 @@ config MARU_VIRTIO_SENSOR
 config MARU_VIRTIO_NFC
 	tristate "MARU VirtIO Virtual NFC Device Driver"
 	depends on MARU != n
+
+config MARU_NEW_CODEC
+	tristate "MARU new codec driver"
+	depends on MARU != n
