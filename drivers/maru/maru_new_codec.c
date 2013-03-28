@@ -46,6 +46,7 @@
 #include <linux/workqueue.h>
 #include <linux/wait.h>
 #include <linux/slab.h>
+// #include <linux/time.h>
 
 #define DEVICE_NAME	 "newcodec"
 
@@ -61,6 +62,15 @@ MODULE_LICENSE("GPL2");
 
 #define NEWCODEC_FIXED_DEV_MEM_MAX	24 * 1024 * 1024
 #define NEWCODEC_SHARED_DEV_MEM_MAX	 8 * 1024 * 1024
+
+#if 0
+#define NEWCODEC_TIME_CHECK \
+{ \
+	struct timeval now; \
+	do_gettimeofday(&now); \
+	printk(KERN_INFO "%ld.%06ld: irq handler.\n", (long)now.tv_sec, (long)now.tv_usec); \
+}
+#endif
 
 struct codec_param {
 	int32_t api_index;
@@ -88,12 +98,13 @@ enum codec_io_cmd {
 	CODEC_CMD_FILE_INDEX,
 	CODEC_CMD_DEVICE_MEM_OFFSET,
 	CODEC_CMD_DEVICE_MEM_TYPE,
-	CODEC_CMD_GET_THREAD_STATE, 
+	CODEC_CMD_GET_THREAD_STATE,
 	CODEC_CMD_GET_SHARED_QUEUE,
 	CODEC_CMD_GET_FIXED_QUEUE,
 	CODEC_CMD_POP_WRITE_QUEUE,
 	CODEC_CMD_RESET_CODEC_INFO,
 	CODEC_CMD_GET_VERSION = 20,			// user, driver and device
+	CODEC_CMD_GET_CONTEXT_INDEX,
 };
 
 enum codec_api_index {
@@ -154,10 +165,8 @@ struct newcodec_device {
 	uint32_t mmapmgr_idx;
 	uint32_t mmapmgr_offset;
 	uint32_t used_mem_size;
- 
+
 	spinlock_t lock;
-//	wait_queue_head_t codec_wq;
-//	int codec_wq_done;
 };
 
 static struct newcodec_device *newcodec;
@@ -198,25 +207,15 @@ static void newcodec_shared_bh(struct newcodec_device *dev)
 
 static void newcodec_fixed_bh_func(struct work_struct *work)
 {
-	uint32_t value, index;
+	uint32_t value;
 
 	CODEC_LOG(KERN_DEBUG, "fixed_bh func.\n");
+
 	do {
 		value = readl(newcodec->ioaddr + CODEC_CMD_GET_FIXED_QUEUE);
 		CODEC_LOG(KERN_DEBUG, "file value of head task: %x.\n", value);
 		if (value) {
 			newcodec_add_task(&newcodec->irq_task, value);
-#if 0
-			index = newcodec->irq_task_index;
-			newcodec->irq_task[index] = value;
-			mutex_lock(&newcodec_bh_mutex);
-			newcodec->irq_task_cnt++;
-			newcodec->irq_task_index++;
-			if (newcodec->irq_task_index == 128) {
-				newcodec->irq_task_index = 0;
-			}
-			mutex_unlock(&newcodec_bh_mutex);
-#endif
 		} else {
 			CODEC_LOG(KERN_DEBUG, "there is no available task\n");
 		}
@@ -287,11 +286,11 @@ static uint32_t newcodec_manage_dev_mem(struct codec_mem_info *mem_info, int32_t
 			mem_mgr->offset = newcodec->mmapmgr_offset;
 			newcodec->mmapmgr_offset = mem_mgr->offset + req_mem_size;
 //		}
-	
+
 		mutex_lock(&newcodec_mutex);
 		newcodec->used_mem_size += req_mem_size;
 		mutex_unlock(&newcodec_mutex);
-		
+
 		mem_info->type = CODEC_FIXED_DEVICE_MEM;
 	} else {
 		mem_mgr->id = file;
@@ -302,7 +301,7 @@ static uint32_t newcodec_manage_dev_mem(struct codec_mem_info *mem_info, int32_t
 
 	mem_info->index = newcodec->mmapmgr_idx;
 	mem_info->offset = mem_mgr->offset;
-	
+
 	newcodec->mmapmgr_idx++;
 	// TODO: twice size or return to 0
 	if (newcodec->mmapmgr_idx == newcodec->mmapmgr_size) {
@@ -328,7 +327,7 @@ static long newcodec_ioctl(struct file *file,
 	{
 		struct newcodec_task *head_task = NULL;
 
-		head_task = 
+		head_task =
 			list_first_entry(&newcodec->req_task, struct newcodec_task, entry);
 		if (!head_task) {
 			CODEC_LOG(KERN_DEBUG, "[file: %p] head_task is NULL\n", file);
@@ -338,7 +337,7 @@ static long newcodec_ioctl(struct file *file,
 				file, head_task->id);
 
 			mutex_lock(&newcodec_mutex);
-			list_move_tail(&head_task->entry, &newcodec->old_task); 
+			list_move_tail(&head_task->entry, &newcodec->old_task);
 			mutex_unlock(&newcodec_mutex);
 
 			CODEC_LOG(KERN_DEBUG, "release old_task resource.\n");
@@ -444,10 +443,10 @@ static long newcodec_ioctl(struct file *file,
 			CODEC_LOG(KERN_DEBUG, "ioctl: failed to copy data to user\n");
 			return -EIO;
 		}
-		
+
 		CODEC_LOG(KERN_DEBUG, "request memory size: %d\n", mem_info.index);
-	
-		ret = newcodec_manage_dev_mem(&mem_info, (int32_t)file);		
+
+		ret = newcodec_manage_dev_mem(&mem_info, (int32_t)file);
 
 		if (copy_to_user((void *)arg, &mem_info, sizeof(mem_info))) {
 			CODEC_LOG(KERN_DEBUG,
@@ -476,56 +475,36 @@ static long newcodec_ioctl(struct file *file,
 		break;
 	case CODEC_CMD_WAIT_TASK_QUEUE:
 	{
-		uint32_t index = 0;
 		value = CODEC_MEM_LOCK;
 
-#if 0
-		if (newcodec->irq_task_cnt != 0) {
-			for (; index < 128; index++) {
-				if (newcodec->irq_task[index] == (int32_t)file) {
-					value = CODEC_MEM_UNLOCK;
-					newcodec->irq_task[index] = 0;
-					mutex_lock(&newcodec_bh_mutex);
-					newcodec->irq_task_cnt--;	
-					mutex_unlock(&newcodec_bh_mutex);
-					break;
-				}
-			}
-		} else {
-			CODEC_LOG(KERN_INFO, "[file: %p] irq_task is empty\n", file);
-		}
-#endif
-
-#if 1 
 		if (!list_empty(&newcodec->irq_task)) {
 			struct newcodec_task *head_task = NULL;
 
 			head_task =
 				list_first_entry(&newcodec->irq_task, struct newcodec_task, entry);
 			if (!head_task) {
-				CODEC_LOG(KERN_DEBUG, "[file: %p] head_task is NULL\n", file);
+				CODEC_LOG(KERN_DEBUG,
+					"[file: %p] head_task is NULL\n", file);
 			} else {
-				CODEC_LOG(KERN_DEBUG, "[file: %p] head_task id: %x\n",
-					file, head_task->id);
+				CODEC_LOG(KERN_DEBUG,
+					"[file: %p] head_task id: %x\n", file, head_task->id);
 				if (head_task->id == (int32_t)file) {
-					CODEC_LOG(KERN_DEBUG, "[file: %p] same.\n", file);
 					value = CODEC_MEM_UNLOCK;
 					list_del(&head_task->entry);
 					kfree(head_task);
-				} else {
-					CODEC_LOG(KERN_DEBUG, "[file: %p] different.\n", file);
 				}
 			}
 		} else {
 			CODEC_LOG(KERN_DEBUG, "[file: %p] irq_task is empty\n", file);
 		}
-#endif
+
 		if (copy_to_user((void *)arg, &value, sizeof(int))) {
 			CODEC_LOG(KERN_ERR, "ioctl: failed to copy data to user\n");
 	    }
 	}
 		break;
 	case CODEC_CMD_GET_VERSION:
+	case CODEC_CMD_GET_CONTEXT_INDEX:
 		value = readl(newcodec->ioaddr + cmd);
 		if (copy_to_user((void *)arg, &value, sizeof(int))) {
 			CODEC_LOG(KERN_ERR, "ioctl: failed to copy data to user\n");
@@ -563,34 +542,25 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 		return -EIO;
     }
 
+	mutex_lock(&newcodec_mutex);
 	if (param_info.api_index == CODEC_ELEMENT_QUERY) {
 		writel((int32_t)param_info.api_index,
 				newcodec->ioaddr + CODEC_CMD_API_INDEX);
 	} else {
-		if (param_info.api_index > CODEC_INIT) {
-			writel((int32_t)param_info.ctx_index,
-				newcodec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
-		}
-
 		writel((int32_t)file,
 				newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
 		writel((uint32_t)param_info.mem_offset,
 				newcodec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
 		writel((uint32_t)param_info.mem_type,
 				newcodec->ioaddr + CODEC_CMD_DEVICE_MEM_TYPE);
+		writel((int32_t)param_info.ctx_index,
+				newcodec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
 		writel((int32_t)param_info.api_index,
 				newcodec->ioaddr + CODEC_CMD_API_INDEX);
 
-#if 0 
-		if (!param_info.mem_type) {
-			CODEC_LOG(KERN_DEBUG, "wait_event for fixed task\n");
-			wait_event_interruptible(newcodec->codec_wq, newcodec->codec_wq_done != 0);
-			newcodec->codec_wq_done = 0;	
-		} else {
-#endif
-		if (param_info.mem_type == CODEC_SHARED_DEVICE_MEM) { 
+		if (param_info.mem_type == CODEC_SHARED_DEVICE_MEM) {
 			if (param_info.api_index > CODEC_ELEMENT_QUERY &&
-					param_info.api_index < CODEC_DEINIT) { 
+					param_info.api_index < CODEC_DEINIT) {
 				struct newcodec_task *head_task = NULL;
 
 				head_task =
@@ -599,13 +569,13 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 					CODEC_LOG(KERN_DEBUG, "[file: %p] head_task is NULL\n", file);
 				} else {
 					CODEC_LOG(KERN_DEBUG, "move head_task: %x into old_task\n", head_task->id);
-					mutex_lock(&newcodec_mutex);
-					list_move_tail(&head_task->entry, &newcodec->old_task); 
-					mutex_unlock(&newcodec_mutex);
+					list_move_tail(&head_task->entry, &newcodec->old_task);
 				}
 			}
 		}
 	}
+	mutex_unlock(&newcodec_mutex);
+
 	return 0;
 }
 
@@ -650,18 +620,14 @@ static irqreturn_t newcodec_irq_handler(int irq, void *dev_id)
 	}
 
 	spin_lock_irqsave(&dev->lock, flags);
-	
+
 	if (val == NEWCODEC_IRQ_SHARED_TASK) {
 		CODEC_LOG(KERN_DEBUG, "handle shared_task irq\n");
 		newcodec_shared_bh(dev);
-#if 1 
 	} else if (val == NEWCODEC_IRQ_FIXED_TASK) {
 		CODEC_LOG(KERN_DEBUG, "handle fixed_task irq\n");
 		newcodec_fixed_bh(dev);
-//		dev->codec_wq_done = 1;
-//		wake_up_interruptible(&dev->codec_wq);
 	}
-#endif
 
 	spin_unlock_irqrestore(&dev->lock, flags);
 
@@ -698,6 +664,9 @@ static int newcodec_release(struct inode *inode, struct file *file)
 
 	CODEC_LOG(KERN_DEBUG, "release req_task resource.\n");
 	newcodec_release_task_entry(&newcodec->req_task, (int32_t)file);
+
+	CODEC_LOG(KERN_DEBUG, "release irq_task resource.\n");
+	newcodec_release_task_entry(&newcodec->irq_task, (int32_t)file);
 
 #if 0
 	{
