@@ -4,10 +4,9 @@
  * Copyright (c) 2011-2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
- *  Jinhyung Jo <jinhyung.jo@samsung.com>
+ *  Hyunjun Son <hj79.son@samsung.com>
+ *  DongKyun Yun <dk77.yun@samsung.com>
  *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
- *  Hyunjun Son
- *  DongKyun Yun
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -90,5 +89,5 @@ module_init(emul_lcd_class_init);
 module_exit(emul_lcd_class_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Jinhyung Jo <jinhyung.jo@samsung.com>");
+MODULE_AUTHOR("s-core");
 MODULE_DESCRIPTION("Emulator LCD driver for x86");

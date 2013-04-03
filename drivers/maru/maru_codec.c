@@ -4,8 +4,9 @@
  * Copyright (c) 2011-2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
- *  Kitae Kim <kt920.kim@samsung.com>
+ *  Kitae KIM <kt920.kim@samsung.com>
  *  SeokYeon Hwang <syeon.hwang@samsung.com>
+ *  DongKyun Yun <dk77.yun@samsung.com>
  *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
  *
  * This program is free software; you can redistribute it and/or
@@ -142,7 +143,7 @@ static long svcodec_ioctl(struct file *file,
 	} else if (cmd == CODEC_CMD_GET_MMAP_OFFSET) {
 		value = readl(svcodec->ioaddr + cmd);
 		CODEC_LOG(KERN_DEBUG,
-				"ioctl: get mmap offset: %d.\n", value);
+				"ioctl: get mmap offset: %ld.\n", value);
 	} else {
 		CODEC_LOG(KERN_INFO,
 				"ioctl: no command available.\n");

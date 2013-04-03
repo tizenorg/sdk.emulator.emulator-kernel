@@ -223,8 +223,7 @@ static int glmem_mmap(struct file *filp, struct vm_area_struct *vma)
 	return 0;
 }
 
-// FIX ME : fsync parameter 2,3 parameter missing
-static int glmem_fsync(struct file *filp, int datasync)
+static int glmem_fsync(struct file *filp, loff_t start, loff_t end, int datasync)
 {
 	struct virtio_gl_data *gldata = to_virtio_gl_data(filp);
 

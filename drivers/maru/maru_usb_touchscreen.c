@@ -6,6 +6,8 @@
  *
  * Contact: 
  *  GiWoong Kim <giwoong.kim@samsung.com>
+ *  HyunJun Son <hj79.son@samsung.com>
+ *  DongKyun Yun <dk77.yun@samsung.com>
  *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
  *
  * This program is free software; you can redistribute it and/or
