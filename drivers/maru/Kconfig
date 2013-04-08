@@ -67,3 +67,7 @@ config MARU_VIRTIO_KEYBOARD
 config MARU_VIRTIO_ESM
 	tristate "MARU VirtIO Emulator Status Medium Driver"
 	depends on MARU != n
+
+config MARU_VIRTIO_EVDI
+	tristate "MARU VirtIO Emulator Virtual Device Interface Driver"
+	depends on MARU != n
