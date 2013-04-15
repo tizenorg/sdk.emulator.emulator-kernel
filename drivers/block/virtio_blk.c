@@ -471,7 +471,16 @@ static int __devinit virtblk_probe(struct virtio_device *vdev)
 
 	q->queuedata = vblk;
 
+#ifdef CONFIG_MARU // for virtio sdcard...
+	if (index == 2) {
+		snprintf(vblk->disk->disk_name, DISK_NAME_LEN, "mmcblk0");
+	}
+	else {
+		virtblk_name_format("vd", index, vblk->disk->disk_name, DISK_NAME_LEN);
+	}
+#else
 	virtblk_name_format("vd", index, vblk->disk->disk_name, DISK_NAME_LEN);
+#endif
 
 	vblk->disk->major = major;
 	vblk->disk->first_minor = index_to_minor(index);
