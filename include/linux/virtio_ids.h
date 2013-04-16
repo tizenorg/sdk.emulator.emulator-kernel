@@ -45,7 +45,7 @@
 #define VIRTIO_ID_KEYBOARD	12 /* virtio keyboard */
 #define VIRTIO_ID_ESM		13 /* virtio ESM */
 #define VIRTIO_ID_HWKEY		14 /* virtio hwkey */
-#define VIRTIO_ID_EVDI		15 /* virtio hwkey */
+#define VIRTIO_ID_EVDI		15 /* virtio evdi */
 
 #endif
 
