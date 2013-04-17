@@ -54,12 +54,30 @@
 #define NUM_OF_EVDI	2
 #define DEVICE_NAME		"evdi"
 
+/* device protocol */
 #define __MAX_BUF_SIZE	1024
+
+enum
+{
+	route_qemu = 0,
+	route_control_server = 1,
+	route_monitor = 2
+};
+
+typedef unsigned int CSCliSN;
 
 struct msg_info {
 	char buf[__MAX_BUF_SIZE];
+
+	uint32_t route;
 	uint32_t use;
+	uint16_t count;
+	uint16_t index;
+
+	CSCliSN cclisn;
 };
+
+/* device protocol */
 
 #define SIZEOF_MSG_INFO	sizeof(struct msg_info)
 
