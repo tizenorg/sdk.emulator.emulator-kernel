@@ -27,6 +27,7 @@
  * - S-Core Co., Ltd
  *
  */
+
 #include <linux/device.h>
 #include <linux/delay.h>
 #include <linux/err.h>
@@ -88,7 +89,7 @@ struct codec_mem_info {
 enum codec_io_cmd {
 	CODEC_CMD_GET_DEVICE_MEM_INFO = 0,	// user and driver
 	CODEC_CMD_RELEASE_DEVICE_MEM,
-	CODEC_CMD_ADD_TASK_QUEUE,
+	CODEC_CMD_ADD_TASK_QUEUE = 3,
 	CODEC_CMD_REMOVE_TASK_QUEUE,
 	CODEC_CMD_COPY_FROM_DEVICE_MEM,
 	CODEC_CMD_COPY_TO_DEVICE_MEM,
@@ -255,7 +256,7 @@ static void newcodec_release_task_entry(struct list_head *head, int32_t value)
 
 	list_for_each_safe(pos, temp, head) {
 		node = list_entry(pos, struct newcodec_task, entry);
-		if (node->id == value) {
+		if (node && node->id == value) {
 			CODEC_LOG(KERN_DEBUG, "release task resource. :%x\n", node->id);
 			list_del(pos);
 			kfree(node);
@@ -321,6 +322,7 @@ static long newcodec_ioctl(struct file *file,
 
 	switch (cmd) {
 	case CODEC_CMD_ADD_TASK_QUEUE:
+		CODEC_LOG(KERN_DEBUG, "add task into req_task.\n");
 		newcodec_add_task(&newcodec->req_task, (int32_t)file);
 		break;
 	case CODEC_CMD_REMOVE_TASK_QUEUE:
@@ -350,16 +352,15 @@ static long newcodec_ioctl(struct file *file,
 		struct newcodec_task *head_task = NULL;
 
 		CODEC_LOG(KERN_DEBUG, "[file: %p] COPY_TO_DEV_MEM\n", file);
+		mutex_lock(&newcodec_mutex);
 		if (!list_empty(&newcodec->req_task)) {
+			mutex_unlock(&newcodec_mutex);
+
 			head_task =
 				list_first_entry(&newcodec->req_task, struct newcodec_task, entry);
-
 			if (!head_task) {
 				CODEC_LOG(KERN_DEBUG, "[file: %p] head_task is NULL\n", file);
 				value = CODEC_MEM_LOCK;
-				if (copy_to_user((void *)arg, &value, sizeof(int))) {
-					CODEC_LOG(KERN_DEBUG, "ioctl: failed to copy data to user.\n");
-				}
 				break;
 			}
 
@@ -381,6 +382,7 @@ static long newcodec_ioctl(struct file *file,
 
 		if (copy_to_user((void *)arg, &value, sizeof(int))) {
 			CODEC_LOG(KERN_ERR, "ioctl: failed to copy data to user.\n");
+			ret = -EIO;
 		}
 	}
 		break;
@@ -401,6 +403,7 @@ static long newcodec_ioctl(struct file *file,
 				if (copy_to_user((void *)arg, &value, sizeof(int))) {
 					CODEC_LOG(KERN_DEBUG,
 						"ioctl: failed to copy data to user.\n");
+					ret = -EIO;
 				}
 				break;
 			}
@@ -431,26 +434,28 @@ static long newcodec_ioctl(struct file *file,
 
 		if (copy_to_user((void *)arg, &value, sizeof(int))) {
 			CODEC_LOG(KERN_DEBUG, "ioctl: failed to copy data to user.\n");
+			ret = -EIO;
 		}
 	}
 		break;
 	case CODEC_CMD_GET_DEVICE_MEM_INFO:
 	{
-		int ret;
 		struct codec_mem_info mem_info;
 
 		if (copy_from_user(&mem_info, (void *)arg, sizeof(mem_info))) {
 			CODEC_LOG(KERN_DEBUG, "ioctl: failed to copy data to user\n");
-			return -EIO;
+			ret = -EIO;
+			break;
 		}
 
 		CODEC_LOG(KERN_DEBUG, "request memory size: %d\n", mem_info.index);
 
-		ret = newcodec_manage_dev_mem(&mem_info, (int32_t)file);
+		newcodec_manage_dev_mem(&mem_info, (int32_t)file);
 
 		if (copy_to_user((void *)arg, &mem_info, sizeof(mem_info))) {
 			CODEC_LOG(KERN_DEBUG,
 				"ioctl: failed to copy data to user.\n");
+			ret = -EIO;
 		}
 	}
 		break;
@@ -461,7 +466,8 @@ static long newcodec_ioctl(struct file *file,
 
 		if (copy_from_user(&mem_info, (void *)arg, sizeof(mem_info))) {
 			CODEC_LOG(KERN_DEBUG, "ioctl: failed to copy data to user\n");
-			return -EIO;
+			ret = -EIO;
+			break;
 		}
 
 		CODEC_LOG(KERN_DEBUG, "release memory size: %d\n", mem_info.index);
@@ -500,6 +506,7 @@ static long newcodec_ioctl(struct file *file,
 
 		if (copy_to_user((void *)arg, &value, sizeof(int))) {
 			CODEC_LOG(KERN_ERR, "ioctl: failed to copy data to user\n");
+			ret = -EIO;
 	    }
 	}
 		break;
@@ -508,6 +515,7 @@ static long newcodec_ioctl(struct file *file,
 		value = readl(newcodec->ioaddr + cmd);
 		if (copy_to_user((void *)arg, &value, sizeof(int))) {
 			CODEC_LOG(KERN_ERR, "ioctl: failed to copy data to user\n");
+			ret = -EIO;
 	    }
 		break;
 	default:
@@ -676,7 +684,7 @@ static int newcodec_release(struct inode *inode, struct file *file)
 		list_for_each_safe(pos, temp, &newcodec->old_task) {
 			node = list_entry(pos, struct newcodec_task, entry);
 			if (node->id == (int32_t)file) {
-				CODEC_LOG(KERN_INFO,
+				CODEC_LOG(KERN_DEBUG,
 					"release old_task resource. :%x\n", node->id);
 				list_del(pos);
 				kfree(node);
@@ -865,7 +873,8 @@ static struct pci_driver driver = {
 
 static int __init newcodec_init(void)
 {
-	CODEC_LOG(KERN_INFO, "device is initialized.\n");
+	printk(KERN_INFO "device is initialized.\n");
+
 	newcodec_bh_workqueue = create_workqueue ("newcodec");
 	if (!newcodec_bh_workqueue) {
 		CODEC_LOG(KERN_ERR, "failed to allocate workqueue\n");
@@ -877,7 +886,8 @@ static int __init newcodec_init(void)
 
 static void __exit newcodec_exit(void)
 {
-	CODEC_LOG(KERN_INFO, "device is finalized.\n");
+	printk(KERN_INFO "device is finalized.\n");
+
 	if (newcodec_bh_workqueue) {
 		destroy_workqueue (newcodec_bh_workqueue);
 		newcodec_bh_workqueue = NULL;
