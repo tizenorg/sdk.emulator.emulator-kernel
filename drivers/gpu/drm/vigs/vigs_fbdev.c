@@ -1,7 +1,6 @@
 #include "vigs_fbdev.h"
 #include "vigs_device.h"
-#include "vigs_gem.h"
-#include "vigs_buffer.h"
+#include "vigs_surface.h"
 #include "vigs_framebuffer.h"
 #include "vigs_output.h"
 #include "drm_crtc_helper.h"
@@ -157,10 +156,11 @@ static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
                                  struct drm_fb_helper_surface_size *sizes)
 {
     struct vigs_device *vigs_dev = helper->dev->dev_private;
-    struct vigs_gem_object *fb_gem;
+    struct vigs_surface *fb_sfc;
     struct vigs_framebuffer *vigs_fb;
     struct fb_info *fbi;
     struct drm_mode_fb_cmd2 mode_cmd = { 0 };
+    vigsp_surface_format format;
     unsigned long offset;
     int dpi;
     int ret;
@@ -177,6 +177,19 @@ static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
     mode_cmd.pixel_format = drm_mode_legacy_fb_format(sizes->surface_bpp,
                                                       sizes->surface_depth);
 
+    switch (mode_cmd.pixel_format) {
+    case DRM_FORMAT_XRGB8888:
+        format = vigsp_surface_bgrx8888;
+        break;
+    case DRM_FORMAT_ARGB8888:
+        format = vigsp_surface_bgra8888;
+        break;
+    default:
+        DRM_DEBUG_KMS("unsupported pixel format: %u\n", mode_cmd.pixel_format);
+        ret = -EINVAL;
+        goto fail1;
+    }
+
     fbi = framebuffer_alloc(0, &vigs_dev->pci_dev->dev);
 
     if (!fbi) {
@@ -185,11 +198,12 @@ static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
         goto fail1;
     }
 
-    ret = vigs_gem_create(vigs_dev,
-                          (mode_cmd.pitches[0] * mode_cmd.height),
-                          false,
-                          DRM_VIGS_GEM_DOMAIN_VRAM,
-                          &fb_gem);
+    ret = vigs_surface_create(vigs_dev,
+                              mode_cmd.width,
+                              mode_cmd.height,
+                              mode_cmd.pitches[0],
+                              format,
+                              &fb_sfc);
 
     if (ret != 0) {
         goto fail2;
@@ -197,10 +211,10 @@ static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
 
     ret = vigs_framebuffer_create(vigs_dev,
                                   &mode_cmd,
-                                  fb_gem,
+                                  fb_sfc,
                                   &vigs_fb);
 
-    drm_gem_object_unreference_unlocked(&fb_gem->base);
+    drm_gem_object_unreference_unlocked(&fb_sfc->gem.base);
 
     if (ret != 0) {
         goto fail2;
@@ -220,12 +234,23 @@ static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
         goto fail3;
     }
 
-    ret = vigs_buffer_kmap(fb_gem->bo);
+    ret = vigs_framebuffer_pin(vigs_fb);
 
     if (ret != 0) {
+        goto fail4;
+    }
+
+    vigs_gem_reserve(&fb_sfc->gem);
+
+    ret = vigs_gem_kmap(&fb_sfc->gem);
+
+    if (ret != 0) {
+        vigs_gem_unreserve(&fb_sfc->gem);
         DRM_ERROR("unable to kmap framebuffer GEM\n");
         goto fail4;
     }
+
+    vigs_gem_unreserve(&fb_sfc->gem);
 
     strcpy(fbi->fix.id, "VIGS");
 
@@ -265,9 +290,9 @@ static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
      * TODO: "vram_base + ..." - not nice, make a function for this.
      */
     fbi->fix.smem_start = vigs_dev->vram_base +
-                          vigs_buffer_offset(fb_gem->bo) +
+                          vigs_gem_offset(&fb_sfc->gem) +
                           offset;
-    fbi->screen_base = fb_gem->bo->kptr + offset;
+    fbi->screen_base = fb_sfc->gem.kptr + offset;
     fbi->screen_size = fbi->fix.smem_len = vigs_fb->base.width *
                                            vigs_fb->base.height *
                                            (vigs_fb->base.bits_per_pixel >> 3);
@@ -294,7 +319,7 @@ static int vigs_fbdev_probe(struct drm_fb_helper *helper,
     DRM_DEBUG_KMS("enter\n");
 
     /*
-     * With !helper->fb, it means that this funcion is called first time
+     * With !helper->fb, it means that this function is called first time
      * and after that, the helper->fb would be used as clone mode.
      */
 
