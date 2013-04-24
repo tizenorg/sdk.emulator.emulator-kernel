@@ -8,74 +8,61 @@
 /*
  * Bump this whenever driver interface changes.
  */
-#define DRM_VIGS_DRIVER_VERSION 3
-
-#define DRM_VIGS_GEM_DOMAIN_VRAM 0
-#define DRM_VIGS_GEM_DOMAIN_RAM 1
+#define DRM_VIGS_DRIVER_VERSION 4
 
 struct drm_vigs_get_protocol_version
 {
     uint32_t version;
 };
 
-struct drm_vigs_gem_create
+struct drm_vigs_create_surface
 {
-    uint32_t domain;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride;
+    uint32_t format;
+    uint32_t handle;
+    uint64_t mmap_offset;
+    uint64_t id;
+};
+
+struct drm_vigs_create_execbuffer
+{
     uint32_t size;
     uint32_t handle;
-    uint32_t domain_offset;
 };
 
-struct drm_vigs_gem_mmap
+struct drm_vigs_surface_info
 {
     uint32_t handle;
-    uint64_t offset;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride;
+    uint32_t format;
+    uint64_t mmap_offset;
+    uint64_t id;
 };
 
-struct drm_vigs_gem_info
+struct drm_vigs_exec
 {
     uint32_t handle;
-    uint32_t domain;
-    uint32_t domain_offset;
-};
-
-struct drm_vigs_user_enter
-{
-    uint32_t index;
-};
-
-struct drm_vigs_user_leave
-{
-    uint32_t index;
-};
-
-struct drm_vigs_fb_info
-{
-    uint32_t fb_id;
-    uint32_t sfc_id;
 };
 
 #define DRM_VIGS_GET_PROTOCOL_VERSION 0x00
-#define DRM_VIGS_GEM_CREATE 0x01
-#define DRM_VIGS_GEM_MMAP 0x02
-#define DRM_VIGS_GEM_INFO 0x03
-#define DRM_VIGS_USER_ENTER 0x04
-#define DRM_VIGS_USER_LEAVE 0x05
-#define DRM_VIGS_FB_INFO 0x06
+#define DRM_VIGS_CREATE_SURFACE 0x01
+#define DRM_VIGS_CREATE_EXECBUFFER 0x02
+#define DRM_VIGS_SURFACE_INFO 0x03
+#define DRM_VIGS_EXEC 0x04
 
 #define DRM_IOCTL_VIGS_GET_PROTOCOL_VERSION DRM_IOR(DRM_COMMAND_BASE + \
             DRM_VIGS_GET_PROTOCOL_VERSION, struct drm_vigs_get_protocol_version)
-#define DRM_IOCTL_VIGS_GEM_CREATE DRM_IOWR(DRM_COMMAND_BASE + \
-            DRM_VIGS_GEM_CREATE, struct drm_vigs_gem_create)
-#define DRM_IOCTL_VIGS_GEM_MMAP DRM_IOWR(DRM_COMMAND_BASE + \
-            DRM_VIGS_GEM_MMAP, struct drm_vigs_gem_mmap)
-#define DRM_IOCTL_VIGS_GEM_INFO DRM_IOWR(DRM_COMMAND_BASE + \
-            DRM_VIGS_GEM_INFO, struct drm_vigs_gem_info)
-#define DRM_IOCTL_VIGS_USER_ENTER DRM_IOR(DRM_COMMAND_BASE + \
-            DRM_VIGS_USER_ENTER, struct drm_vigs_user_enter)
-#define DRM_IOCTL_VIGS_USER_LEAVE DRM_IOW(DRM_COMMAND_BASE + \
-            DRM_VIGS_USER_LEAVE, struct drm_vigs_user_leave)
-#define DRM_IOCTL_VIGS_FB_INFO DRM_IOWR(DRM_COMMAND_BASE + \
-            DRM_VIGS_FB_INFO, struct drm_vigs_fb_info)
+#define DRM_IOCTL_VIGS_CREATE_SURFACE DRM_IOWR(DRM_COMMAND_BASE + \
+            DRM_VIGS_CREATE_SURFACE, struct drm_vigs_create_surface)
+#define DRM_IOCTL_VIGS_CREATE_EXECBUFFER DRM_IOWR(DRM_COMMAND_BASE + \
+            DRM_VIGS_CREATE_EXECBUFFER, struct drm_vigs_create_execbuffer)
+#define DRM_IOCTL_VIGS_SURFACE_INFO DRM_IOWR(DRM_COMMAND_BASE + \
+            DRM_VIGS_SURFACE_INFO, struct drm_vigs_surface_info)
+#define DRM_IOCTL_VIGS_EXEC DRM_IOW(DRM_COMMAND_BASE + \
+            DRM_VIGS_EXEC, struct drm_vigs_exec)
 
 #endif

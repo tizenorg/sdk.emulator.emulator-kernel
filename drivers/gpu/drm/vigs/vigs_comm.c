@@ -1,7 +1,6 @@
 #include "vigs_comm.h"
 #include "vigs_device.h"
-#include "vigs_gem.h"
-#include "vigs_buffer.h"
+#include "vigs_execbuffer.h"
 #include <drm/vigs_drm.h>
 
 static int vigs_comm_prepare(struct vigs_comm *comm,
@@ -13,49 +12,57 @@ static int vigs_comm_prepare(struct vigs_comm *comm,
 {
     int ret;
     void *ptr;
+    struct vigsp_cmd_batch_header *batch_header;
     struct vigsp_cmd_request_header *request_header;
-    unsigned long total_size = sizeof(struct vigsp_cmd_request_header) +
+    unsigned long total_size = sizeof(*batch_header) +
+                               sizeof(*request_header) +
                                request_size +
                                sizeof(struct vigsp_cmd_response_header) +
                                response_size;
 
-    if (!comm->cmd_gem || (vigs_buffer_size(comm->cmd_gem->bo) < total_size)) {
-        if (comm->cmd_gem) {
-            drm_gem_object_unreference_unlocked(&comm->cmd_gem->base);
-            comm->cmd_gem = NULL;
+    if (!comm->execbuffer || (vigs_gem_size(&comm->execbuffer->gem) < total_size)) {
+        if (comm->execbuffer) {
+            drm_gem_object_unreference_unlocked(&comm->execbuffer->gem.base);
+            comm->execbuffer = NULL;
         }
 
-        ret = vigs_gem_create(comm->vigs_dev,
-                              total_size,
-                              true,
-                              DRM_VIGS_GEM_DOMAIN_RAM,
-                              &comm->cmd_gem);
+        ret = vigs_execbuffer_create(comm->vigs_dev,
+                                     total_size,
+                                     true,
+                                     &comm->execbuffer);
 
         if (ret != 0) {
-            DRM_ERROR("unable to create command GEM\n");
+            DRM_ERROR("unable to create execbuffer\n");
             return ret;
         }
 
-        ret = vigs_buffer_kmap(comm->cmd_gem->bo);
+        vigs_gem_reserve(&comm->execbuffer->gem);
+
+        ret = vigs_gem_kmap(&comm->execbuffer->gem);
+
+        vigs_gem_unreserve(&comm->execbuffer->gem);
 
         if (ret != 0) {
-            DRM_ERROR("unable to kmap command GEM\n");
+            DRM_ERROR("unable to kmap execbuffer\n");
 
-            drm_gem_object_unreference_unlocked(&comm->cmd_gem->base);
-            comm->cmd_gem = NULL;
+            drm_gem_object_unreference_unlocked(&comm->execbuffer->gem.base);
+            comm->execbuffer = NULL;
 
             return ret;
         }
     }
 
-    ptr = comm->cmd_gem->bo->kptr;
+    ptr = comm->execbuffer->gem.kptr;
 
-    memset(ptr, 0, vigs_buffer_size(comm->cmd_gem->bo));
+    memset(ptr, 0, vigs_gem_size(&comm->execbuffer->gem));
 
-    request_header = ptr;
+    batch_header = ptr;
+    request_header = (struct vigsp_cmd_request_header*)(batch_header + 1);
+
+    batch_header->num_requests = 1;
 
     request_header->cmd = cmd;
-    request_header->response_offset = request_size;
+    request_header->size = request_size;
 
     if (request) {
         *request = (request_header + 1);
@@ -70,19 +77,21 @@ static int vigs_comm_prepare(struct vigs_comm *comm,
     return 0;
 }
 
-static int vigs_comm_exec(struct vigs_comm *comm)
+static int vigs_comm_exec_internal(struct vigs_comm *comm)
 {
-    struct vigsp_cmd_request_header *request_header = comm->cmd_gem->bo->kptr;
+    struct vigsp_cmd_batch_header *batch_header = comm->execbuffer->gem.kptr;
+    struct vigsp_cmd_request_header *request_header =
+        (struct vigsp_cmd_request_header*)(batch_header + 1);
     struct vigsp_cmd_response_header *response_header =
-        (void*)(request_header + 1) + request_header->response_offset;
+        (struct vigsp_cmd_response_header*)((u8*)(request_header + 1) +
+                                            request_header->size);
 
     /*
-     * 'writel' already has the mem barrier, so it's ok to just access the
-     * response data afterwards.
+     * TODO: remove after DRI2 fixes.
      */
+    return 0;
 
-    writel(vigs_buffer_offset(comm->cmd_gem->bo),
-           VIGS_USER_PTR(comm->io_ptr, 0) + VIGS_REG_RAM_OFFSET);
+    vigs_comm_exec(comm, comm->execbuffer);
 
     switch (response_header->status) {
     case vigsp_status_success:
@@ -118,11 +127,16 @@ static int vigs_comm_init(struct vigs_comm *comm)
 
     request->client_version = VIGS_PROTOCOL_VERSION;
 
-    ret = vigs_comm_exec(comm);
+    ret = vigs_comm_exec_internal(comm);
 
     if (ret != 0) {
         return ret;
     }
+
+    /*
+     * TODO: remove after DRI2 fixes.
+     */
+    response->server_version = VIGS_PROTOCOL_VERSION;
 
     if (response->server_version != VIGS_PROTOCOL_VERSION) {
         DRM_ERROR("protocol version mismatch, expected %u, actual %u\n",
@@ -144,7 +158,7 @@ static void vigs_comm_exit(struct vigs_comm *comm)
         return;
     }
 
-    vigs_comm_exec(comm);
+    vigs_comm_exec_internal(comm);
 }
 
 int vigs_comm_create(struct vigs_device *vigs_dev,
@@ -170,18 +184,11 @@ int vigs_comm_create(struct vigs_device *vigs_dev,
         goto fail2;
     }
 
-    /*
-     * We're always guaranteed that 'user_map' has at least one element
-     * and we should use it, just stuff in 'this' pointer in order
-     * not to loose this slot.
-     */
-    vigs_dev->user_map[0] = (struct drm_file*)(*comm);
-
     return 0;
 
 fail2:
-    if ((*comm)->cmd_gem) {
-        drm_gem_object_unreference_unlocked(&(*comm)->cmd_gem->base);
+    if ((*comm)->execbuffer) {
+        drm_gem_object_unreference_unlocked(&(*comm)->execbuffer->gem.base);
     }
     kfree(*comm);
 fail1:
@@ -195,11 +202,16 @@ void vigs_comm_destroy(struct vigs_comm *comm)
     DRM_DEBUG_DRIVER("enter\n");
 
     vigs_comm_exit(comm);
-    comm->vigs_dev->user_map[0] = NULL;
-    if (comm->cmd_gem) {
-        drm_gem_object_unreference_unlocked(&comm->cmd_gem->base);
+    if (comm->execbuffer) {
+        drm_gem_object_unreference_unlocked(&comm->execbuffer->gem.base);
     }
     kfree(comm);
+}
+
+void vigs_comm_exec(struct vigs_comm *comm,
+                    struct vigs_execbuffer *execbuffer)
+{
+    writel(vigs_gem_offset(&execbuffer->gem), comm->io_ptr);
 }
 
 int vigs_comm_reset(struct vigs_comm *comm)
@@ -212,33 +224,32 @@ int vigs_comm_reset(struct vigs_comm *comm)
         return ret;
     }
 
-    return vigs_comm_exec(comm);
+    return vigs_comm_exec_internal(comm);
 }
 
 int vigs_comm_create_surface(struct vigs_comm *comm,
-                             unsigned int width,
-                             unsigned int height,
-                             unsigned int stride,
+                             u32 width,
+                             u32 height,
+                             u32 stride,
                              vigsp_surface_format format,
-                             struct vigs_gem_object *sfc_gem,
-                             vigsp_surface_id *id)
+                             vigsp_surface_id id)
 {
     int ret;
     struct vigsp_cmd_create_surface_request *request;
-    struct vigsp_cmd_create_surface_response *response;
 
-    DRM_DEBUG_DRIVER("width = %u, height = %u, stride = %u, fmt = %d\n",
+    DRM_DEBUG_DRIVER("width = %u, height = %u, stride = %u, fmt = %d, id = 0x%llX\n",
                      width,
                      height,
                      stride,
-                     format);
+                     format,
+                     id);
 
     ret = vigs_comm_prepare(comm,
                             vigsp_cmd_create_surface,
                             sizeof(*request),
-                            sizeof(*response),
+                            0,
                             (void**)&request,
-                            (void**)&response);
+                            NULL);
 
     if (ret != 0) {
         return ret;
@@ -248,21 +259,9 @@ int vigs_comm_create_surface(struct vigs_comm *comm,
     request->height = height;
     request->stride = stride;
     request->format = format;
-    request->vram_offset = vigs_buffer_offset(sfc_gem->bo);
+    request->id = id;
 
-    ret = vigs_comm_exec(comm);
-
-    if (ret != 0) {
-        return ret;
-    }
-
-    DRM_DEBUG_DRIVER("created = %u\n", response->id);
-
-    if (id) {
-        *id = response->id;
-    }
-
-    return 0;
+    return vigs_comm_exec_internal(comm);
 }
 
 int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id)
@@ -270,7 +269,7 @@ int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id)
     int ret;
     struct vigsp_cmd_destroy_surface_request *request;
 
-    DRM_DEBUG_DRIVER("id = %u\n", id);
+    DRM_DEBUG_DRIVER("id = 0x%llX\n", id);
 
     ret = vigs_comm_prepare(comm,
                             vigsp_cmd_destroy_surface,
@@ -285,15 +284,17 @@ int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id)
 
     request->id = id;
 
-    return vigs_comm_exec(comm);
+    return vigs_comm_exec_internal(comm);
 }
 
-int vigs_comm_set_root_surface(struct vigs_comm *comm, vigsp_surface_id id)
+int vigs_comm_set_root_surface(struct vigs_comm *comm,
+                               vigsp_surface_id id,
+                               vigsp_offset offset)
 {
     int ret;
     struct vigsp_cmd_set_root_surface_request *request;
 
-    DRM_DEBUG_DRIVER("id = %u\n", id);
+    DRM_DEBUG_DRIVER("id = 0x%llX\n", id);
 
     ret = vigs_comm_prepare(comm,
                             vigsp_cmd_set_root_surface,
@@ -307,8 +308,9 @@ int vigs_comm_set_root_surface(struct vigs_comm *comm, vigsp_surface_id id)
     }
 
     request->id = id;
+    request->offset = offset;
 
-    return vigs_comm_exec(comm);
+    return vigs_comm_exec_internal(comm);
 }
 
 int vigs_comm_get_protocol_version_ioctl(struct drm_device *drm_dev,

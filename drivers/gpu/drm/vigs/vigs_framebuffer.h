@@ -6,7 +6,7 @@
 
 struct vigs_device;
 struct vigs_comm;
-struct vigs_gem_object;
+struct vigs_surface;
 
 struct vigs_framebuffer
 {
@@ -17,15 +17,7 @@ struct vigs_framebuffer
      */
     struct vigs_comm *comm;
 
-    vigsp_surface_format format;
-
-    struct vigs_gem_object *fb_gem;
-
-    /*
-     * Each DRM framebuffer has a surface on host, this is
-     * its id.
-     */
-    vigsp_surface_id sfc_id;
+    struct vigs_surface *fb_sfc;
 };
 
 static inline struct vigs_framebuffer *fb_to_vigs_fb(struct drm_framebuffer *fb)
@@ -42,20 +34,10 @@ void vigs_framebuffer_config_init(struct vigs_device *vigs_dev);
  */
 int vigs_framebuffer_create(struct vigs_device *vigs_dev,
                             struct drm_mode_fb_cmd2 *mode_cmd,
-                            struct vigs_gem_object *fb_gem,
+                            struct vigs_surface *fb_sfc,
                             struct vigs_framebuffer **vigs_fb);
 
-/*
- * IOCTLs
- * @{
- */
-
-int vigs_framebuffer_info_ioctl(struct drm_device *drm_dev,
-                                void *data,
-                                struct drm_file *file_priv);
-
-/*
- * @}
- */
+int vigs_framebuffer_pin(struct vigs_framebuffer *vigs_fb);
+void vigs_framebuffer_unpin(struct vigs_framebuffer *vigs_fb);
 
 #endif

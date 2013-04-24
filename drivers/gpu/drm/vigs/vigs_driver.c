@@ -3,7 +3,8 @@
 #include "vigs_device.h"
 #include "vigs_fbdev.h"
 #include "vigs_comm.h"
-#include "vigs_framebuffer.h"
+#include "vigs_surface.h"
+#include "vigs_execbuffer.h"
 #include "drmP.h"
 #include "drm.h"
 #include <linux/module.h>
@@ -34,18 +35,14 @@ static struct drm_ioctl_desc vigs_drm_ioctls[] =
 {
     DRM_IOCTL_DEF_DRV(VIGS_GET_PROTOCOL_VERSION, vigs_comm_get_protocol_version_ioctl,
                                                  DRM_UNLOCKED | DRM_AUTH),
-    DRM_IOCTL_DEF_DRV(VIGS_GEM_CREATE, vigs_gem_create_ioctl,
-                                       DRM_UNLOCKED | DRM_AUTH),
-    DRM_IOCTL_DEF_DRV(VIGS_GEM_MMAP, vigs_gem_mmap_ioctl,
-                                     DRM_UNLOCKED | DRM_AUTH),
-    DRM_IOCTL_DEF_DRV(VIGS_GEM_INFO, vigs_gem_info_ioctl,
-                                     DRM_UNLOCKED | DRM_AUTH),
-    DRM_IOCTL_DEF_DRV(VIGS_USER_ENTER, vigs_device_user_enter_ioctl,
-                                       DRM_UNLOCKED | DRM_AUTH),
-    DRM_IOCTL_DEF_DRV(VIGS_USER_LEAVE, vigs_device_user_leave_ioctl,
-                                       DRM_UNLOCKED | DRM_AUTH),
-    DRM_IOCTL_DEF_DRV(VIGS_FB_INFO, vigs_framebuffer_info_ioctl,
-                                    DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_CREATE_SURFACE, vigs_surface_create_ioctl,
+                                           DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_CREATE_EXECBUFFER, vigs_execbuffer_create_ioctl,
+                                              DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_SURFACE_INFO, vigs_surface_info_ioctl,
+                                         DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_EXEC, vigs_device_exec_ioctl,
+                                 DRM_UNLOCKED | DRM_AUTH),
 };
 
 static const struct file_operations vigs_drm_driver_fops =
@@ -106,11 +103,7 @@ static int vigs_drm_unload(struct drm_device *dev)
 static void vigs_drm_postclose(struct drm_device *dev,
                                struct drm_file *file_priv)
 {
-    struct vigs_device *vigs_dev = dev->dev_private;
-
     DRM_DEBUG_DRIVER("enter\n");
-
-    vigs_device_user_leave_all(vigs_dev, file_priv);
 }
 
 static void vigs_drm_lastclose(struct drm_device *dev)

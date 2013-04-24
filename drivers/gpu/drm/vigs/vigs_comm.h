@@ -7,7 +7,7 @@
 struct drm_device;
 struct drm_file;
 struct vigs_device;
-struct vigs_gem_object;
+struct vigs_execbuffer;
 
 struct vigs_comm
 {
@@ -18,7 +18,10 @@ struct vigs_comm
      */
     void __iomem *io_ptr;
 
-    struct vigs_gem_object *cmd_gem;
+    /*
+     * For internal use.
+     */
+    struct vigs_execbuffer *execbuffer;
 };
 
 int vigs_comm_create(struct vigs_device *vigs_dev,
@@ -26,19 +29,23 @@ int vigs_comm_create(struct vigs_device *vigs_dev,
 
 void vigs_comm_destroy(struct vigs_comm *comm);
 
+void vigs_comm_exec(struct vigs_comm *comm,
+                    struct vigs_execbuffer *execbuffer);
+
 int vigs_comm_reset(struct vigs_comm *comm);
 
 int vigs_comm_create_surface(struct vigs_comm *comm,
-                             unsigned int width,
-                             unsigned int height,
-                             unsigned int stride,
+                             u32 width,
+                             u32 height,
+                             u32 stride,
                              vigsp_surface_format format,
-                             struct vigs_gem_object *sfc_gem,
-                             vigsp_surface_id *id);
+                             vigsp_surface_id id);
 
 int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id);
 
-int vigs_comm_set_root_surface(struct vigs_comm *comm, vigsp_surface_id id);
+int vigs_comm_set_root_surface(struct vigs_comm *comm,
+                               vigsp_surface_id id,
+                               vigsp_offset offset);
 
 /*
  * IOCTLs

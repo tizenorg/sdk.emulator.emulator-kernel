@@ -1,6 +1,6 @@
 #include "vigs_framebuffer.h"
 #include "vigs_device.h"
-#include "vigs_gem.h"
+#include "vigs_surface.h"
 #include "vigs_fbdev.h"
 #include "vigs_comm.h"
 #include "drm_crtc_helper.h"
@@ -12,6 +12,8 @@ static struct drm_framebuffer *vigs_fb_create(struct drm_device *drm_dev,
 {
     struct vigs_device *vigs_dev = drm_dev->dev_private;
     struct drm_gem_object *gem;
+    struct vigs_gem_object *vigs_gem;
+    struct vigs_surface *vigs_sfc;
     struct vigs_framebuffer *vigs_fb;
     int ret;
 
@@ -24,9 +26,18 @@ static struct drm_framebuffer *vigs_fb_create(struct drm_device *drm_dev,
         return NULL;
     }
 
+    vigs_gem = gem_to_vigs_gem(gem);
+
+    if (vigs_gem->type != VIGS_GEM_TYPE_SURFACE) {
+        DRM_ERROR("GEM is not a surface, handle = %u\n", mode_cmd->handles[0]);
+        return NULL;
+    }
+
+    vigs_sfc = vigs_gem_to_vigs_surface(vigs_gem);
+
     ret = vigs_framebuffer_create(vigs_dev,
                                   mode_cmd,
-                                  gem_to_vigs_gem(gem),
+                                  vigs_sfc,
                                   &vigs_fb);
 
     drm_gem_object_unreference_unlocked(gem);
@@ -65,17 +76,10 @@ static void vigs_framebuffer_destroy(struct drm_framebuffer *fb)
     drm_framebuffer_cleanup(fb);
 
     /*
-     * Here we can issue surface destroy command, since it's no longer
-     * root surface, but it still exists on host.
-     */
-
-    vigs_comm_destroy_surface(vigs_fb->comm, vigs_fb->sfc_id);
-
-    /*
      * And we can finally free the GEM.
      */
 
-    drm_gem_object_unreference_unlocked(&vigs_fb->fb_gem->base);
+    drm_gem_object_unreference_unlocked(&vigs_fb->fb_sfc->gem.base);
     kfree(vigs_fb);
 }
 
@@ -98,7 +102,7 @@ static int vigs_framebuffer_create_handle(struct drm_framebuffer *fb,
 
     DRM_DEBUG_KMS("enter\n");
 
-    return drm_gem_handle_create(file_priv, &vigs_fb->fb_gem->base, handle);
+    return drm_gem_handle_create(file_priv, &vigs_fb->fb_sfc->gem.base, handle);
 }
 
 static struct drm_mode_config_funcs vigs_mode_config_funcs =
@@ -129,7 +133,7 @@ void vigs_framebuffer_config_init(struct vigs_device *vigs_dev)
 
 int vigs_framebuffer_create(struct vigs_device *vigs_dev,
                             struct drm_mode_fb_cmd2 *mode_cmd,
-                            struct vigs_gem_object *fb_gem,
+                            struct vigs_surface *fb_sfc,
                             struct vigs_framebuffer **vigs_fb)
 {
     int ret = 0;
@@ -143,50 +147,31 @@ int vigs_framebuffer_create(struct vigs_device *vigs_dev,
         goto fail1;
     }
 
-    switch (mode_cmd->pixel_format) {
-    case DRM_FORMAT_XRGB8888:
-        (*vigs_fb)->format = vigsp_surface_bgrx8888;
-        break;
-    case DRM_FORMAT_ARGB8888:
-        (*vigs_fb)->format = vigsp_surface_bgra8888;
-        break;
-    default:
-        DRM_DEBUG_KMS("unsupported pixel format: %u\n", mode_cmd->pixel_format);
+    if ((fb_sfc->width != mode_cmd->width) ||
+        (fb_sfc->height != mode_cmd->height) ||
+        (fb_sfc->stride != mode_cmd->pitches[0])) {
+        DRM_DEBUG_KMS("surface format mismatch\n");
         ret = -EINVAL;
         goto fail2;
     }
 
-    ret = vigs_comm_create_surface(vigs_dev->comm,
-                                   mode_cmd->width,
-                                   mode_cmd->height,
-                                   mode_cmd->pitches[0],
-                                   (*vigs_fb)->format,
-                                   fb_gem,
-                                   &(*vigs_fb)->sfc_id);
-
-    if (ret != 0) {
-        goto fail2;
-    }
-
     (*vigs_fb)->comm = vigs_dev->comm;
-    (*vigs_fb)->fb_gem = fb_gem;
+    (*vigs_fb)->fb_sfc = fb_sfc;
 
     ret = drm_framebuffer_init(vigs_dev->drm_dev,
                                &(*vigs_fb)->base,
                                &vigs_framebuffer_funcs);
 
     if (ret != 0) {
-        goto fail3;
+        goto fail2;
     }
 
     drm_helper_mode_fill_fb_struct(&(*vigs_fb)->base, mode_cmd);
 
-    drm_gem_object_reference(&fb_gem->base);
+    drm_gem_object_reference(&fb_sfc->gem.base);
 
     return 0;
 
-fail3:
-    vigs_comm_destroy_surface(vigs_dev->comm, (*vigs_fb)->sfc_id);
 fail2:
     kfree(*vigs_fb);
 fail1:
@@ -195,30 +180,29 @@ fail1:
     return ret;
 }
 
-int vigs_framebuffer_info_ioctl(struct drm_device *drm_dev,
-                                void *data,
-                                struct drm_file *file_priv)
+int vigs_framebuffer_pin(struct vigs_framebuffer *vigs_fb)
 {
-    struct drm_vigs_fb_info *args = data;
-    struct drm_mode_object *obj;
-    struct drm_framebuffer *fb;
-    struct vigs_framebuffer *vigs_fb;
+    int ret;
 
-    mutex_lock(&drm_dev->mode_config.mutex);
+    vigs_gem_reserve(&vigs_fb->fb_sfc->gem);
 
-    obj = drm_mode_object_find(drm_dev, args->fb_id, DRM_MODE_OBJECT_FB);
+    ret = vigs_gem_pin(&vigs_fb->fb_sfc->gem);
 
-    if (!obj) {
-        mutex_unlock(&drm_dev->mode_config.mutex);
-        return -ENOENT;
+    if (ret != 0) {
+        vigs_gem_unreserve(&vigs_fb->fb_sfc->gem);
+        return ret;
     }
 
-    fb = obj_to_fb(obj);
-    vigs_fb = fb_to_vigs_fb(fb);
-
-    args->sfc_id = vigs_fb->sfc_id;
-
-    mutex_unlock(&drm_dev->mode_config.mutex);
+    vigs_gem_unreserve(&vigs_fb->fb_sfc->gem);
 
     return 0;
+}
+
+void vigs_framebuffer_unpin(struct vigs_framebuffer *vigs_fb)
+{
+    vigs_gem_reserve(&vigs_fb->fb_sfc->gem);
+
+    vigs_gem_unpin(&vigs_fb->fb_sfc->gem);
+
+    vigs_gem_unreserve(&vigs_fb->fb_sfc->gem);
 }

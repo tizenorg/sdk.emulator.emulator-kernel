@@ -2,16 +2,19 @@
 #define _VIGS_PROTOCOL_H_
 
 /*
- * VIGS protocol is a request-response protocol.
+ * VIGS protocol is a multiple request-single response protocol.
  *
- * + Requests come one by one.
- * + The response is written after the request.
+ * + Requests come batched.
+ * + The response is written after the request batch.
+ *
+ * Not all commands can be batched, only commands that don't have response
+ * data can be batched.
  */
 
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 10
+#define VIGS_PROTOCOL_VERSION 11
 
 typedef signed char vigsp_s8;
 typedef signed short vigsp_s16;
@@ -23,11 +26,10 @@ typedef unsigned int vigsp_u32;
 typedef unsigned long long vigsp_u64;
 
 typedef vigsp_u32 vigsp_bool;
-typedef vigsp_u32 vigsp_surface_id;
-typedef vigsp_s32 vigsp_offset;
+typedef vigsp_u64 vigsp_surface_id;
+typedef vigsp_u32 vigsp_offset;
 typedef vigsp_u32 vigsp_color;
 typedef vigsp_u64 vigsp_va;
-typedef vigsp_u32 vigsp_resource_id;
 
 typedef enum
 {
@@ -37,13 +39,10 @@ typedef enum
     vigsp_cmd_create_surface = 0x3,
     vigsp_cmd_destroy_surface = 0x4,
     vigsp_cmd_set_root_surface = 0x5,
-    vigsp_cmd_copy = 0x6,
-    vigsp_cmd_solid_fill = 0x7,
-    vigsp_cmd_update_vram = 0x8,
-    vigsp_cmd_put_image = 0x9,
-    vigsp_cmd_get_image = 0xA,
-    vigsp_cmd_assign_resource = 0xB,
-    vigsp_cmd_destroy_resource = 0xC,
+    vigsp_cmd_update_vram = 0x6,
+    vigsp_cmd_update_gpu = 0x7,
+    vigsp_cmd_copy = 0x8,
+    vigsp_cmd_solid_fill = 0x9,
 } vigsp_cmd;
 
 typedef enum
@@ -62,26 +61,7 @@ typedef enum
     vigsp_surface_bgra8888 = 0x1,
 } vigsp_surface_format;
 
-typedef enum
-{
-    vigsp_resource_window = 0x0,
-    vigsp_resource_pixmap = 0x1,
-} vigsp_resource_type;
-
 #pragma pack(1)
-
-/*
- * 'vram_offset' is both surface data offset
- * and dirty flag. when it's < 0 it means surface data
- * is not allocated on target or surface is not dirty.
- * When it's >= 0 it means either surface data has been allocated
- * or surface is dirty in case if data has been allocated before.
- */
-struct vigsp_surface
-{
-    vigsp_surface_id id;
-    vigsp_offset vram_offset;
-};
 
 struct vigsp_point
 {
@@ -108,14 +88,19 @@ struct vigsp_copy
     struct vigsp_size size;
 };
 
+struct vigsp_cmd_batch_header
+{
+    vigsp_u32 num_requests;
+};
+
 struct vigsp_cmd_request_header
 {
     vigsp_cmd cmd;
 
     /*
-     * Response offset counting after request header.
+     * Request size starting from request header.
      */
-    vigsp_u32 response_offset;
+    vigsp_u32 size;
 };
 
 struct vigsp_cmd_response_header
@@ -171,14 +156,9 @@ struct vigsp_cmd_init_response
 /*
  * cmd_create_surface
  *
- * Called for each surface created. Server returns 'id' of the surface,
+ * Called for each surface created. Client passes 'id' of the surface,
  * all further operations must be carried out using this is. 'id' is
- * unique across whole target system, because there can be only one
- * DRM master (like X.Org) on target and this master typically wants to
- * share the surfaces with other processes.
- *
- * 'vram_offset' points to the surface data in VRAM, if any. If no surface data
- * is provided then 'vram_surface' must be < 0.
+ * unique across whole target system.
  *
  * @{
  */
@@ -189,11 +169,6 @@ struct vigsp_cmd_create_surface_request
     vigsp_u32 height;
     vigsp_u32 stride;
     vigsp_surface_format format;
-    vigsp_offset vram_offset;
-};
-
-struct vigsp_cmd_create_surface_response
-{
     vigsp_surface_id id;
 };
 
@@ -205,7 +180,7 @@ struct vigsp_cmd_create_surface_response
  * cmd_destroy_surface
  *
  * Destroys the surface identified by 'id'. Surface 'id' may not be used
- * after this call and its data can be assigned to some other surface right
+ * after this call and its id can be assigned to some other surface right
  * after this call.
  *
  * @{
@@ -224,7 +199,8 @@ struct vigsp_cmd_destroy_surface_request
  * cmd_set_root_surface
  *
  * Sets surface identified by 'id' as new root surface. Root surface is the
- * one that's displayed on screen. Root surface must have data.
+ * one that's displayed on screen. Root surface must reside in VRAM
+ * all the time, pass 'offset' in VRAM here.
  *
  * Pass 0 as id in order to reset the root surface.
  *
@@ -234,6 +210,45 @@ struct vigsp_cmd_destroy_surface_request
 struct vigsp_cmd_set_root_surface_request
 {
     vigsp_surface_id id;
+    vigsp_offset offset;
+};
+
+/*
+ * @}
+ */
+
+/*
+ * cmd_update_vram
+ *
+ * Updates 'sfc_id' in vram.
+ *
+ * @{
+ */
+
+struct vigsp_cmd_update_vram_request
+{
+    vigsp_surface_id sfc_id;
+    vigsp_offset offset;
+    struct vigsp_rect rect;
+};
+
+/*
+ * @}
+ */
+
+/*
+ * cmd_update_gpu
+ *
+ * Updates 'sfc_id' in GPU.
+ *
+ * @{
+ */
+
+struct vigsp_cmd_update_gpu_request
+{
+    vigsp_surface_id sfc_id;
+    vigsp_offset offset;
+    struct vigsp_rect rect;
 };
 
 /*
@@ -243,16 +258,16 @@ struct vigsp_cmd_set_root_surface_request
 /*
  * cmd_copy
  *
- * Copies parts of surface 'src' to
- * surface 'dst'.
+ * Copies parts of surface 'src_id' to
+ * surface 'dst_id'.
  *
  * @{
  */
 
 struct vigsp_cmd_copy_request
 {
-    struct vigsp_surface src;
-    struct vigsp_surface dst;
+    vigsp_surface_id src_id;
+    vigsp_surface_id dst_id;
     vigsp_u32 num_entries;
     struct vigsp_copy entries[0];
 };
@@ -264,128 +279,17 @@ struct vigsp_cmd_copy_request
 /*
  * cmd_solid_fill
  *
- * Fills surface 'sfc' with color 'color' at 'entries'.
+ * Fills surface 'sfc_id' with color 'color' at 'entries'.
  *
  * @{
  */
 
 struct vigsp_cmd_solid_fill_request
 {
-    struct vigsp_surface sfc;
+    vigsp_surface_id sfc_id;
     vigsp_color color;
     vigsp_u32 num_entries;
     struct vigsp_rect entries[0];
-};
-
-/*
- * @}
- */
-
-/*
- * cmd_update_vram
- *
- * Updates 'sfc' data in vram.
- *
- * @{
- */
-
-struct vigsp_cmd_update_vram_request
-{
-    struct vigsp_surface sfc;
-};
-
-/*
- * @}
- */
-
-/*
- * cmd_put_image
- *
- * Puts image 'src_va' on surface 'sfc'.
- * Host may detect page fault condition, in that case it'll
- * set 'is_pf' to 1 in response, target then must fault in 'src_va'
- * memory and repeat this command.
- *
- * @{
- */
-
-struct vigsp_cmd_put_image_request
-{
-    struct vigsp_surface sfc;
-    vigsp_va src_va;
-    vigsp_u32 src_stride;
-    struct vigsp_rect rect;
-};
-
-struct vigsp_cmd_put_image_response
-{
-    vigsp_bool is_pf;
-};
-
-/*
- * @}
- */
-
-/*
- * cmd_get_image
- *
- * Gets image 'dst_va' from surface 'sfc_id'.
- * Host may detect page fault condition, in that case it'll
- * set 'is_pf' to 1 in response, target then must fault in 'dst_va'
- * memory and repeat this command.
- *
- * @{
- */
-
-struct vigsp_cmd_get_image_request
-{
-    vigsp_surface_id sfc_id;
-    vigsp_va dst_va;
-    vigsp_u32 dst_stride;
-    struct vigsp_rect rect;
-};
-
-struct vigsp_cmd_get_image_response
-{
-    vigsp_bool is_pf;
-};
-
-/*
- * @}
- */
-
-/*
- * cmd_assign_resource
- *
- * Assign resource 'res_id' to refer to surface 'sfc_id'.
- *
- * @{
- */
-
-struct vigsp_cmd_assign_resource_request
-{
-    vigsp_resource_id res_id;
-    vigsp_resource_type res_type;
-    vigsp_surface_id sfc_id;
-    vigsp_u32 width;
-    vigsp_u32 height;
-};
-
-/*
- * @}
- */
-
-/*
- * cmd_destroy_resource
- *
- * Destroys resource 'id'.
- *
- * @{
- */
-
-struct vigsp_cmd_destroy_resource_request
-{
-    vigsp_resource_id id;
 };
 
 /*
