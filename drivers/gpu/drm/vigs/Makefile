@@ -6,9 +6,10 @@ ccflags-y := -Iinclude/drm -Idrivers/gpu/drm/vigs
 vigs_drm-y := main.o \
               vigs_driver.o \
               vigs_gem.o \
+              vigs_surface.o \
+              vigs_execbuffer.o \
               vigs_device.o \
               vigs_mman.o \
-              vigs_buffer.o \
               vigs_crtc.o \
               vigs_output.o \
               vigs_framebuffer.o \

@@ -4,6 +4,13 @@
 #include "drmP.h"
 #include <ttm/ttm_bo_driver.h>
 
+struct vigs_mman_ops
+{
+    void (*vram_to_gpu)(void *user_data, struct ttm_buffer_object *bo);
+
+    void (*gpu_to_vram)(void *user_data, struct ttm_buffer_object *bo);
+};
+
 struct vigs_mman
 {
     struct drm_global_reference mem_global_ref;
@@ -12,6 +19,9 @@ struct vigs_mman
 
     resource_size_t vram_base;
     resource_size_t ram_base;
+
+    struct vigs_mman_ops *ops;
+    void *user_data;
 };
 
 static inline struct vigs_mman *bo_dev_to_vigs_mman(struct ttm_bo_device *bo_dev)

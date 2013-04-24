@@ -1,6 +1,7 @@
 #include "vigs_crtc.h"
 #include "vigs_device.h"
 #include "vigs_framebuffer.h"
+#include "vigs_surface.h"
 #include "vigs_comm.h"
 #include "drm_crtc_helper.h"
 
@@ -60,10 +61,23 @@ static int vigs_crtc_mode_set_base(struct drm_crtc *crtc, int x, int y,
 
     vigs_fb = fb_to_vigs_fb(crtc->fb);
 
-    ret = vigs_comm_set_root_surface(vigs_dev->comm, vigs_fb->sfc_id);
+    ret = vigs_framebuffer_pin(vigs_fb);
 
     if (ret != 0) {
         return ret;
+    }
+
+    ret = vigs_comm_set_root_surface(vigs_dev->comm,
+                                     vigs_surface_id(vigs_fb->fb_sfc),
+                                     vigs_gem_offset(&vigs_fb->fb_sfc->gem));
+
+    if (ret != 0) {
+        vigs_framebuffer_unpin(vigs_fb);
+        return ret;
+    }
+
+    if (old_fb) {
+        vigs_framebuffer_unpin(fb_to_vigs_fb(old_fb));
     }
 
     return 0;
@@ -113,7 +127,9 @@ static void vigs_crtc_disable(struct drm_crtc *crtc)
         return;
     }
 
-    vigs_comm_set_root_surface(vigs_dev->comm, 0);
+    vigs_comm_set_root_surface(vigs_dev->comm, 0, 0);
+
+    vigs_framebuffer_unpin(fb_to_vigs_fb(crtc->fb));
 }
 
 static const struct drm_crtc_funcs vigs_crtc_funcs =
