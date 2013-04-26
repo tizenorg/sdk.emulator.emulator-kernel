@@ -2,6 +2,7 @@
 #define _VIGS_COMM_H_
 
 #include <linux/types.h>
+#include <linux/mutex.h>
 #include "vigs_protocol.h"
 
 struct drm_device;
@@ -17,6 +18,11 @@ struct vigs_comm
      * From vigs_device::io_map::handle for speed.
      */
     void __iomem *io_ptr;
+
+    /*
+     * For synchronizing all calls.
+     */
+    struct mutex mutex;
 
     /*
      * For internal use.

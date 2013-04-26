@@ -77,6 +77,12 @@ static int vigs_comm_prepare(struct vigs_comm *comm,
     return 0;
 }
 
+static void vigs_comm_exec_locked(struct vigs_comm *comm,
+                                  struct vigs_execbuffer *execbuffer)
+{
+    writel(vigs_gem_offset(&execbuffer->gem), comm->io_ptr);
+}
+
 static int vigs_comm_exec_internal(struct vigs_comm *comm)
 {
     struct vigsp_cmd_batch_header *batch_header = comm->execbuffer->gem.kptr;
@@ -86,12 +92,7 @@ static int vigs_comm_exec_internal(struct vigs_comm *comm)
         (struct vigsp_cmd_response_header*)((u8*)(request_header + 1) +
                                             request_header->size);
 
-    /*
-     * TODO: remove after DRI2 fixes.
-     */
-    return 0;
-
-    vigs_comm_exec(comm, comm->execbuffer);
+    vigs_comm_exec_locked(comm, comm->execbuffer);
 
     switch (response_header->status) {
     case vigsp_status_success:
@@ -132,11 +133,6 @@ static int vigs_comm_init(struct vigs_comm *comm)
     if (ret != 0) {
         return ret;
     }
-
-    /*
-     * TODO: remove after DRI2 fixes.
-     */
-    response->server_version = VIGS_PROTOCOL_VERSION;
 
     if (response->server_version != VIGS_PROTOCOL_VERSION) {
         DRM_ERROR("protocol version mismatch, expected %u, actual %u\n",
@@ -184,6 +180,8 @@ int vigs_comm_create(struct vigs_device *vigs_dev,
         goto fail2;
     }
 
+    mutex_init(&(*comm)->mutex);
+
     return 0;
 
 fail2:
@@ -211,20 +209,26 @@ void vigs_comm_destroy(struct vigs_comm *comm)
 void vigs_comm_exec(struct vigs_comm *comm,
                     struct vigs_execbuffer *execbuffer)
 {
-    writel(vigs_gem_offset(&execbuffer->gem), comm->io_ptr);
+    mutex_lock(&comm->mutex);
+    vigs_comm_exec_locked(comm, execbuffer);
+    mutex_unlock(&comm->mutex);
 }
 
 int vigs_comm_reset(struct vigs_comm *comm)
 {
     int ret;
 
+    mutex_lock(&comm->mutex);
+
     ret = vigs_comm_prepare(comm, vigsp_cmd_reset, 0, 0, NULL, NULL);
 
-    if (ret != 0) {
-        return ret;
+    if (ret == 0) {
+        ret = vigs_comm_exec_internal(comm);
     }
 
-    return vigs_comm_exec_internal(comm);
+    mutex_unlock(&comm->mutex);
+
+    return ret;
 }
 
 int vigs_comm_create_surface(struct vigs_comm *comm,
@@ -244,6 +248,8 @@ int vigs_comm_create_surface(struct vigs_comm *comm,
                      format,
                      id);
 
+    mutex_lock(&comm->mutex);
+
     ret = vigs_comm_prepare(comm,
                             vigsp_cmd_create_surface,
                             sizeof(*request),
@@ -251,17 +257,19 @@ int vigs_comm_create_surface(struct vigs_comm *comm,
                             (void**)&request,
                             NULL);
 
-    if (ret != 0) {
-        return ret;
+    if (ret == 0) {
+        request->width = width;
+        request->height = height;
+        request->stride = stride;
+        request->format = format;
+        request->id = id;
+
+        ret = vigs_comm_exec_internal(comm);
     }
 
-    request->width = width;
-    request->height = height;
-    request->stride = stride;
-    request->format = format;
-    request->id = id;
+    mutex_unlock(&comm->mutex);
 
-    return vigs_comm_exec_internal(comm);
+    return ret;
 }
 
 int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id)
@@ -271,6 +279,8 @@ int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id)
 
     DRM_DEBUG_DRIVER("id = %u\n", id);
 
+    mutex_lock(&comm->mutex);
+
     ret = vigs_comm_prepare(comm,
                             vigsp_cmd_destroy_surface,
                             sizeof(*request),
@@ -278,13 +288,15 @@ int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id)
                             (void**)&request,
                             NULL);
 
-    if (ret != 0) {
-        return ret;
+    if (ret == 0) {
+        request->id = id;
+
+        ret = vigs_comm_exec_internal(comm);
     }
 
-    request->id = id;
+    mutex_unlock(&comm->mutex);
 
-    return vigs_comm_exec_internal(comm);
+    return ret;
 }
 
 int vigs_comm_set_root_surface(struct vigs_comm *comm,
@@ -296,6 +308,8 @@ int vigs_comm_set_root_surface(struct vigs_comm *comm,
 
     DRM_DEBUG_DRIVER("id = %u, offset = %u\n", id, offset);
 
+    mutex_lock(&comm->mutex);
+
     ret = vigs_comm_prepare(comm,
                             vigsp_cmd_set_root_surface,
                             sizeof(*request),
@@ -303,14 +317,16 @@ int vigs_comm_set_root_surface(struct vigs_comm *comm,
                             (void**)&request,
                             NULL);
 
-    if (ret != 0) {
-        return ret;
+    if (ret == 0) {
+        request->id = id;
+        request->offset = offset;
+
+        ret = vigs_comm_exec_internal(comm);
     }
 
-    request->id = id;
-    request->offset = offset;
+    mutex_unlock(&comm->mutex);
 
-    return vigs_comm_exec_internal(comm);
+    return ret;
 }
 
 int vigs_comm_get_protocol_version_ioctl(struct drm_device *drm_dev,
