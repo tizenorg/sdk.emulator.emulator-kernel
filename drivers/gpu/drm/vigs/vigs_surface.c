@@ -8,8 +8,9 @@ static void vigs_surface_destroy(struct vigs_gem_object *gem)
     struct vigs_surface *sfc = vigs_gem_to_vigs_surface(gem);
     struct vigs_device *vigs_dev = gem->base.dev->dev_private;
 
-    vigs_comm_destroy_surface(vigs_dev->comm,
-                              vigs_surface_id(sfc));
+    vigs_comm_destroy_surface(vigs_dev->comm, sfc->id);
+
+    vigs_device_remove_surface(vigs_dev, sfc->id);
 
     vigs_gem_cleanup(&sfc->gem);
 }
@@ -46,19 +47,27 @@ int vigs_surface_create(struct vigs_device *vigs_dev,
         goto fail1;
     }
 
-    ret = vigs_comm_create_surface(vigs_dev->comm,
-                                   width,
-                                   height,
-                                   stride,
-                                   format,
-                                   vigs_surface_id(*sfc));
+    ret = vigs_device_add_surface_unlocked(vigs_dev, *sfc, &(*sfc)->id);
 
     if (ret != 0) {
         goto fail2;
     }
 
+    ret = vigs_comm_create_surface(vigs_dev->comm,
+                                   width,
+                                   height,
+                                   stride,
+                                   format,
+                                   (*sfc)->id);
+
+    if (ret != 0) {
+        goto fail3;
+    }
+
     return 0;
 
+fail3:
+    vigs_device_remove_surface_unlocked(vigs_dev, (*sfc)->id);
 fail2:
     vigs_gem_cleanup(&(*sfc)->gem);
 fail1:
@@ -97,7 +106,7 @@ int vigs_surface_create_ioctl(struct drm_device *drm_dev,
     if (ret == 0) {
         args->handle = handle;
         args->mmap_offset = vigs_gem_mmap_offset(&sfc->gem);
-        args->id = vigs_surface_id(sfc);
+        args->id = sfc->id;
     }
 
     return ret;
@@ -131,7 +140,7 @@ int vigs_surface_info_ioctl(struct drm_device *drm_dev,
     args->stride = sfc->stride;
     args->format = sfc->format;
     args->mmap_offset = vigs_gem_mmap_offset(vigs_gem);
-    args->id = vigs_surface_id(sfc);
+    args->id = sfc->id;
 
     drm_gem_object_unreference_unlocked(gem);
 

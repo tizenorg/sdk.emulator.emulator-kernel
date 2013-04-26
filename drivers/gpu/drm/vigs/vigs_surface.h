@@ -16,6 +16,7 @@ struct vigs_surface
     u32 height;
     u32 stride;
     vigsp_surface_format format;
+    vigsp_surface_id id;
 };
 
 static inline struct vigs_surface *vigs_gem_to_vigs_surface(struct vigs_gem_object *vigs_gem)
@@ -29,11 +30,6 @@ int vigs_surface_create(struct vigs_device *vigs_dev,
                         u32 stride,
                         vigsp_surface_format format,
                         struct vigs_surface **sfc);
-
-static inline vigsp_surface_id vigs_surface_id(struct vigs_surface *sfc)
-{
-    return vigs_gem_mmap_offset(&sfc->gem);
-}
 
 /*
  * IOCTLs

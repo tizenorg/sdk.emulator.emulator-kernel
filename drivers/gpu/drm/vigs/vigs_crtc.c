@@ -68,7 +68,7 @@ static int vigs_crtc_mode_set_base(struct drm_crtc *crtc, int x, int y,
     }
 
     ret = vigs_comm_set_root_surface(vigs_dev->comm,
-                                     vigs_surface_id(vigs_fb->fb_sfc),
+                                     vigs_fb->fb_sfc->id,
                                      vigs_gem_offset(&vigs_fb->fb_sfc->gem));
 
     if (ret != 0) {
