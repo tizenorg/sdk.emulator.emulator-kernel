@@ -68,6 +68,7 @@ int vigs_execbuffer_create_ioctl(struct drm_device *drm_dev,
 
     if (ret == 0) {
         args->handle = handle;
+        args->mmap_offset = vigs_gem_mmap_offset(&execbuffer->gem);
     }
 
     return ret;
