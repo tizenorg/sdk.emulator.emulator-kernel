@@ -237,7 +237,7 @@ int vigs_comm_create_surface(struct vigs_comm *comm,
     int ret;
     struct vigsp_cmd_create_surface_request *request;
 
-    DRM_DEBUG_DRIVER("width = %u, height = %u, stride = %u, fmt = %d, id = 0x%llX\n",
+    DRM_DEBUG_DRIVER("width = %u, height = %u, stride = %u, fmt = %d, id = %u\n",
                      width,
                      height,
                      stride,
@@ -269,7 +269,7 @@ int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id)
     int ret;
     struct vigsp_cmd_destroy_surface_request *request;
 
-    DRM_DEBUG_DRIVER("id = 0x%llX\n", id);
+    DRM_DEBUG_DRIVER("id = %u\n", id);
 
     ret = vigs_comm_prepare(comm,
                             vigsp_cmd_destroy_surface,
@@ -294,7 +294,7 @@ int vigs_comm_set_root_surface(struct vigs_comm *comm,
     int ret;
     struct vigsp_cmd_set_root_surface_request *request;
 
-    DRM_DEBUG_DRIVER("id = 0x%llX\n", id);
+    DRM_DEBUG_DRIVER("id = %u, offset = %u\n", id, offset);
 
     ret = vigs_comm_prepare(comm,
                             vigsp_cmd_set_root_surface,
