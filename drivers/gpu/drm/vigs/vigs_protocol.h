@@ -29,7 +29,6 @@ typedef vigsp_u32 vigsp_bool;
 typedef vigsp_u32 vigsp_surface_id;
 typedef vigsp_u32 vigsp_offset;
 typedef vigsp_u32 vigsp_color;
-typedef vigsp_u64 vigsp_va;
 
 typedef enum
 {

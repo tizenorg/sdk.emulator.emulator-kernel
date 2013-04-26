@@ -105,6 +105,7 @@ int vigs_surface_create_ioctl(struct drm_device *drm_dev,
 
     if (ret == 0) {
         args->handle = handle;
+        args->size = vigs_gem_size(&sfc->gem);
         args->mmap_offset = vigs_gem_mmap_offset(&sfc->gem);
         args->id = sfc->id;
     }
@@ -139,6 +140,7 @@ int vigs_surface_info_ioctl(struct drm_device *drm_dev,
     args->height = sfc->height;
     args->stride = sfc->stride;
     args->format = sfc->format;
+    args->size = vigs_gem_size(vigs_gem);
     args->mmap_offset = vigs_gem_mmap_offset(vigs_gem);
     args->id = sfc->id;
 
