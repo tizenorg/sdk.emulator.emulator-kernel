@@ -23,7 +23,7 @@ struct drm_vigs_create_surface
     uint32_t format;
     uint32_t handle;
     uint64_t mmap_offset;
-    uint64_t id;
+    uint32_t id;
 };
 
 struct drm_vigs_create_execbuffer
@@ -40,7 +40,7 @@ struct drm_vigs_surface_info
     uint32_t stride;
     uint32_t format;
     uint64_t mmap_offset;
-    uint64_t id;
+    uint32_t id;
 };
 
 struct drm_vigs_exec

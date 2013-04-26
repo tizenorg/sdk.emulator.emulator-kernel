@@ -26,7 +26,7 @@ typedef unsigned int vigsp_u32;
 typedef unsigned long long vigsp_u64;
 
 typedef vigsp_u32 vigsp_bool;
-typedef vigsp_u64 vigsp_surface_id;
+typedef vigsp_u32 vigsp_surface_id;
 typedef vigsp_u32 vigsp_offset;
 typedef vigsp_u32 vigsp_color;
 typedef vigsp_u64 vigsp_va;
