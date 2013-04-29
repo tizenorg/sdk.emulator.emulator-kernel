@@ -131,6 +131,7 @@ int vigs_surface_info_ioctl(struct drm_device *drm_dev,
     vigs_gem = gem_to_vigs_gem(gem);
 
     if (vigs_gem->type != VIGS_GEM_TYPE_SURFACE) {
+        drm_gem_object_unreference_unlocked(gem);
         return -ENOENT;
     }
 

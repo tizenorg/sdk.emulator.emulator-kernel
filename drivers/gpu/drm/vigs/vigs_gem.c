@@ -42,6 +42,8 @@ int vigs_gem_init(struct vigs_gem_object *vigs_gem,
         return -EINVAL;
     }
 
+    INIT_LIST_HEAD(&vigs_gem->list);
+
     memset(&placement, 0, sizeof(placement));
 
     placement.placement = placements;
@@ -119,6 +121,8 @@ int vigs_gem_pin(struct vigs_gem_object *vigs_gem)
     }
 
     if (vigs_gem->type == VIGS_GEM_TYPE_EXECBUFFER) {
+        vigs_gem->pin_count = 1;
+
         return 0;
     }
 
@@ -243,6 +247,11 @@ void vigs_gem_kunmap(struct vigs_gem_object *vigs_gem)
                      vigs_gem->type,
                      vigs_gem_mmap_offset(vigs_gem),
                      vigs_gem_size(vigs_gem));
+}
+
+int vigs_gem_in_vram(struct vigs_gem_object *vigs_gem)
+{
+    return vigs_gem->bo.mem.mem_type == TTM_PL_VRAM;
 }
 
 void vigs_gem_free_object(struct drm_gem_object *gem)
