@@ -30,6 +30,7 @@ static struct drm_framebuffer *vigs_fb_create(struct drm_device *drm_dev,
 
     if (vigs_gem->type != VIGS_GEM_TYPE_SURFACE) {
         DRM_ERROR("GEM is not a surface, handle = %u\n", mode_cmd->handles[0]);
+        drm_gem_object_unreference_unlocked(gem);
         return NULL;
     }
 

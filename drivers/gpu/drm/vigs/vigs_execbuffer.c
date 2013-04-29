@@ -67,6 +67,7 @@ int vigs_execbuffer_create_ioctl(struct drm_device *drm_dev,
     drm_gem_object_unreference_unlocked(&execbuffer->gem.base);
 
     if (ret == 0) {
+        args->size = vigs_gem_size(&execbuffer->gem);
         args->handle = handle;
         args->mmap_offset = vigs_gem_mmap_offset(&execbuffer->gem);
     }

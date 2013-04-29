@@ -9,6 +9,125 @@
 #include "vigs_surface.h"
 #include <drm/vigs_drm.h>
 
+/*
+ * Must be called with drm_device::struct_mutex held.
+ */
+static struct vigs_surface
+    *vigs_device_reference_surface(struct vigs_device *vigs_dev,
+                                   vigsp_surface_id sfc_id)
+{
+    struct vigs_surface *sfc;
+
+    sfc = idr_find(&vigs_dev->surface_idr, sfc_id);
+
+    if (sfc) {
+        drm_gem_object_reference(&sfc->gem.base);
+    }
+
+    return sfc;
+}
+
+/*
+ * 'gem_list' will hold a list of GEMs that should be
+ * unreserved and unreferenced after execution.
+ */
+static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
+                                      void *data,
+                                      u32 data_size,
+                                      struct list_head* gem_list)
+{
+    struct vigsp_cmd_batch_header *batch_header = data;
+    struct vigsp_cmd_request_header *request_header =
+        (struct vigsp_cmd_request_header*)(batch_header + 1);
+    struct vigsp_cmd_update_vram_request *update_vram_request;
+    struct vigsp_cmd_update_gpu_request *update_gpu_request;
+    vigsp_u32 i;
+    struct vigs_surface *sfc;
+    int ret = 0;
+
+    mutex_lock(&vigs_dev->drm_dev->struct_mutex);
+
+    /*
+     * GEM is always at least PAGE_SIZE long, so don't check
+     * if batch header is out of bounds.
+     */
+
+    for (i = 0; i < batch_header->num_requests; ++i) {
+        if (((void*)(request_header) + sizeof(*request_header)) >
+            (data + data_size)) {
+            DRM_ERROR("request header outside of GEM\n");
+            ret = -EINVAL;
+            break;
+        }
+
+        if (((void*)(request_header + 1) + request_header->size) >
+            (data + data_size)) {
+            DRM_ERROR("request data outside of GEM\n");
+            ret = -EINVAL;
+            break;
+        }
+
+        switch (request_header->cmd) {
+        case vigsp_cmd_update_vram:
+            update_vram_request =
+                (struct vigsp_cmd_update_vram_request*)(request_header + 1);
+            sfc = vigs_device_reference_surface(vigs_dev, update_vram_request->sfc_id);
+            if (!sfc) {
+                DRM_ERROR("Surface %u not found\n", update_vram_request->sfc_id);
+                ret = -EINVAL;
+                break;
+            }
+            vigs_gem_reserve(&sfc->gem);
+            if (vigs_gem_in_vram(&sfc->gem)) {
+                update_vram_request->offset = vigs_gem_offset(&sfc->gem);
+            } else {
+                update_vram_request->sfc_id = 0;
+            }
+            list_add_tail(&sfc->gem.list, gem_list);
+            break;
+        case vigsp_cmd_update_gpu:
+            update_gpu_request =
+                (struct vigsp_cmd_update_gpu_request*)(request_header + 1);
+            sfc = vigs_device_reference_surface(vigs_dev, update_gpu_request->sfc_id);
+            if (!sfc) {
+                DRM_ERROR("Surface %u not found\n", update_gpu_request->sfc_id);
+                ret = -EINVAL;
+                break;
+            }
+            vigs_gem_reserve(&sfc->gem);
+            if (vigs_gem_in_vram(&sfc->gem)) {
+                update_gpu_request->offset = vigs_gem_offset(&sfc->gem);
+            } else {
+                update_gpu_request->sfc_id = 0;
+            }
+            list_add_tail(&sfc->gem.list, gem_list);
+            break;
+        default:
+            break;
+        }
+
+        request_header =
+            (struct vigsp_cmd_request_header*)((u8*)(request_header + 1) +
+            request_header->size);
+    }
+
+    mutex_unlock(&vigs_dev->drm_dev->struct_mutex);
+
+    return 0;
+}
+
+static void vigs_device_finish_patch_commands(struct list_head* gem_list)
+{
+    struct vigs_gem_object *gem, *gem_tmp;
+
+    list_for_each_entry_safe(gem, gem_tmp, gem_list, list)
+    {
+        list_del(&gem->list);
+        vigs_gem_unreserve(gem);
+        drm_gem_object_unreference_unlocked(&gem->base);
+    }
+}
+
 int vigs_device_init(struct vigs_device *vigs_dev,
                      struct drm_device *drm_dev,
                      struct pci_dev *pci_dev,
@@ -170,25 +289,6 @@ int vigs_device_add_surface_unlocked(struct vigs_device *vigs_dev,
     return ret;
 }
 
-struct vigs_surface
-    *vigs_device_reference_surface_unlocked(struct vigs_device *vigs_dev,
-                                            vigsp_surface_id sfc_id)
-{
-    struct vigs_surface *sfc;
-
-    mutex_lock(&vigs_dev->drm_dev->struct_mutex);
-
-    sfc = idr_find(&vigs_dev->surface_idr, sfc_id);
-
-    if (sfc) {
-        drm_gem_object_reference(&sfc->gem.base);
-    }
-
-    mutex_unlock(&vigs_dev->drm_dev->struct_mutex);
-
-    return sfc;
-}
-
 void vigs_device_remove_surface_unlocked(struct vigs_device *vigs_dev,
                                          vigsp_surface_id sfc_id)
 {
@@ -206,6 +306,10 @@ int vigs_device_exec_ioctl(struct drm_device *drm_dev,
     struct drm_gem_object *gem;
     struct vigs_gem_object *vigs_gem;
     struct vigs_execbuffer *execbuffer;
+    struct list_head gem_list;
+    int ret;
+
+    INIT_LIST_HEAD(&gem_list);
 
     gem = drm_gem_object_lookup(drm_dev, file_priv, args->handle);
 
@@ -216,13 +320,42 @@ int vigs_device_exec_ioctl(struct drm_device *drm_dev,
     vigs_gem = gem_to_vigs_gem(gem);
 
     if (vigs_gem->type != VIGS_GEM_TYPE_EXECBUFFER) {
+        drm_gem_object_unreference_unlocked(gem);
         return -ENOENT;
     }
 
     execbuffer = vigs_gem_to_vigs_execbuffer(vigs_gem);
 
+    vigs_gem_reserve(vigs_gem);
+
+    /*
+     * Never unmap for optimization, but we got to be careful,
+     * worst case scenario is when whole RAM BAR is mapped into kernel.
+     */
+    ret = vigs_gem_kmap(vigs_gem);
+
+    if (ret != 0) {
+        vigs_gem_unreserve(vigs_gem);
+        drm_gem_object_unreference_unlocked(gem);
+        return ret;
+    }
+
+    vigs_gem_unreserve(vigs_gem);
+
+    ret = vigs_device_patch_commands(vigs_dev,
+                                     execbuffer->gem.kptr,
+                                     vigs_gem_size(&execbuffer->gem),
+                                     &gem_list);
+
+    if (ret != 0) {
+        vigs_device_finish_patch_commands(&gem_list);
+        drm_gem_object_unreference_unlocked(gem);
+        return ret;
+    }
+
     vigs_comm_exec(vigs_dev->comm, execbuffer);
 
+    vigs_device_finish_patch_commands(&gem_list);
     drm_gem_object_unreference_unlocked(gem);
 
     return 0;
