@@ -63,10 +63,6 @@ int vigs_device_add_surface_unlocked(struct vigs_device *vigs_dev,
                                      struct vigs_surface *sfc,
                                      vigsp_surface_id* id);
 
-struct vigs_surface
-    *vigs_device_reference_surface_unlocked(struct vigs_device *vigs_dev,
-                                            vigsp_surface_id sfc_id);
-
 void vigs_device_remove_surface_unlocked(struct vigs_device *vigs_dev,
                                          vigsp_surface_id sfc_id);
 

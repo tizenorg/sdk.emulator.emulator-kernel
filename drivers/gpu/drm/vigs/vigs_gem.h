@@ -19,6 +19,12 @@ struct vigs_gem_object
 
     struct ttm_buffer_object bo;
 
+    /*
+     * Use it only when this GEM is reserved. This makes it easier
+     * to reserve a set of GEMs and then unreserve them later.
+     */
+    struct list_head list;
+
     enum ttm_object_type type;
 
     /*
@@ -128,6 +134,12 @@ void vigs_gem_kunmap(struct vigs_gem_object *vigs_gem);
 /*
  * @}
  */
+
+/*
+ * true if GEM is currently in VRAM. Note that this doesn't
+ * necessarily mean that it's pinned.
+ */
+int vigs_gem_in_vram(struct vigs_gem_object *vigs_gem);
 
 /*
  * @}
