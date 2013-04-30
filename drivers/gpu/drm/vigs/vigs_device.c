@@ -9,20 +9,21 @@
 #include "vigs_surface.h"
 #include <drm/vigs_drm.h>
 
-/*
- * Must be called with drm_device::struct_mutex held.
- */
 static struct vigs_surface
-    *vigs_device_reference_surface(struct vigs_device *vigs_dev,
-                                   vigsp_surface_id sfc_id)
+    *vigs_device_reference_surface_unlocked(struct vigs_device *vigs_dev,
+                                            vigsp_surface_id sfc_id)
 {
     struct vigs_surface *sfc;
+
+    mutex_lock(&vigs_dev->drm_dev->struct_mutex);
 
     sfc = idr_find(&vigs_dev->surface_idr, sfc_id);
 
     if (sfc) {
         drm_gem_object_reference(&sfc->gem.base);
     }
+
+    mutex_unlock(&vigs_dev->drm_dev->struct_mutex);
 
     return sfc;
 }
@@ -44,8 +45,6 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
     vigsp_u32 i;
     struct vigs_surface *sfc;
     int ret = 0;
-
-    mutex_lock(&vigs_dev->drm_dev->struct_mutex);
 
     /*
      * GEM is always at least PAGE_SIZE long, so don't check
@@ -71,7 +70,7 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
         case vigsp_cmd_update_vram:
             update_vram_request =
                 (struct vigsp_cmd_update_vram_request*)(request_header + 1);
-            sfc = vigs_device_reference_surface(vigs_dev, update_vram_request->sfc_id);
+            sfc = vigs_device_reference_surface_unlocked(vigs_dev, update_vram_request->sfc_id);
             if (!sfc) {
                 DRM_ERROR("Surface %u not found\n", update_vram_request->sfc_id);
                 ret = -EINVAL;
@@ -88,7 +87,7 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
         case vigsp_cmd_update_gpu:
             update_gpu_request =
                 (struct vigsp_cmd_update_gpu_request*)(request_header + 1);
-            sfc = vigs_device_reference_surface(vigs_dev, update_gpu_request->sfc_id);
+            sfc = vigs_device_reference_surface_unlocked(vigs_dev, update_gpu_request->sfc_id);
             if (!sfc) {
                 DRM_ERROR("Surface %u not found\n", update_gpu_request->sfc_id);
                 ret = -EINVAL;
@@ -110,8 +109,6 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
             (struct vigsp_cmd_request_header*)((u8*)(request_header + 1) +
             request_header->size);
     }
-
-    mutex_unlock(&vigs_dev->drm_dev->struct_mutex);
 
     return 0;
 }
