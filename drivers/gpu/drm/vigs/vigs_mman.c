@@ -1,5 +1,4 @@
 #include "vigs_mman.h"
-#include "vigs_gem.h"
 #include <ttm/ttm_placement.h>
 
 /*
@@ -230,11 +229,14 @@ static int vigs_ttm_move(struct ttm_buffer_object *bo,
                          bool no_wait_gpu,
                          struct ttm_mem_reg *new_mem)
 {
+    struct vigs_mman *mman = bo_dev_to_vigs_mman(bo->bdev);
     struct ttm_mem_reg *old_mem = &bo->mem;
 
     if ((old_mem->mem_type == TTM_PL_VRAM) &&
         (new_mem->mem_type == TTM_PL_TT)) {
         DRM_DEBUG_DRIVER("ttm_move: 0x%llX vram -> gpu\n", bo->addr_space_offset);
+
+        mman->ops->vram_to_gpu(mman->user_data, bo);
 
         ttm_bo_mem_put(bo, old_mem);
 
@@ -245,6 +247,10 @@ static int vigs_ttm_move(struct ttm_buffer_object *bo,
     } else if ((old_mem->mem_type == TTM_PL_TT) &&
                (new_mem->mem_type == TTM_PL_VRAM)) {
         DRM_DEBUG_DRIVER("ttm_move: 0x%llX gpu -> vram\n", bo->addr_space_offset);
+
+        mman->ops->gpu_to_vram(mman->user_data, bo,
+                               (new_mem->start << PAGE_SHIFT) +
+                               bo->bdev->man[new_mem->mem_type].gpu_offset);
 
         ttm_bo_mem_put(bo, old_mem);
 
@@ -323,6 +329,8 @@ int vigs_mman_create(resource_size_t vram_base,
                      resource_size_t vram_size,
                      resource_size_t ram_base,
                      resource_size_t ram_size,
+                     struct vigs_mman_ops *ops,
+                     void *user_data,
                      struct vigs_mman **mman)
 {
     int ret = 0;
@@ -345,6 +353,8 @@ int vigs_mman_create(resource_size_t vram_base,
 
     (*mman)->vram_base = vram_base;
     (*mman)->ram_base = ram_base;
+    (*mman)->ops = ops;
+    (*mman)->user_data = user_data;
 
     ret = ttm_bo_device_init(&(*mman)->bo_dev,
                              (*mman)->bo_global_ref.ref.object,
@@ -452,13 +462,9 @@ static const struct vm_operations_struct *ttm_vm_ops = NULL;
 static void vigs_ttm_open(struct vm_area_struct *vma)
 {
     struct ttm_buffer_object *bo = vma->vm_private_data;
-    struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
+    struct vigs_mman *mman = bo_dev_to_vigs_mman(bo->bdev);
 
-    vigs_gem_reserve(vigs_gem);
-
-    vigs_gem_pin(vigs_gem);
-
-    vigs_gem_unreserve(vigs_gem);
+    mman->ops->map(mman->user_data, bo);
 
     ttm_vm_ops->open(vma);
 }
@@ -466,13 +472,9 @@ static void vigs_ttm_open(struct vm_area_struct *vma)
 static void vigs_ttm_close(struct vm_area_struct *vma)
 {
     struct ttm_buffer_object *bo = vma->vm_private_data;
-    struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
+    struct vigs_mman *mman = bo_dev_to_vigs_mman(bo->bdev);
 
-    vigs_gem_reserve(vigs_gem);
-
-    vigs_gem_unpin(vigs_gem);
-
-    vigs_gem_unreserve(vigs_gem);
+    mman->ops->unmap(mman->user_data, bo);
 
     ttm_vm_ops->close(vma);
 }
@@ -493,7 +495,6 @@ int vigs_mman_mmap(struct vigs_mman *mman,
                    struct vm_area_struct *vma)
 {
     struct ttm_buffer_object *bo;
-    struct vigs_gem_object *vigs_gem;
     int ret;
 
     if (unlikely(vma->vm_pgoff < DRM_FILE_PAGE_OFFSET)) {
@@ -518,13 +519,7 @@ int vigs_mman_mmap(struct vigs_mman *mman,
 
     bo = vma->vm_private_data;
 
-    vigs_gem = bo_to_vigs_gem(bo);
-
-    vigs_gem_reserve(vigs_gem);
-
-    ret = vigs_gem_pin(vigs_gem);
-
-    vigs_gem_unreserve(vigs_gem);
+    ret = mman->ops->map(mman->user_data, bo);
 
     if (ret != 0) {
         ttm_vm_ops->close(vma);

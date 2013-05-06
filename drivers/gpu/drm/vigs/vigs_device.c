@@ -9,6 +9,67 @@
 #include "vigs_surface.h"
 #include <drm/vigs_drm.h>
 
+static int vigs_device_mman_map(void *user_data, struct ttm_buffer_object *bo)
+{
+    struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
+    int ret;
+
+    vigs_gem_reserve(vigs_gem);
+
+    ret = vigs_gem_pin(vigs_gem);
+
+    vigs_gem_unreserve(vigs_gem);
+
+    return ret;
+}
+
+static void vigs_device_mman_unmap(void *user_data, struct ttm_buffer_object *bo)
+{
+    struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
+
+    vigs_gem_reserve(vigs_gem);
+
+    vigs_gem_unpin(vigs_gem);
+
+    vigs_gem_unreserve(vigs_gem);
+}
+
+static void vigs_device_mman_vram_to_gpu(void *user_data,
+                                         struct ttm_buffer_object *bo)
+{
+    struct vigs_device *vigs_dev = user_data;
+    struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
+    struct vigs_surface *vigs_sfc = vigs_gem_to_vigs_surface(vigs_gem);
+
+    if (vigs_sfc->is_dirty) {
+        vigs_comm_update_gpu(vigs_dev->comm,
+                             vigs_sfc->id,
+                             vigs_gem_offset(vigs_gem));
+        vigs_sfc->is_dirty = false;
+    }
+}
+
+static void vigs_device_mman_gpu_to_vram(void *user_data,
+                                         struct ttm_buffer_object *bo,
+                                         unsigned long new_offset)
+{
+    struct vigs_device *vigs_dev = user_data;
+    struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
+    struct vigs_surface *vigs_sfc = vigs_gem_to_vigs_surface(vigs_gem);
+
+    vigs_comm_update_vram(vigs_dev->comm,
+                          vigs_sfc->id,
+                          new_offset);
+}
+
+static struct vigs_mman_ops mman_ops =
+{
+    .map = &vigs_device_mman_map,
+    .unmap = &vigs_device_mman_unmap,
+    .vram_to_gpu = &vigs_device_mman_vram_to_gpu,
+    .gpu_to_vram = &vigs_device_mman_gpu_to_vram
+};
+
 static struct vigs_surface
     *vigs_device_reference_surface_unlocked(struct vigs_device *vigs_dev,
                                             vigsp_surface_id sfc_id)
@@ -80,6 +141,8 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
             if (vigs_gem_in_vram(&sfc->gem)) {
                 update_vram_request->offset = vigs_gem_offset(&sfc->gem);
             } else {
+                DRM_DEBUG_DRIVER("Surface %u not in VRAM, ignoring update_vram\n",
+                                 update_vram_request->sfc_id);
                 update_vram_request->sfc_id = 0;
             }
             list_add_tail(&sfc->gem.list, gem_list);
@@ -96,7 +159,10 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
             vigs_gem_reserve(&sfc->gem);
             if (vigs_gem_in_vram(&sfc->gem)) {
                 update_gpu_request->offset = vigs_gem_offset(&sfc->gem);
+                sfc->is_dirty = false;
             } else {
+                DRM_DEBUG_DRIVER("Surface %u not in VRAM, ignoring update_gpu\n",
+                                 update_gpu_request->sfc_id);
                 update_gpu_request->sfc_id = 0;
             }
             list_add_tail(&sfc->gem.list, gem_list);
@@ -174,6 +240,8 @@ int vigs_device_init(struct vigs_device *vigs_dev,
 
     ret = vigs_mman_create(vigs_dev->vram_base, vigs_dev->vram_size,
                            vigs_dev->ram_base, vigs_dev->ram_size,
+                           &mman_ops,
+                           vigs_dev,
                            &vigs_dev->mman);
 
     if (ret != 0) {

@@ -6,9 +6,25 @@
 
 struct vigs_mman_ops
 {
-    void (*vram_to_gpu)(void *user_data, struct ttm_buffer_object *bo);
+    /*
+     * 'bo' is unreserved while calling these.
+     */
+    int (*map)(void *user_data, struct ttm_buffer_object *bo);
+    void (*unmap)(void *user_data, struct ttm_buffer_object *bo);
+    /*
+     * @}
+     */
 
-    void (*gpu_to_vram)(void *user_data, struct ttm_buffer_object *bo);
+    /*
+     * 'bo' is reserved while calling these.
+     * @{
+     */
+    void (*vram_to_gpu)(void *user_data, struct ttm_buffer_object *bo);
+    void (*gpu_to_vram)(void *user_data, struct ttm_buffer_object *bo,
+                        unsigned long new_offset);
+    /*
+     * @}
+     */
 };
 
 struct vigs_mman
@@ -33,6 +49,8 @@ int vigs_mman_create(resource_size_t vram_base,
                      resource_size_t vram_size,
                      resource_size_t ram_base,
                      resource_size_t ram_size,
+                     struct vigs_mman_ops *ops,
+                     void *user_data,
                      struct vigs_mman **mman);
 
 void vigs_mman_destroy(struct vigs_mman *mman);
