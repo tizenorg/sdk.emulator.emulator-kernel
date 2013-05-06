@@ -89,6 +89,21 @@ static struct vigs_surface
     return sfc;
 }
 
+static bool vigs_gem_is_reserved(struct list_head* gem_list,
+                                 struct vigs_gem_object *gem)
+{
+    struct vigs_gem_object *tmp;
+
+    list_for_each_entry(tmp, gem_list, list)
+    {
+        if (tmp == gem) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /*
  * 'gem_list' will hold a list of GEMs that should be
  * unreserved and unreferenced after execution.
@@ -137,7 +152,12 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
                 ret = -EINVAL;
                 break;
             }
-            vigs_gem_reserve(&sfc->gem);
+            if (vigs_gem_is_reserved(gem_list, &sfc->gem)) {
+                drm_gem_object_unreference_unlocked(&sfc->gem.base);
+            } else {
+                vigs_gem_reserve(&sfc->gem);
+                list_add_tail(&sfc->gem.list, gem_list);
+            }
             if (vigs_gem_in_vram(&sfc->gem)) {
                 update_vram_request->offset = vigs_gem_offset(&sfc->gem);
             } else {
@@ -145,7 +165,6 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
                                  update_vram_request->sfc_id);
                 update_vram_request->sfc_id = 0;
             }
-            list_add_tail(&sfc->gem.list, gem_list);
             break;
         case vigsp_cmd_update_gpu:
             update_gpu_request =
@@ -156,7 +175,12 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
                 ret = -EINVAL;
                 break;
             }
-            vigs_gem_reserve(&sfc->gem);
+            if (vigs_gem_is_reserved(gem_list, &sfc->gem)) {
+                drm_gem_object_unreference_unlocked(&sfc->gem.base);
+            } else {
+                vigs_gem_reserve(&sfc->gem);
+                list_add_tail(&sfc->gem.list, gem_list);
+            }
             if (vigs_gem_in_vram(&sfc->gem)) {
                 update_gpu_request->offset = vigs_gem_offset(&sfc->gem);
                 sfc->is_dirty = false;
@@ -165,7 +189,6 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
                                  update_gpu_request->sfc_id);
                 update_gpu_request->sfc_id = 0;
             }
-            list_add_tail(&sfc->gem.list, gem_list);
             break;
         default:
             break;
