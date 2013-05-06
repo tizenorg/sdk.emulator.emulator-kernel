@@ -53,6 +53,14 @@ int vigs_comm_set_root_surface(struct vigs_comm *comm,
                                vigsp_surface_id id,
                                vigsp_offset offset);
 
+int vigs_comm_update_vram(struct vigs_comm *comm,
+                          vigsp_surface_id id,
+                          vigsp_offset offset);
+
+int vigs_comm_update_gpu(struct vigs_comm *comm,
+                         vigsp_surface_id id,
+                         vigsp_offset offset);
+
 /*
  * IOCTLs
  * @{

@@ -14,7 +14,7 @@
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 11
+#define VIGS_PROTOCOL_VERSION 12
 
 typedef signed char vigsp_s8;
 typedef signed short vigsp_s16;
@@ -228,7 +228,6 @@ struct vigsp_cmd_update_vram_request
 {
     vigsp_surface_id sfc_id;
     vigsp_offset offset;
-    struct vigsp_rect rect;
 };
 
 /*
@@ -247,7 +246,6 @@ struct vigsp_cmd_update_gpu_request
 {
     vigsp_surface_id sfc_id;
     vigsp_offset offset;
-    struct vigsp_rect rect;
 };
 
 /*
