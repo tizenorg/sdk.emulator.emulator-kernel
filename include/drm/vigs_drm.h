@@ -8,7 +8,7 @@
 /*
  * Bump this whenever driver interface changes.
  */
-#define DRM_VIGS_DRIVER_VERSION 4
+#define DRM_VIGS_DRIVER_VERSION 5
 
 struct drm_vigs_get_protocol_version
 {
@@ -51,11 +51,17 @@ struct drm_vigs_exec
     uint32_t handle;
 };
 
+struct drm_vigs_surface_set_dirty
+{
+    uint32_t handle;
+};
+
 #define DRM_VIGS_GET_PROTOCOL_VERSION 0x00
 #define DRM_VIGS_CREATE_SURFACE 0x01
 #define DRM_VIGS_CREATE_EXECBUFFER 0x02
 #define DRM_VIGS_SURFACE_INFO 0x03
 #define DRM_VIGS_EXEC 0x04
+#define DRM_VIGS_SURFACE_SET_DIRTY 0x05
 
 #define DRM_IOCTL_VIGS_GET_PROTOCOL_VERSION DRM_IOR(DRM_COMMAND_BASE + \
             DRM_VIGS_GET_PROTOCOL_VERSION, struct drm_vigs_get_protocol_version)
@@ -67,5 +73,7 @@ struct drm_vigs_exec
             DRM_VIGS_SURFACE_INFO, struct drm_vigs_surface_info)
 #define DRM_IOCTL_VIGS_EXEC DRM_IOW(DRM_COMMAND_BASE + \
             DRM_VIGS_EXEC, struct drm_vigs_exec)
+#define DRM_IOCTL_VIGS_SURFACE_SET_DIRTY DRM_IOW(DRM_COMMAND_BASE + \
+            DRM_VIGS_SURFACE_SET_DIRTY, struct drm_vigs_surface_set_dirty)
 
 #endif

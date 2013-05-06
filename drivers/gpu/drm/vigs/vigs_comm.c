@@ -329,6 +329,66 @@ int vigs_comm_set_root_surface(struct vigs_comm *comm,
     return ret;
 }
 
+int vigs_comm_update_vram(struct vigs_comm *comm,
+                          vigsp_surface_id id,
+                          vigsp_offset offset)
+{
+    int ret;
+    struct vigsp_cmd_update_vram_request *request;
+
+    DRM_DEBUG_DRIVER("id = %u, offset = %u\n", id, offset);
+
+    mutex_lock(&comm->mutex);
+
+    ret = vigs_comm_prepare(comm,
+                            vigsp_cmd_update_vram,
+                            sizeof(*request),
+                            0,
+                            (void**)&request,
+                            NULL);
+
+    if (ret == 0) {
+        request->sfc_id = id;
+        request->offset = offset;
+
+        ret = vigs_comm_exec_internal(comm);
+    }
+
+    mutex_unlock(&comm->mutex);
+
+    return ret;
+}
+
+int vigs_comm_update_gpu(struct vigs_comm *comm,
+                         vigsp_surface_id id,
+                         vigsp_offset offset)
+{
+    int ret;
+    struct vigsp_cmd_update_gpu_request *request;
+
+    DRM_DEBUG_DRIVER("id = %u, offset = %u\n", id, offset);
+
+    mutex_lock(&comm->mutex);
+
+    ret = vigs_comm_prepare(comm,
+                            vigsp_cmd_update_gpu,
+                            sizeof(*request),
+                            0,
+                            (void**)&request,
+                            NULL);
+
+    if (ret == 0) {
+        request->sfc_id = id;
+        request->offset = offset;
+
+        ret = vigs_comm_exec_internal(comm);
+    }
+
+    mutex_unlock(&comm->mutex);
+
+    return ret;
+}
+
 int vigs_comm_get_protocol_version_ioctl(struct drm_device *drm_dev,
                                          void *data,
                                          struct drm_file *file_priv)
