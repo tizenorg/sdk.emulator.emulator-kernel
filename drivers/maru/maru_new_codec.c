@@ -49,11 +49,16 @@
 #include <linux/slab.h>
 // #include <linux/time.h>
 
-#define DEVICE_NAME	 "newcodec"
 
 MODULE_DESCRIPTION("Virtual New Codec Device Driver");
 MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_LICENSE("GPL2");
+
+#define DEVICE_NAME	 "newcodec"
+
+/* vendor, device value for PCI.*/
+#define PCI_VENDOR_ID_TIZEN_EMUL			0xC9B5
+#define PCI_DEVICE_ID_VIRTUAL_NEW_CODEC		0x1024
 
 #ifndef CODEC_DEBUG
 #define CODEC_LOG(fmt, ...) \
@@ -62,11 +67,8 @@ MODULE_LICENSE("GPL2");
 #define CODEC_LOG(fmt, ...)
 #endif
 
-#define NEWCODEC_IRQ_SHARED_TASK	0x1f
-#define NEWCODEC_IRQ_FIXED_TASK		0x2f
-
-#define NEWCODEC_FIXED_DEV_MEM_MAX	24 * 1024 * 1024
-#define NEWCODEC_SHARED_DEV_MEM_MAX	 8 * 1024 * 1024
+#define CODEC_IRQ_TASK 0x1f
+#define CODEC_DEVICE_MEM_COUNT 4
 
 #if 0
 #define NEWCODEC_TIME_CHECK \
@@ -80,40 +82,36 @@ MODULE_LICENSE("GPL2");
 struct codec_param {
 	int32_t api_index;
 	int32_t ctx_index;
-	uint32_t mem_offset;
-	uint32_t mem_type;
+	int32_t mem_offset;
+	int32_t mem_type;
 };
 
 struct codec_mem_info {
-	uint8_t type;
 	uint32_t index;
 	uint32_t offset;
 };
 
 enum codec_io_cmd {
-	CODEC_CMD_GET_DEVICE_MEM_INFO = 0,	// user and driver
+	CODEC_CMD_ACQUIRE_DEVICE_MEM = 0,	// user and driver
 	CODEC_CMD_RELEASE_DEVICE_MEM,
 	CODEC_CMD_ADD_TASK_QUEUE = 3,
 	CODEC_CMD_REMOVE_TASK_QUEUE,
 	CODEC_CMD_COPY_FROM_DEVICE_MEM,
 	CODEC_CMD_COPY_TO_DEVICE_MEM,
-	CODEC_CMD_WAIT_TASK_QUEUE,
 	CODEC_CMD_API_INDEX = 10,			// driver and device
 	CODEC_CMD_CONTEXT_INDEX,
 	CODEC_CMD_FILE_INDEX,
 	CODEC_CMD_DEVICE_MEM_OFFSET,
-	CODEC_CMD_DEVICE_MEM_TYPE,
 	CODEC_CMD_GET_THREAD_STATE,
-	CODEC_CMD_GET_SHARED_QUEUE,
-	CODEC_CMD_GET_FIXED_QUEUE,
+	CODEC_CMD_GET_QUEUE,
 	CODEC_CMD_POP_WRITE_QUEUE,
-	CODEC_CMD_RESET_CODEC_INFO,
+	CODEC_CMD_RESET_AVCONTEXT,
 	CODEC_CMD_GET_VERSION = 20,			// user, driver and device
 	CODEC_CMD_GET_CONTEXT_INDEX,
 };
 
 enum codec_api_index {
-    CODEC_ELEMENT_QUERY = 1,
+    CODEC_QUERY = 1,
     CODEC_INIT,
     CODEC_DECODE_VIDEO,
     CODEC_ENCODE_VIDEO,
@@ -128,19 +126,16 @@ enum codec_mem_state {
 	CODEC_MEM_LOCK,
 };
 
-enum codec_mem_type {
-	CODEC_FIXED_DEVICE_MEM = 0,
-	CODEC_SHARED_DEVICE_MEM,
-};
-
 struct newcodec_task {
 	int32_t id;
+	void *data;
 	struct list_head entry;
 };
 
-struct newcodec_mmapmgr {
-	int32_t id;
-	uint32_t offset;
+struct device_mem_mgr {
+	bool occupied;
+	uint32_t context_id;
+	uint32_t mem_offset;
 };
 
 struct newcodec_device {
@@ -154,47 +149,38 @@ struct newcodec_device {
 	resource_size_t mem_start;
 	resource_size_t mem_size;
 
-	/* Decoding/Encoding queue */
+	/* task queue */
 	struct list_head req_task;
-	struct list_head old_task;
-	struct list_head irq_task;
-#if 0
-	uint32_t irq_task[128];
-	uint32_t irq_task_cnt;
-	uint32_t irq_task_index;
-#endif
+	struct list_head disuse_task;
 
 	/* Device memory manager */
-	struct newcodec_mmapmgr *mem_mgr;
-	uint32_t mmapmgr_size;
-	uint32_t mmapmgr_idx;
-	uint32_t mmapmgr_offset;
-	uint32_t used_mem_size;
+	struct device_mem_mgr *mem_mgr;
+	uint32_t mem_mgr_size;
+	bool all_occupied;
 
 	spinlock_t lock;
+//	struct list_head io_task;
 };
 
 static struct newcodec_device *newcodec;
-static DEFINE_MUTEX(newcodec_mutex);
+static DEFINE_MUTEX(newcodec_interrupt_mutex);
 static DEFINE_MUTEX(newcodec_bh_mutex);
+static DEFINE_MUTEX(newcodec_buffer_mutex);
 
-static void newcodec_add_task(struct list_head *entry, int32_t file);
+static void newcodec_add_task(struct list_head *entry, uint32_t file);
+
 static struct workqueue_struct *newcodec_bh_workqueue;
+static void newcodec_bh_func(struct work_struct *work);
+static DECLARE_WORK(newcodec_bh_work, newcodec_bh_func);
+static void newcodec_bh(struct newcodec_device *dev);
 
-static void newcodec_shared_bh_func(struct work_struct *work);
-static void newcodec_fixed_bh_func(struct work_struct *work);
-static DECLARE_WORK(newcodec_shared_bh_work, newcodec_shared_bh_func);
-static DECLARE_WORK(newcodec_fixed_bh_work, newcodec_fixed_bh_func);
-static void newcodec_shared_bh(struct newcodec_device *dev);
-static void newcodec_fixed_bh(struct newcodec_device *dev);
-
-static void newcodec_shared_bh_func(struct work_struct *work)
+static void newcodec_bh_func(struct work_struct *work)
 {
-	int32_t value;
+	uint32_t value;
 
 	CODEC_LOG("shared_bh func.\n");
 	do {
-		value = readl(newcodec->ioaddr + CODEC_CMD_GET_SHARED_QUEUE);
+		value = readl(newcodec->ioaddr + CODEC_CMD_GET_QUEUE);
 		CODEC_LOG("file value of head task: %x.\n", value);
 		if (value) {
 			newcodec_add_task(&newcodec->req_task, value);
@@ -202,40 +188,17 @@ static void newcodec_shared_bh_func(struct work_struct *work)
 			CODEC_LOG("there is no available task\n");
 		}
 	} while (value);
+
+	mutex_unlock(&newcodec_interrupt_mutex);
 }
 
-static void newcodec_shared_bh(struct newcodec_device *dev)
+static void newcodec_bh(struct newcodec_device *dev)
 {
 	CODEC_LOG("request bottom-half operation.\n");
-	queue_work(newcodec_bh_workqueue, &newcodec_shared_bh_work);
+	queue_work(newcodec_bh_workqueue, &newcodec_bh_work);
 }
 
-static void newcodec_fixed_bh_func(struct work_struct *work)
-{
-	uint32_t value;
-
-	CODEC_LOG("fixed_bh func.\n");
-
-	do {
-		value = readl(newcodec->ioaddr + CODEC_CMD_GET_FIXED_QUEUE);
-		CODEC_LOG("file value of head task: %x.\n", value);
-		if (value) {
-			newcodec_add_task(&newcodec->irq_task, value);
-		} else {
-			CODEC_LOG("there is no available task\n");
-		}
-	} while (value);
-
-	mutex_unlock(&newcodec_mutex);
-}
-
-static void newcodec_fixed_bh(struct newcodec_device *dev)
-{
-	CODEC_LOG("request bottom-half operation.\n");
-	queue_work(newcodec_bh_workqueue, &newcodec_fixed_bh_work);
-}
-
-static void newcodec_add_task(struct list_head *head, int32_t file)
+static void newcodec_add_task(struct list_head *head, uint32_t file)
 {
 	struct newcodec_task *temp = NULL;
 
@@ -247,7 +210,6 @@ static void newcodec_add_task(struct list_head *head, int32_t file)
 
 	CODEC_LOG("add task. file: %x\n", file);
 	temp->id = file;
-
 	INIT_LIST_HEAD(&temp->entry);
 
 	mutex_lock(&newcodec_bh_mutex);
@@ -270,53 +232,34 @@ static void newcodec_release_task_entry(struct list_head *head, int32_t value)
 	}
 }
 
-static uint32_t newcodec_manage_dev_mem(struct codec_mem_info *mem_info, int32_t file)
+static int newcodec_manage_device_mem(uint32_t file)
 {
-	uint32_t req_mem_size = mem_info->index;
-	uint32_t used_mem_size = newcodec->used_mem_size;
-//	uint32_t mmapmgr_offset = newcodec->mmapmgr_offset;
-	struct newcodec_mmapmgr *mem_mgr;
+	struct device_mem_mgr *mem_mgr = NULL;
+	int index, ret = -1;
 
-	mem_mgr = &newcodec->mem_mgr[newcodec->mmapmgr_idx];
-	CODEC_LOG("[file: %x] mem index: %d\n",
-		file, newcodec->mmapmgr_idx);
-
-	if ((used_mem_size + req_mem_size) < NEWCODEC_FIXED_DEV_MEM_MAX) {
-#if 0
-		if (used_mem_size == 0) {
-			newcodec->mem_mgr[0].id = file;
-			newcodec->mem_mgr[0].offset = 0;
-			newcodec->mmapmgr_offset = req_mem_size;
-		} else {
-#endif
-			mem_mgr->id = file;
-			mem_mgr->offset = newcodec->mmapmgr_offset;
-			newcodec->mmapmgr_offset = mem_mgr->offset + req_mem_size;
-//		}
-
-		mutex_lock(&newcodec_mutex);
-		newcodec->used_mem_size += req_mem_size;
-		mutex_unlock(&newcodec_mutex);
-
-		mem_info->type = CODEC_FIXED_DEVICE_MEM;
-	} else {
-		mem_mgr->id = file;
-		mem_mgr->offset = NEWCODEC_FIXED_DEV_MEM_MAX;
-		mem_info->type = CODEC_SHARED_DEVICE_MEM;
+	if (!newcodec->mem_mgr) {
+		printk(KERN_ERR "invalid access to mem_mgr variable.\n");
+		return ret;
 	}
 
-	mem_info->index = newcodec->mmapmgr_idx;
-	mem_info->offset = mem_mgr->offset;
+	for (index = 0; index < CODEC_DEVICE_MEM_COUNT; index++) {
+		mem_mgr = &newcodec->mem_mgr[index];
 
-	newcodec->mmapmgr_idx++;
-	// TODO: twice size or return to 0
-	if (newcodec->mmapmgr_idx == newcodec->mmapmgr_size) {
-		newcodec->mmapmgr_idx = 0;
+		if (!mem_mgr->occupied) {
+			mem_mgr->occupied = true;
+			mem_mgr->context_id = file;
+			return ret;
+		}
 	}
 
-	return 0;
+	CODEC_LOG("all buffers are occupied. lock buffer_mutex.\n");
+	// TODO: use another mutex.
+	newcodec->all_occupied = true;
+
+	mutex_lock(&newcodec_buffer_mutex);
+
+	return ret;
 }
-
 
 static long newcodec_ioctl(struct file *file,
 			unsigned int cmd,
@@ -327,10 +270,11 @@ static long newcodec_ioctl(struct file *file,
 	switch (cmd) {
 	case CODEC_CMD_ADD_TASK_QUEUE:
 		CODEC_LOG("add task into req_task.\n");
-		newcodec_add_task(&newcodec->req_task, (int32_t)file);
+		newcodec_add_task(&newcodec->req_task, (uint32_t)file);
 		break;
 	case CODEC_CMD_REMOVE_TASK_QUEUE:
 	{
+#if 0
 		struct newcodec_task *head_task = NULL;
 
 		head_task =
@@ -338,20 +282,42 @@ static long newcodec_ioctl(struct file *file,
 		if (!head_task) {
 			CODEC_LOG("[file: %p] head_task is NULL\n", file);
 		} else {
-			CODEC_LOG("[file: %p] head_task of req: %x into old_task\n",
+			CODEC_LOG("[file: %p] head_task of req: %x into disuse_task\n",
 				file, head_task->id);
 
 			mutex_lock(&newcodec_mutex);
-			list_move_tail(&head_task->entry, &newcodec->old_task);
+			list_move_tail(&head_task->entry, &newcodec->disuse_task);
 			mutex_unlock(&newcodec_mutex);
 
-			CODEC_LOG("release old_task resource.\n");
-			newcodec_release_task_entry(&newcodec->old_task, (int32_t)file);
+			CODEC_LOG("release disuse_task resource.\n");
+			newcodec_release_task_entry(&newcodec->disuse_task, (int32_t)file);
 		}
+#endif
+		struct device_mem_mgr *mem_mgr = NULL;
+		int index;
+
+		for (index = 0; index < CODEC_DEVICE_MEM_COUNT; index++) {
+			mem_mgr = &newcodec->mem_mgr[index];
+			if (mem_mgr->context_id == (uint32_t)file) {
+				mem_mgr->occupied = false;
+				mem_mgr->context_id = 0;
+				break;
+			}
+		}
+
+		if (newcodec->all_occupied) {
+			CODEC_LOG("a buffer is available. unlock buffer_mutex.\n");
+			// TODO: use another mutex.
+			newcodec->all_occupied = false;
+			mutex_unlock(&newcodec_buffer_mutex);
+		}
+
+		mutex_unlock(&newcodec_interrupt_mutex);
 	}
 		break;
 	case CODEC_CMD_COPY_TO_DEVICE_MEM:
 	{
+#if 0
 		struct newcodec_task *head_task = NULL;
 
 		CODEC_LOG("[file: %p] COPY_TO_DEV_MEM\n", file);
@@ -387,11 +353,49 @@ static long newcodec_ioctl(struct file *file,
 			printk(KERN_ERR "ioctl: failed to copy data to user.\n");
 			ret = -EIO;
 		}
+#endif
+		int vacant_buffer_idx;
+
+		vacant_buffer_idx =
+			newcodec_manage_device_mem((uint32_t)file);
+
+		if (vacant_buffer_idx < 0) {
+			struct newcodec_task *head_task = NULL;
+
+			CODEC_LOG("all buffers are occupied.\n");
+			newcodec_add_task(&newcodec->req_task, (uint32_t)file);
+
+			// wait until codec_buffer_mutex is unlocked.
+			mutex_lock(&newcodec_buffer_mutex);
+
+			vacant_buffer_idx =
+				newcodec_manage_device_mem((uint32_t)file);
+
+			head_task =
+				list_first_entry(&newcodec->req_task,
+								struct newcodec_task, entry);
+			if (!head_task) {
+				printk(KERN_ERR "head task is NULL.\n");
+			} else {
+				CODEC_LOG("move the head task to disuse_task. %p\n", file);
+				mutex_lock(&newcodec_bh_mutex);
+				list_move_tail(&head_task->entry, &newcodec->disuse_task);
+				mutex_unlock(&newcodec_bh_mutex);
+			}
+
+		}
+
+		value = newcodec->mem_mgr[vacant_buffer_idx].mem_offset;
+		if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
+			printk(KERN_ERR "ioctl: failed to copy data to user.\n");
+			ret = -EIO;
+		}
 	}
 		break;
 
 	case CODEC_CMD_COPY_FROM_DEVICE_MEM:
 	{
+#if 0
 		struct newcodec_task *head_task = NULL;
 
 		CODEC_LOG("[file: %p] COPY_FROM_DEV_MEM\n", file);
@@ -434,9 +438,69 @@ static long newcodec_ioctl(struct file *file,
 			printk(KERN_ERR "ioctl: failed to copy data to user.\n");
 			ret = -EIO;
 		}
+#endif
+
+#if 0
+		{
+			struct list_head *pos, *temp;
+			struct newcodec_task *node;
+
+			list_for_each_safe(pos, temp, &newcodec->irq_task) {
+				node = list_entry(pos, struct newcodec_task, entry);
+				if (node->id == (uint32_t)file) {
+					CODEC_LOG("The task_id is done. %x\n", node->id);
+					list_del(pos);
+					kfree(node);
+				}
+			}
+		}
+#endif
+	{
+		int vacant_buffer_idx;
+
+		mutex_lock(&newcodec_interrupt_mutex);
+
+		vacant_buffer_idx =
+			newcodec_manage_device_mem((uint32_t)file);
+
+		if (vacant_buffer_idx < 0) {
+			struct newcodec_task *head_task = NULL;
+
+			CODEC_LOG("all buffers are occupied.\n");
+
+			// wait until codec_buffer_mutex is unlocked.
+			mutex_lock(&newcodec_buffer_mutex);
+
+			vacant_buffer_idx =
+				newcodec_manage_device_mem((uint32_t)file);
+
+			head_task =
+				list_first_entry(&newcodec->req_task,
+								struct newcodec_task, entry);
+			if (!head_task) {
+				printk(KERN_ERR "head task is NULL.\n");
+			} else {
+				CODEC_LOG("move the head task to disuse_task. %p\n", file);
+				mutex_lock(&newcodec_bh_mutex);
+				list_move_tail(&head_task->entry, &newcodec->disuse_task);
+				mutex_unlock(&newcodec_bh_mutex);
+			}
+		}
+
+		// notify that codec device can copy data to memory region.
+		CODEC_LOG("[file: %p] pop data from codec_wq.\n", file);
+		writel((uint32_t)file,
+			newcodec->ioaddr + CODEC_CMD_POP_WRITE_QUEUE);
+
+		value = newcodec->mem_mgr[vacant_buffer_idx].mem_offset;
+		if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
+			printk(KERN_ERR "ioctl: failed to copy data to user.\n");
+			ret = -EIO;
+		}
+	}
 	}
 		break;
-	case CODEC_CMD_GET_DEVICE_MEM_INFO:
+	case CODEC_CMD_ACQUIRE_DEVICE_MEM:
 	{
 		struct codec_mem_info mem_info;
 
@@ -448,7 +512,7 @@ static long newcodec_ioctl(struct file *file,
 
 		CODEC_LOG("request memory size: %d\n", mem_info.index);
 
-		newcodec_manage_dev_mem(&mem_info, (int32_t)file);
+		newcodec_manage_device_mem((int32_t)file);
 
 		if (copy_to_user((void *)arg, &mem_info, sizeof(mem_info))) {
 			printk(KERN_ERR	"ioctl: failed to copy data to user.\n");
@@ -458,7 +522,7 @@ static long newcodec_ioctl(struct file *file,
 		break;
 	case CODEC_CMD_RELEASE_DEVICE_MEM:
 	{
-		struct newcodec_mmapmgr *mem_mgr;
+		struct device_mem_mgr *mem_mgr;
 		struct codec_mem_info mem_info;
 
 		if (copy_from_user(&mem_info, (void *)arg, sizeof(mem_info))) {
@@ -470,13 +534,13 @@ static long newcodec_ioctl(struct file *file,
 		CODEC_LOG("release memory size: %d\n", mem_info.index);
 		mem_mgr = &newcodec->mem_mgr[mem_info.index];
 
-		if (mem_mgr->id == (int32_t)file &&
-			mem_mgr->offset == mem_info.offset) {
-			memset(mem_mgr, 0x00, sizeof(struct newcodec_mmapmgr));
+		if (mem_mgr->context_id == (uint32_t)file &&
+			mem_mgr->mem_offset == mem_info.offset) {
+			memset(mem_mgr, 0x00, sizeof(struct device_mem_mgr));
 		}
 	}
 		break;
-#if 0 
+#if 0
 	case CODEC_CMD_WAIT_TASK_QUEUE:
 	{
 		value = CODEC_MEM_LOCK;
@@ -528,7 +592,7 @@ static long newcodec_ioctl(struct file *file,
 	}
 		break;
 #endif
-#if 1 
+#if 0
 	case CODEC_CMD_WAIT_TASK_QUEUE:
 	{
 //		printk(KERN_INFO "wait_event\n");
@@ -571,9 +635,9 @@ static long newcodec_ioctl(struct file *file,
 }
 
 static ssize_t newcodec_read(struct file *file, char __user *buf,
-			size_t count, loff_t *fops)
+							size_t count, loff_t *fops)
 {
-	CODEC_LOG("do nothing in the read operation.\n");
+	CODEC_LOG("do nothing.\n");
 	return 0;
 }
 
@@ -594,39 +658,99 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 		return -EIO;
     }
 
+#if 0
 	mutex_lock(&newcodec_mutex);
 	if (param_info.api_index == CODEC_ELEMENT_QUERY) {
 		writel((int32_t)param_info.api_index,
 				newcodec->ioaddr + CODEC_CMD_API_INDEX);
 		mutex_unlock(&newcodec_mutex);
 	} else {
-		writel((int32_t)file,
+		writel((uint32_t)file,
 				newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
 		writel((uint32_t)param_info.mem_offset,
 				newcodec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-		writel((uint32_t)param_info.mem_type,
-				newcodec->ioaddr + CODEC_CMD_DEVICE_MEM_TYPE);
 		writel((int32_t)param_info.ctx_index,
 				newcodec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
 		writel((int32_t)param_info.api_index,
 				newcodec->ioaddr + CODEC_CMD_API_INDEX);
 
-		if (param_info.mem_type == CODEC_SHARED_DEVICE_MEM) {
-			if (param_info.api_index > CODEC_ELEMENT_QUERY &&
-					param_info.api_index < CODEC_DEINIT) {
-				struct newcodec_task *head_task = NULL;
+		if (param_info.api_index > CODEC_ELEMENT_QUERY &&
+				param_info.api_index < CODEC_DEINIT) {
+			struct newcodec_task *head_task = NULL;
 
-				head_task =
-					list_first_entry(&newcodec->req_task, struct newcodec_task, entry);
-				if (!head_task) {
-					CODEC_LOG("[file: %p] head_task is NULL\n", file);
-				} else {
-					CODEC_LOG("move head_task: %x into old_task\n", head_task->id);
-					list_move_tail(&head_task->entry, &newcodec->old_task);
-				}
+			head_task =
+				list_first_entry(&newcodec->req_task, struct newcodec_task, entry);
+			if (!head_task) {
+				CODEC_LOG("[file: %p] head_task is NULL\n", file);
+			} else {
+				CODEC_LOG("move head_task: %x into disuse task\n", head_task->id);
+				list_move_tail(&head_task->entry, &newcodec->disuse_task);
 			}
 		}
+
+
+		CODEC_LOG("A buffer is avaiable. unlock buffer_mutex.\n");
+		mutex_unlock(&codec_buffer_mutex);
 	}
+#endif
+	int api_index;
+
+	api_index = param_info.api_index;
+	switch (api_index) {
+		case CODEC_QUERY:
+			writel((int32_t)param_info.api_index,
+					newcodec->ioaddr + CODEC_CMD_API_INDEX);
+			break;
+		case CODEC_INIT ... CODEC_PICTURE_COPY:
+		{
+			writel((uint32_t)file,
+					newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
+			writel((uint32_t)param_info.mem_offset,
+					newcodec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
+			writel((int32_t)param_info.ctx_index,
+					newcodec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
+			writel((int32_t)param_info.api_index,
+					newcodec->ioaddr + CODEC_CMD_API_INDEX);
+
+			{
+				struct device_mem_mgr *mem_mgr = NULL;
+				int index;
+
+				for (index = 0; index < CODEC_DEVICE_MEM_COUNT; index++) {
+					mem_mgr = &newcodec->mem_mgr[index];
+					if (mem_mgr->context_id == (uint32_t)file) {
+						mem_mgr->occupied = false;
+						mem_mgr->context_id = 0;
+						break;
+					}
+				}
+
+				if (newcodec->all_occupied) {
+					CODEC_LOG("a buffer is available. unlock buffer_mutex.\n");
+					// TODO: use another mutex.
+					newcodec->all_occupied = false;
+					mutex_unlock(&newcodec_buffer_mutex);
+				}
+			}
+
+			// acquire mutex to make the current context wait.
+			mutex_lock(&newcodec_interrupt_mutex);
+		}
+			break;
+		case CODEC_DEINIT:
+			writel((uint32_t)file,
+					newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
+			writel((uint32_t)param_info.mem_offset,
+					newcodec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
+			writel((int32_t)param_info.ctx_index,
+					newcodec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
+			writel((int32_t)param_info.api_index,
+					newcodec->ioaddr + CODEC_CMD_API_INDEX);
+			break;
+		default:
+			printk(KERN_ERR "wrong api_index %d", api_index);
+	}
+
 //	mutex_unlock(&newcodec_mutex);
 
 	return 0;
@@ -667,20 +791,14 @@ static irqreturn_t newcodec_irq_handler(int irq, void *dev_id)
 	int val = 0;
 
 	val = readl(dev->ioaddr + CODEC_CMD_GET_THREAD_STATE);
-	if (!(val & NEWCODEC_IRQ_SHARED_TASK ||
-			val & NEWCODEC_IRQ_FIXED_TASK)) {
+	if (!(val & CODEC_IRQ_TASK)) {
 		return IRQ_NONE;
 	}
 
 	spin_lock_irqsave(&dev->lock, flags);
 
-	if (val == NEWCODEC_IRQ_SHARED_TASK) {
-		CODEC_LOG("handle shared_task irq\n");
-		newcodec_shared_bh(dev);
-	} else if (val == NEWCODEC_IRQ_FIXED_TASK) {
-		CODEC_LOG("handle fixed_task irq\n");
-		newcodec_fixed_bh(dev);
-	}
+	CODEC_LOG("handle shared_task irq\n");
+	newcodec_bh(dev);
 
 	spin_unlock_irqrestore(&dev->lock, flags);
 
@@ -690,6 +808,29 @@ static irqreturn_t newcodec_irq_handler(int irq, void *dev_id)
 static int newcodec_open(struct inode *inode, struct file *file)
 {
 	CODEC_LOG("open! struct file:%p\n", file);
+
+#if 0
+	struct newcodec_task *temp = NULL;
+	struct mutex *io_lock = NULL;
+
+	temp = kzalloc(sizeof(struct newcodec_task), GFP_KERNEL);
+	if (!temp) {
+		return -ENOMEM;
+	}
+	temp->id = (int32_t)file;
+
+	io_lock = kzalloc(sizeof(struct mutex), GFP_KERNEL);
+	if (!io_lock) {
+		kfree(temp);
+		return -ENOMEM;
+	}
+	mutex_init(io_lock);
+
+	temp->id = (int32_t)file;
+	temp->data = io_lock;
+
+	list_add_tail(&temp->entry, &newcodec->io_task);
+#endif
 
 	/* register interrupt handler */
 	if (request_irq(newcodec->dev->irq, newcodec_irq_handler,
@@ -711,16 +852,14 @@ static int newcodec_release(struct inode *inode, struct file *file)
 		free_irq(newcodec->dev->irq, newcodec);
 	}
 
-	/* free old_task resource */
-	CODEC_LOG("release old_task resource.\n");
-	newcodec_release_task_entry(&newcodec->old_task, (int32_t)file);
+	/* free resource */
+	CODEC_LOG("release disuse_task resource.\n");
+	newcodec_release_task_entry(&newcodec->disuse_task, (int32_t)file);
 
 	CODEC_LOG("release req_task resource.\n");
 	newcodec_release_task_entry(&newcodec->req_task, (int32_t)file);
 
-	CODEC_LOG("release irq_task resource.\n");
-	newcodec_release_task_entry(&newcodec->irq_task, (int32_t)file);
-
+//	newcodec_release_task_entry(&newcodec->io_task, (int32_t)file);
 #if 0
 	{
 		struct list_head *pos, *temp;
@@ -749,7 +888,7 @@ static int newcodec_release(struct inode *inode, struct file *file)
 	/* notify closing codec device of qemu. */
 	if (file) {
 		writel((int32_t)file,
-			newcodec->ioaddr + CODEC_CMD_RESET_CODEC_INFO);
+			newcodec->ioaddr + CODEC_CMD_RESET_AVCONTEXT);
 	}
 
 	module_put(THIS_MODULE);
@@ -780,34 +919,34 @@ static int __devinit newcodec_probe(struct pci_dev *pci_dev,
 {
 	int ret = 0;
 
+	printk(KERN_INFO "%s: driver is probed.\n", DEVICE_NAME);
+
 	newcodec = kzalloc(sizeof(struct newcodec_device), GFP_KERNEL);
 	if (!newcodec) {
 		printk(KERN_ERR "Failed to allocate memory for codec.\n");
-		return -EIO;
+		return -ENOMEM;
 	}
+
 	newcodec->dev = pci_dev;
 
-	newcodec->mmapmgr_size = 32;
+	newcodec->mem_mgr_size = 1;
 	newcodec->mem_mgr =
-		kzalloc(sizeof(struct newcodec_mmapmgr) *
-				newcodec->mmapmgr_size, GFP_KERNEL);
+		kzalloc(sizeof(struct device_mem_mgr) *
+				newcodec->mem_mgr_size, GFP_KERNEL);
 	if (!newcodec->mem_mgr) {
 		printk(KERN_ERR "Failed to allocate memory.\n");
-		return -EIO;
+		return -ENOMEM;
 	}
 
 	INIT_LIST_HEAD(&newcodec->req_task);
-	INIT_LIST_HEAD(&newcodec->old_task);
-	INIT_LIST_HEAD(&newcodec->irq_task);
+	INIT_LIST_HEAD(&newcodec->disuse_task);
 
-//	init_waitqueue_head(&newcodec->codec_wq);
 	spin_lock_init(&newcodec->lock);
 
 	if ((ret = pci_enable_device(pci_dev))) {
 		printk(KERN_ERR "pci_enable_device failed\n");
 		return ret;
 	}
-
 	pci_set_master(pci_dev);
 
 	newcodec->mem_start = pci_resource_start(pci_dev, 0);
@@ -853,8 +992,7 @@ static int __devinit newcodec_probe(struct pci_dev *pci_dev,
 		return -EINVAL;
 	}
 
-	ret = misc_register(&codec_dev);
-	if (ret) {
+	if ((ret = misc_register(&codec_dev))) {
 		printk(KERN_ERR "cannot register codec as misc\n");
 		iounmap(newcodec->ioaddr);
 		release_mem_region(newcodec->io_start, newcodec->io_size);
@@ -893,9 +1031,6 @@ static void __devinit newcodec_remove(struct pci_dev *pci_dev)
 	pci_disable_device(pci_dev);
 }
 
-#define PCI_VENDOR_ID_TIZEN_EMUL			0xC9B5
-#define PCI_DEVICE_ID_VIRTUAL_NEW_CODEC		0x1024
-
 static struct pci_device_id newcodec_pci_table[] __devinitdata = {
 	{
 		.vendor		= PCI_VENDOR_ID_TIZEN_EMUL,
@@ -907,7 +1042,6 @@ static struct pci_device_id newcodec_pci_table[] __devinitdata = {
 };
 MODULE_DEVICE_TABLE(pci, newcodec_pci_table);
 
-/* define PCI Driver for CODEC */
 static struct pci_driver driver = {
 	.name		= DEVICE_NAME,
 	.id_table	= newcodec_pci_table,
@@ -917,7 +1051,7 @@ static struct pci_driver driver = {
 
 static int __init newcodec_init(void)
 {
-	printk(KERN_INFO "device is initialized.\n");
+	printk(KERN_INFO "%s: driver is initialized.\n", DEVICE_NAME);
 
 	newcodec_bh_workqueue = create_workqueue ("newcodec");
 	if (!newcodec_bh_workqueue) {
