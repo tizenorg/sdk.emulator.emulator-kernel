@@ -246,9 +246,9 @@ static int newcodec_manage_device_mem(uint32_t file)
 		mem_mgr = &newcodec->mem_mgr[index];
 
 		if (!mem_mgr->occupied) {
-			mem_mgr->occupied = true;
+			mem_mgr->occupied = false;
 			mem_mgr->context_id = file;
-			return ret;
+			return index;
 		}
 	}
 
@@ -929,7 +929,7 @@ static int __devinit newcodec_probe(struct pci_dev *pci_dev,
 
 	newcodec->dev = pci_dev;
 
-	newcodec->mem_mgr_size = 1;
+	newcodec->mem_mgr_size = CODEC_DEVICE_MEM_COUNT;
 	newcodec->mem_mgr =
 		kzalloc(sizeof(struct device_mem_mgr) *
 				newcodec->mem_mgr_size, GFP_KERNEL);
