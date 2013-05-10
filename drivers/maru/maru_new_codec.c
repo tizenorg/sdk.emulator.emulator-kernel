@@ -58,7 +58,7 @@ MODULE_LICENSE("GPL2");
 
 /* vendor, device value for PCI.*/
 #define PCI_VENDOR_ID_TIZEN_EMUL			0xC9B5
-#define PCI_DEVICE_ID_VIRTUAL_NEW_CODEC		0x1024
+#define PCI_DEVICE_ID_VIRTUAL_NEW_CODEC		0x1040
 
 #ifndef CODEC_DEBUG
 #define CODEC_LOG(fmt, ...) \
