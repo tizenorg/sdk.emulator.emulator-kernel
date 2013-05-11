@@ -168,6 +168,7 @@ static DEFINE_MUTEX(newcodec_bh_mutex);
 static DEFINE_MUTEX(newcodec_buffer_mutex);
 
 static void newcodec_add_task(struct list_head *entry, uint32_t file);
+static void newcodec_release_memory_region(uint32_t file);
 
 static struct workqueue_struct *newcodec_bh_workqueue;
 static void newcodec_bh_func(struct work_struct *work);
@@ -178,10 +179,10 @@ static void newcodec_bh_func(struct work_struct *work)
 {
 	uint32_t value;
 
-	CODEC_LOG("shared_bh func.\n");
+	CODEC_LOG("%s\n", __func__);
 	do {
 		value = readl(newcodec->ioaddr + CODEC_CMD_GET_QUEUE);
-		CODEC_LOG("file value of head task: %x.\n", value);
+		CODEC_LOG("read a value from device %x.\n", value);
 		if (value) {
 			newcodec_add_task(&newcodec->req_task, value);
 		} else {
@@ -189,12 +190,13 @@ static void newcodec_bh_func(struct work_struct *work)
 		}
 	} while (value);
 
+	// TODO
 	mutex_unlock(&newcodec_interrupt_mutex);
 }
 
 static void newcodec_bh(struct newcodec_device *dev)
 {
-	CODEC_LOG("request bottom-half operation.\n");
+	CODEC_LOG("add bottom-half function to codec_workqueue\n");
 	queue_work(newcodec_bh_workqueue, &newcodec_bh_work);
 }
 
@@ -246,16 +248,20 @@ static int newcodec_manage_device_mem(uint32_t file)
 		mem_mgr = &newcodec->mem_mgr[index];
 
 		if (!mem_mgr->occupied) {
-			mem_mgr->occupied = false;
+			mem_mgr->occupied = true;
 			mem_mgr->context_id = file;
-			return index;
+//			return index;
+			ret = index;
+			break;
 		}
 	}
 
-	CODEC_LOG("all buffers are occupied. lock buffer_mutex.\n");
+#if 0
 	// TODO: use another mutex.
 	newcodec->all_occupied = true;
+#endif
 
+	CODEC_LOG("all buffers are occupied. lock buffer_mutex. %x\n", file);
 	mutex_lock(&newcodec_buffer_mutex);
 
 	return ret;
@@ -269,103 +275,28 @@ static long newcodec_ioctl(struct file *file,
 
 	switch (cmd) {
 	case CODEC_CMD_ADD_TASK_QUEUE:
-		CODEC_LOG("add task into req_task.\n");
-		newcodec_add_task(&newcodec->req_task, (uint32_t)file);
 		break;
 	case CODEC_CMD_REMOVE_TASK_QUEUE:
-	{
-#if 0
-		struct newcodec_task *head_task = NULL;
-
-		head_task =
-			list_first_entry(&newcodec->req_task, struct newcodec_task, entry);
-		if (!head_task) {
-			CODEC_LOG("[file: %p] head_task is NULL\n", file);
-		} else {
-			CODEC_LOG("[file: %p] head_task of req: %x into disuse_task\n",
-				file, head_task->id);
-
-			mutex_lock(&newcodec_mutex);
-			list_move_tail(&head_task->entry, &newcodec->disuse_task);
-			mutex_unlock(&newcodec_mutex);
-
-			CODEC_LOG("release disuse_task resource.\n");
-			newcodec_release_task_entry(&newcodec->disuse_task, (int32_t)file);
-		}
-#endif
-		struct device_mem_mgr *mem_mgr = NULL;
-		int index;
-
-		for (index = 0; index < CODEC_DEVICE_MEM_COUNT; index++) {
-			mem_mgr = &newcodec->mem_mgr[index];
-			if (mem_mgr->context_id == (uint32_t)file) {
-				mem_mgr->occupied = false;
-				mem_mgr->context_id = 0;
-				break;
-			}
-		}
-
-		if (newcodec->all_occupied) {
-			CODEC_LOG("a buffer is available. unlock buffer_mutex.\n");
-			// TODO: use another mutex.
-			newcodec->all_occupied = false;
-			mutex_unlock(&newcodec_buffer_mutex);
-		}
-
-		mutex_unlock(&newcodec_interrupt_mutex);
-	}
+		newcodec_release_memory_region((uint32_t)file);
+//		mutex_unlock(&newcodec_interrupt_mutex);
 		break;
 	case CODEC_CMD_COPY_TO_DEVICE_MEM:
 	{
-#if 0
-		struct newcodec_task *head_task = NULL;
-
-		CODEC_LOG("[file: %p] COPY_TO_DEV_MEM\n", file);
-		mutex_lock(&newcodec_mutex);
-		if (!list_empty(&newcodec->req_task)) {
-			mutex_unlock(&newcodec_mutex);
-
-			head_task =
-				list_first_entry(&newcodec->req_task, struct newcodec_task, entry);
-			if (!head_task) {
-				CODEC_LOG("[file: %p] head_task is NULL\n", file);
-				value = CODEC_MEM_LOCK;
-				break;
-			}
-
-			CODEC_LOG("[file: %p] COPY_TO head_task: %x\n", file, head_task->id);
-
-			if (head_task->id != (int32_t)file) {
-				CODEC_LOG("[file: %p] different file btw head and file\n", file);
-				value = CODEC_MEM_LOCK;
-			} else {
-				CODEC_LOG("[file: %p] handle head_task: %x\n", file, head_task->id);
-				CODEC_LOG("[file: %p] COPY_TO_DEV is accept.\n", file);
-				value = CODEC_MEM_UNLOCK;
-			}
-		} else {
-			mutex_unlock(&newcodec_mutex);
-			CODEC_LOG("[file: %p] COPY_TO_DEV_MEM req_task is empty\n", file);
-			value = CODEC_MEM_LOCK;
-		}
-
-		if (copy_to_user((void *)arg, &value, sizeof(int))) {
-			printk(KERN_ERR "ioctl: failed to copy data to user.\n");
-			ret = -EIO;
-		}
-#endif
 		int vacant_buffer_idx;
+
+		CODEC_LOG("copy data to device memory\n");
 
 		vacant_buffer_idx =
 			newcodec_manage_device_mem((uint32_t)file);
 
+#if 0
 		if (vacant_buffer_idx < 0) {
 			struct newcodec_task *head_task = NULL;
 
-			CODEC_LOG("all buffers are occupied.\n");
 			newcodec_add_task(&newcodec->req_task, (uint32_t)file);
 
 			// wait until codec_buffer_mutex is unlocked.
+			CODEC_LOG("all buffers are occupied.\n");
 			mutex_lock(&newcodec_buffer_mutex);
 
 			vacant_buffer_idx =
@@ -382,8 +313,10 @@ static long newcodec_ioctl(struct file *file,
 				list_move_tail(&head_task->entry, &newcodec->disuse_task);
 				mutex_unlock(&newcodec_bh_mutex);
 			}
-
 		}
+#endif
+
+		CODEC_LOG("buffer index: %d\n", vacant_buffer_idx);
 
 		value = newcodec->mem_mgr[vacant_buffer_idx].mem_offset;
 		if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
@@ -395,74 +328,17 @@ static long newcodec_ioctl(struct file *file,
 
 	case CODEC_CMD_COPY_FROM_DEVICE_MEM:
 	{
-#if 0
-		struct newcodec_task *head_task = NULL;
-
-		CODEC_LOG("[file: %p] COPY_FROM_DEV_MEM\n", file);
-
-		mutex_lock(&newcodec_mutex);
-		if (!list_empty(&newcodec->req_task)) {
-			mutex_unlock(&newcodec_mutex);
-
-			if (!(head_task =
-				list_first_entry(&newcodec->req_task, struct newcodec_task, entry))) {
-				value = CODEC_MEM_LOCK;
-				if (copy_to_user((void *)arg, &value, sizeof(int))) {
-					printk(KERN_ERR "ioctl: failed to copy data to user.\n");
-					ret = -EIO;
-				}
-				break;
-			}
-
-			CODEC_LOG("[file: %p] COPY_FROM head_task: %x\n",
-				file, head_task->id);
-
-			if (head_task->id != (int32_t)file) {
-				CODEC_LOG("[file: %p] different file btw head and file\n", file);
-				value = CODEC_MEM_LOCK;
-			} else {
-				CODEC_LOG("[file: %p] pop data %x from codec_wq.\n",
-					file, head_task->id);
-				value = CODEC_MEM_UNLOCK;
-
-				writel(head_task->id,
-						newcodec->ioaddr + CODEC_CMD_POP_WRITE_QUEUE);
-			}
-		} else {
-			mutex_unlock(&newcodec_mutex);
-			CODEC_LOG("[file: %p] COPY_FROM_DEV_MEM req_task is empty\n", file);
-			value = CODEC_MEM_LOCK;
-		}
-
-		if (copy_to_user((void *)arg, &value, sizeof(int))) {
-			printk(KERN_ERR "ioctl: failed to copy data to user.\n");
-			ret = -EIO;
-		}
-#endif
-
-#if 0
-		{
-			struct list_head *pos, *temp;
-			struct newcodec_task *node;
-
-			list_for_each_safe(pos, temp, &newcodec->irq_task) {
-				node = list_entry(pos, struct newcodec_task, entry);
-				if (node->id == (uint32_t)file) {
-					CODEC_LOG("The task_id is done. %x\n", node->id);
-					list_del(pos);
-					kfree(node);
-				}
-			}
-		}
-#endif
-	{
 		int vacant_buffer_idx;
 
+		CODEC_LOG("copy data from device memory. %p\n", file);
 		mutex_lock(&newcodec_interrupt_mutex);
+
+		CODEC_LOG("received an interrupt from device. %p\n", file);
+		mutex_unlock(&newcodec_interrupt_mutex);
 
 		vacant_buffer_idx =
 			newcodec_manage_device_mem((uint32_t)file);
-
+#if 0
 		if (vacant_buffer_idx < 0) {
 			struct newcodec_task *head_task = NULL;
 
@@ -486,9 +362,10 @@ static long newcodec_ioctl(struct file *file,
 				mutex_unlock(&newcodec_bh_mutex);
 			}
 		}
+#endif
 
 		// notify that codec device can copy data to memory region.
-		CODEC_LOG("[file: %p] pop data from codec_wq.\n", file);
+		CODEC_LOG("send a request to pop data from device. %p\n", file);
 		writel((uint32_t)file,
 			newcodec->ioaddr + CODEC_CMD_POP_WRITE_QUEUE);
 
@@ -497,7 +374,6 @@ static long newcodec_ioctl(struct file *file,
 			printk(KERN_ERR "ioctl: failed to copy data to user.\n");
 			ret = -EIO;
 		}
-	}
 	}
 		break;
 	case CODEC_CMD_ACQUIRE_DEVICE_MEM:
@@ -540,84 +416,6 @@ static long newcodec_ioctl(struct file *file,
 		}
 	}
 		break;
-#if 0
-	case CODEC_CMD_WAIT_TASK_QUEUE:
-	{
-		value = CODEC_MEM_LOCK;
-
-		mutex_lock(&newcodec_mutex);
-		if (!list_empty(&newcodec->irq_task)) {
-#if 0
-			struct newcodec_task *head_task = NULL;
-
-			head_task =
-				list_first_entry(&newcodec->irq_task, struct newcodec_task, entry);
-			if (!head_task) {
-				CODEC_LOG("[file: %p] head_task is NULL\n", file);
-			} else {
-				CODEC_LOG("[file: %p] head_task id: %x\n", file, head_task->id);
-				if (head_task->id == (int32_t)file) {
-					value = CODEC_MEM_UNLOCK;
-					list_del(&head_task->entry);
-					kfree(head_task);
-				}
-			}
-#endif
-#if 1
-			{
-				struct list_head *pos, *temp;
-				struct newcodec_task *node;
-
-				list_for_each_safe(pos, temp, &newcodec->irq_task) {
-					node = list_entry(pos, struct newcodec_task, entry);
-					if (node->id == (int32_t)file) {
-						value = CODEC_MEM_UNLOCK;
-						CODEC_LOG("The task_id is done. %x\n", node->id);
-						list_del(pos);
-						kfree(node);
-					}
-				}
-			}
-#endif
-			mutex_unlock(&newcodec_mutex);
-		} else {
-			mutex_unlock(&newcodec_mutex);
-			CODEC_LOG("[file: %p] irq_task is empty\n", file);
-		}
-
-		if (copy_to_user((void *)arg, &value, sizeof(int))) {
-			printk(KERN_ERR "ioctl: failed to copy data to user\n");
-			ret = -EIO;
-	    }
-	}
-		break;
-#endif
-#if 0
-	case CODEC_CMD_WAIT_TASK_QUEUE:
-	{
-//		printk(KERN_INFO "wait_event\n");
-		mutex_lock(&newcodec_mutex);
-
-		{
-			struct list_head *pos, *temp;
-			struct newcodec_task *node;
-
-			list_for_each_safe(pos, temp, &newcodec->irq_task) {
-				node = list_entry(pos, struct newcodec_task, entry);
-				if (node->id == (int32_t)file) {
-					CODEC_LOG("The task_id is done. %x\n", node->id);
-					list_del(pos);
-					kfree(node);
-				} else {
-				}
-			}
-		}
-
-//		printk(KERN_INFO "wake_up_event\n");
-		mutex_unlock(&newcodec_mutex);
-	}
-		break;
-#endif
 	case CODEC_CMD_GET_VERSION:
 	case CODEC_CMD_GET_CONTEXT_INDEX:
 		value = readl(newcodec->ioaddr + cmd);
@@ -641,10 +439,38 @@ static ssize_t newcodec_read(struct file *file, char __user *buf,
 	return 0;
 }
 
+static void newcodec_release_memory_region(uint32_t file)
+{
+	struct device_mem_mgr *mem_mgr = NULL;
+	int index;
+
+	for (index = 0; index < CODEC_DEVICE_MEM_COUNT; index++) {
+		mem_mgr = &newcodec->mem_mgr[index];
+		if (mem_mgr->context_id == file) {
+			mem_mgr->occupied = false;
+			mem_mgr->context_id = 0;
+			break;
+		}
+	}
+
+	CODEC_LOG("a buffer is available. unlock buffer_mutex. %x\n", file);
+	mutex_unlock(&newcodec_buffer_mutex);
+
+#if 0
+	if (newcodec->all_occupied) {
+		CODEC_LOG("a buffer is available. unlock buffer_mutex.\n");
+		// TODO: use another mutex.
+		newcodec->all_occupied = false;
+		mutex_unlock(&newcodec_buffer_mutex);
+	}
+#endif
+}
+
 /* Copy data between guest and host using mmap operation. */
 static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t count, loff_t *fops)
 {
 	struct codec_param param_info;
+	int api_index;
 
 	if (!newcodec) {
 		printk(KERN_ERR "failed to get codec device info\n");
@@ -658,42 +484,7 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 		return -EIO;
     }
 
-#if 0
-	mutex_lock(&newcodec_mutex);
-	if (param_info.api_index == CODEC_ELEMENT_QUERY) {
-		writel((int32_t)param_info.api_index,
-				newcodec->ioaddr + CODEC_CMD_API_INDEX);
-		mutex_unlock(&newcodec_mutex);
-	} else {
-		writel((uint32_t)file,
-				newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
-		writel((uint32_t)param_info.mem_offset,
-				newcodec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-		writel((int32_t)param_info.ctx_index,
-				newcodec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
-		writel((int32_t)param_info.api_index,
-				newcodec->ioaddr + CODEC_CMD_API_INDEX);
-
-		if (param_info.api_index > CODEC_ELEMENT_QUERY &&
-				param_info.api_index < CODEC_DEINIT) {
-			struct newcodec_task *head_task = NULL;
-
-			head_task =
-				list_first_entry(&newcodec->req_task, struct newcodec_task, entry);
-			if (!head_task) {
-				CODEC_LOG("[file: %p] head_task is NULL\n", file);
-			} else {
-				CODEC_LOG("move head_task: %x into disuse task\n", head_task->id);
-				list_move_tail(&head_task->entry, &newcodec->disuse_task);
-			}
-		}
-
-
-		CODEC_LOG("A buffer is avaiable. unlock buffer_mutex.\n");
-		mutex_unlock(&codec_buffer_mutex);
-	}
-#endif
-	int api_index;
+	CODEC_LOG("enter %s. %p\n", __func__, file);
 
 	api_index = param_info.api_index;
 	switch (api_index) {
@@ -701,7 +492,7 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 			writel((int32_t)param_info.api_index,
 					newcodec->ioaddr + CODEC_CMD_API_INDEX);
 			break;
-		case CODEC_INIT ... CODEC_PICTURE_COPY:
+		case CODEC_INIT ... CODEC_ENCODE_AUDIO:
 		{
 			writel((uint32_t)file,
 					newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
@@ -712,31 +503,29 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 			writel((int32_t)param_info.api_index,
 					newcodec->ioaddr + CODEC_CMD_API_INDEX);
 
-			{
-				struct device_mem_mgr *mem_mgr = NULL;
-				int index;
+			newcodec_release_memory_region((uint32_t)file);
 
-				for (index = 0; index < CODEC_DEVICE_MEM_COUNT; index++) {
-					mem_mgr = &newcodec->mem_mgr[index];
-					if (mem_mgr->context_id == (uint32_t)file) {
-						mem_mgr->occupied = false;
-						mem_mgr->context_id = 0;
-						break;
-					}
-				}
-
-				if (newcodec->all_occupied) {
-					CODEC_LOG("a buffer is available. unlock buffer_mutex.\n");
-					// TODO: use another mutex.
-					newcodec->all_occupied = false;
-					mutex_unlock(&newcodec_buffer_mutex);
-				}
-			}
-
-			// acquire mutex to make the current context wait.
+			CODEC_LOG("acquire mutex to make the current context wait. %p\n", file);
 			mutex_lock(&newcodec_interrupt_mutex);
 		}
 			break;
+
+		case CODEC_PICTURE_COPY:
+		{
+			writel((uint32_t)file,
+					newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
+			writel((uint32_t)param_info.mem_offset,
+					newcodec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
+			writel((int32_t)param_info.ctx_index,
+					newcodec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
+			writel((int32_t)param_info.api_index,
+					newcodec->ioaddr + CODEC_CMD_API_INDEX);
+
+			CODEC_LOG("acquire mutex to make the current context wait. %p\n", file);
+			mutex_lock(&newcodec_interrupt_mutex);
+		}
+			break;
+
 		case CODEC_DEINIT:
 			writel((uint32_t)file,
 					newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
@@ -797,7 +586,7 @@ static irqreturn_t newcodec_irq_handler(int irq, void *dev_id)
 
 	spin_lock_irqsave(&dev->lock, flags);
 
-	CODEC_LOG("handle shared_task irq\n");
+	CODEC_LOG("handle an interrupt from codec device.\n");
 	newcodec_bh(dev);
 
 	spin_unlock_irqrestore(&dev->lock, flags);
