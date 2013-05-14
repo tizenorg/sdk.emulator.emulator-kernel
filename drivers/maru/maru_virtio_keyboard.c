@@ -48,6 +48,7 @@ MODULE_DESCRIPTION("Emulator Virtio Keyboard Driver");
 	printk(log_level "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
 
 #define KBD_BUF_SIZE 100
+static int vqidx = 0;
 
 struct EmulKbdEvent
 {
@@ -77,7 +78,6 @@ static struct virtio_device_id id_table[] = {
 static void vq_keyboard_handle(struct virtqueue *vq)
 {
 	int err = 0, len = 0;
-	int index = 0;
 	void *data;
 	struct EmulKbdEvent kbdevent;
 
@@ -88,13 +88,10 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 		return;
 	}
 
-	while (index < KBD_BUF_SIZE) {
-		memcpy(&kbdevent, &vkbd->kbdevt[index], sizeof(kbdevent));
-		printk(KERN_ERR "from qemu code = %d, value = %d\n", kbdevent.code, kbdevent.value); 
-
+        while (1) {
+		memcpy(&kbdevent, &vkbd->kbdevt[vqidx], sizeof(kbdevent));
 #if 1
 		if (kbdevent.code == 0) {
-			index++;
 			break;
 		}
 #endif
@@ -102,10 +99,12 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 		input_event(vkbd->idev, EV_KEY, kbdevent.code, kbdevent.value);
 		input_sync(vkbd->idev);
 		printk(KERN_ERR "input_event code = %d, value = %d\n", kbdevent.code, kbdevent.value); 
-		memset(&vkbd->kbdevt[index], 0x00, sizeof(kbdevent));
-		index++;
+		memset(&vkbd->kbdevt[vqidx], 0x00, sizeof(kbdevent));
+		vqidx++;
+		if (vqidx == KBD_BUF_SIZE) {
+			vqidx = 0;
+		}
 	}
-
 	err = virtqueue_add_buf (vq, vkbd->sg, 0, KBD_BUF_SIZE, (void *)KBD_BUF_SIZE, GFP_ATOMIC);
 	if (err < 0) {
 		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
