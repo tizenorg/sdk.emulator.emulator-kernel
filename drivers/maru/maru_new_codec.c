@@ -93,12 +93,11 @@ struct codec_mem_info {
 };
 
 enum codec_io_cmd {
-	CODEC_CMD_ACQUIRE_DEVICE_MEM = 0,	// user and driver
-	CODEC_CMD_RELEASE_DEVICE_MEM,
-	CODEC_CMD_ADD_TASK_QUEUE = 3,
+//	CODEC_CMD_ACQUIRE_DEVICE_MEM = 0,	// user and driver
+	CODEC_CMD_RELEASE_DEVICE_MEM = 5,	// user and driver
 	CODEC_CMD_REMOVE_TASK_QUEUE,
-	CODEC_CMD_COPY_FROM_DEVICE_MEM,
 	CODEC_CMD_COPY_TO_DEVICE_MEM,
+	CODEC_CMD_COPY_FROM_DEVICE_MEM,
 	CODEC_CMD_API_INDEX = 10,			// driver and device
 	CODEC_CMD_CONTEXT_INDEX,
 	CODEC_CMD_FILE_INDEX,
@@ -108,6 +107,7 @@ enum codec_io_cmd {
 	CODEC_CMD_POP_WRITE_QUEUE,
 	CODEC_CMD_RESET_AVCONTEXT,
 	CODEC_CMD_GET_VERSION = 20,			// user, driver and device
+	CODEC_CMD_GET_ELEMENT,
 	CODEC_CMD_GET_CONTEXT_INDEX,
 	CODEC_CMD_SECURE_MEMORY= 30,
 	CODEC_CMD_RELEASE_MEMORY,
@@ -115,8 +115,8 @@ enum codec_io_cmd {
 };
 
 enum codec_api_index {
-    CODEC_QUERY = 1,
-    CODEC_INIT,
+//    CODEC_QUERY = 1,
+    CODEC_INIT = 0,
     CODEC_DECODE_VIDEO,
     CODEC_ENCODE_VIDEO,
     CODEC_DECODE_AUDIO,
@@ -159,6 +159,8 @@ struct newcodec_device {
 
 	spinlock_t lock;
 //	struct list_head io_task;
+
+	int version;
 };
 
 static struct newcodec_device *newcodec;
@@ -240,17 +242,17 @@ static void newcodec_release_task_entry(struct list_head *head, int32_t value)
 	}
 }
 
-static int lock_buffer()
+static int lock_buffer(void)
 {
 	return down_interruptible(&newcodec_buffer_mutex);
 }
 
-static void unlock_buffer()
+static void unlock_buffer(void)
 {
     up(&newcodec_buffer_mutex);
 }
 
-static void release_device_memory(uint32_t mem_offset) 
+static void release_device_memory(uint32_t mem_offset)
 {
 	struct device_mem_mgr *mem_mgr = NULL;
 	int index;
@@ -304,13 +306,11 @@ static int secure_device_memory(uint32_t file)
 
 static long newcodec_ioctl(struct file *file,
 			unsigned int cmd,
-			unsigned long arg, unsigned long arg2)
+			unsigned long arg)
 {
 	long value = 0, ret = 0;
 
 	switch (cmd) {
-	case CODEC_CMD_ADD_TASK_QUEUE:
-		break;
 	case CODEC_CMD_REMOVE_TASK_QUEUE:
     {
 		uint32_t mem_offset;
@@ -353,7 +353,7 @@ static long newcodec_ioctl(struct file *file,
 
 		vacant_buffer_idx =
 			secure_device_memory((uint32_t)file);
-		// notify that codec device can copy data to memory region.
+
 		CODEC_LOG("send a request to pop data from device. %p\n", file);
 		value = newcodec->mem_mgr[vacant_buffer_idx].mem_offset;
 
@@ -392,6 +392,21 @@ static long newcodec_ioctl(struct file *file,
 	}
 		break;
 	case CODEC_CMD_GET_VERSION:
+		CODEC_LOG("return codec device version: %d\n", newcodec->version);
+		if (copy_to_user((void *)arg, &newcodec->version, sizeof(int))) {
+			printk(KERN_ERR "ioctl: failed to copy data to user\n");
+			ret = -EIO;
+	    }
+		break;
+	case CODEC_CMD_GET_ELEMENT:
+	{
+		CODEC_LOG("request a device to get codec element\n");
+
+		ENTER_CRITICAL_SECTION;
+		readl(newcodec->ioaddr + cmd);
+		LEAVE_CRITICAL_SECTION;
+	}
+		break;
 	case CODEC_CMD_GET_CONTEXT_INDEX:
 		value = readl(newcodec->ioaddr + cmd);
 		if (copy_to_user((void *)arg, &value, sizeof(int))) {
@@ -404,7 +419,6 @@ static long newcodec_ioctl(struct file *file,
 		int vacant_buffer_idx;
 		vacant_buffer_idx =
 			secure_device_memory((uint32_t)file);
-
 
 		value = newcodec->mem_mgr[vacant_buffer_idx].mem_offset;
 
@@ -485,15 +499,22 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 
 	api_index = param_info.api_index;
 	switch (api_index) {
+#if 0
 		case CODEC_QUERY:
 			ENTER_CRITICAL_SECTION;
+
 			writel((int32_t)param_info.api_index,
 					newcodec->ioaddr + CODEC_CMD_API_INDEX);
+
 			LEAVE_CRITICAL_SECTION;
 			break;
+#endif
 		case CODEC_INIT:
 		{
+			int ctx_index;
+
 			ENTER_CRITICAL_SECTION;
+
 			writel((uint32_t)file,
 					newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
 			writel((uint32_t)param_info.mem_offset,
@@ -502,11 +523,12 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 					newcodec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
 			writel((int32_t)param_info.api_index,
 					newcodec->ioaddr + CODEC_CMD_API_INDEX);
+
 			LEAVE_CRITICAL_SECTION;
 
 			release_device_memory(param_info.mem_offset);
 
-            int ctx_index = param_info.ctx_index;
+            ctx_index = param_info.ctx_index;
 			CODEC_LOG("acquire mutex to make the current context wait. %p\n", file);
 	        wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
             context_flags[ctx_index] = 0;
@@ -514,7 +536,10 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 			break;
 		case CODEC_DECODE_VIDEO... CODEC_ENCODE_AUDIO:
 		{
+            int ctx_index;
+
 			ENTER_CRITICAL_SECTION;
+
 			writel((uint32_t)file,
 					newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
 			writel((uint32_t)param_info.mem_offset,
@@ -523,11 +548,12 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 					newcodec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
 			writel((int32_t)param_info.api_index,
 					newcodec->ioaddr + CODEC_CMD_API_INDEX);
+
 			LEAVE_CRITICAL_SECTION;
 
 			release_device_memory(param_info.mem_offset);
 
-            int ctx_index = param_info.ctx_index;
+            ctx_index = param_info.ctx_index;
 			CODEC_LOG("acquire mutex to make the current context wait. %p\n", file);
 	        wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
             context_flags[ctx_index] = 0;
@@ -536,7 +562,10 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 
 		case CODEC_PICTURE_COPY:
 		{
+			int ctx_index;
+
 			ENTER_CRITICAL_SECTION;
+
 			writel((uint32_t)file,
 					newcodec->ioaddr + CODEC_CMD_FILE_INDEX);
 			writel((uint32_t)param_info.mem_offset,
@@ -545,9 +574,10 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 					newcodec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
 			writel((int32_t)param_info.api_index,
 					newcodec->ioaddr + CODEC_CMD_API_INDEX);
+
 			LEAVE_CRITICAL_SECTION;
 
-            int ctx_index = param_info.ctx_index;
+            ctx_index = param_info.ctx_index;
 
 			CODEC_LOG("acquire mutex to make the current context wait. %p\n", file);
 	        wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
@@ -685,6 +715,13 @@ static struct miscdevice codec_dev = {
 	.mode			= S_IRUGO | S_IWUGO,
 };
 
+static void newcodec_get_device_version(void)
+{
+	newcodec->version =
+		readl(newcodec->ioaddr + CODEC_CMD_GET_VERSION);
+	printk(KERN_INFO "codec device version: %d\n", newcodec->version);
+}
+
 static int __devinit newcodec_probe(struct pci_dev *pci_dev,
 	const struct pci_device_id *pci_id)
 {
@@ -767,6 +804,8 @@ static int __devinit newcodec_probe(struct pci_dev *pci_dev,
 		pci_disable_device(pci_dev);
 		return -EINVAL;
 	}
+
+	newcodec_get_device_version();
 
 	if ((ret = misc_register(&codec_dev))) {
 		printk(KERN_ERR "cannot register codec as misc\n");
