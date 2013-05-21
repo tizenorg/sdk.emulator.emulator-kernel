@@ -88,6 +88,7 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 		return;
 	}
 
+        VKBD_LOG(KERN_DEBUG, "vqidx: %d\n", vqidx);
         while (1) {
 		memcpy(&kbdevent, &vkbd->kbdevt[vqidx], sizeof(kbdevent));
 #if 1
@@ -151,6 +152,7 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 	int index = 0;
 
 	VKBD_LOG(KERN_INFO, "driver is probed\n");
+	vqidx = 0;
 
 	vdev->priv = vkbd = kmalloc(sizeof(struct virtio_keyboard), GFP_KERNEL);
 	if (!vkbd) {
