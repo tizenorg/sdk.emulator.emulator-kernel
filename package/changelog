@@ -1,3 +1,6 @@
+* 1.4.20
+- added initializing vqidx when the host keyboard is turned on.
+== Sungmin Ha <sungmin82.ha@samsung.com> 2013-05-21
 * 1.4.19
 - modified process of using virtio keyboard queue
 == Sungmin Ha <sungmin82.ha@samsung.com> 2013-05-14
