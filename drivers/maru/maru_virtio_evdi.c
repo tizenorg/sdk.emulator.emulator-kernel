@@ -54,12 +54,33 @@
 #define NUM_OF_EVDI	2
 #define DEVICE_NAME		"evdi"
 
+/* device protocol */
 #define __MAX_BUF_SIZE	1024
+
+enum
+{
+	route_qemu = 0,
+	route_control_server = 1,
+	route_monitor = 2
+};
+
+typedef unsigned int CSCliSN;
 
 struct msg_info {
 	char buf[__MAX_BUF_SIZE];
+
+	uint32_t route;
 	uint32_t use;
+	uint16_t count;
+	uint16_t index;
+
+	CSCliSN cclisn;
 };
+
+static int g_wake_up_interruptible_count = 0;
+static int g_read_count = 0;
+
+/* device protocol */
 
 #define SIZEOF_MSG_INFO	sizeof(struct msg_info)
 
@@ -123,7 +144,7 @@ static void* __xmalloc(size_t size)
 int _make_buf_and_kick(void)
 {
 	int ret;
-	memset(&vevdi->send_msginfo, 0x00, sizeof(vevdi->send_msginfo));
+	memset(&vevdi->read_msginfo, 0x00, sizeof(vevdi->read_msginfo));
 	ret = virtqueue_add_buf(vevdi->rvq, vevdi->sg_read, 0, 1, &vevdi->read_msginfo,
 			GFP_ATOMIC );
 	if (ret < 0) {
@@ -204,8 +225,6 @@ static int evdi_open(struct inode* inode, struct file* filp)
 static int evdi_close(struct inode* i, struct file* filp) {
 	struct virtevdi_info *evdi_info;
 
-	LOG("evdi_close\n");
-
 	evdi_info = filp->private_data;
 	evdi_info->guest_connected = false;
 
@@ -226,9 +245,6 @@ static ssize_t evdi_read(struct file *filp, char __user *ubuf, size_t len,
 
 	evdi = filp->private_data;
 
-
-	LOG("evdi_read start len=%d\n", len);
-
 	if (!has_readdata(evdi))
 	{
 		if (filp->f_flags & O_NONBLOCK)
@@ -248,12 +264,11 @@ static ssize_t evdi_read(struct file *filp, char __user *ubuf, size_t len,
 
 	ret = copy_to_user(ubuf, &next->msg, len);
 
-	LOG("copy_to_user ret = %d, msg = %s", ret, next->msg.buf);
-
 	list_del(&next->list);
 	kfree(next);
 
 	spin_lock_irqsave(&pevdi_info[EVID_READ]->inbuf_lock, flags);
+
 
 	if (add_inbuf(vevdi->rvq, &vevdi->read_msginfo) < 0)
 	{
@@ -261,6 +276,9 @@ static ssize_t evdi_read(struct file *filp, char __user *ubuf, size_t len,
 	}
 
 	spin_unlock_irqrestore(&pevdi_info[EVID_READ]->inbuf_lock, flags);
+
+
+	//LOG("evdi_read count = %d!\n", ++g_read_count);
 
 	if (ret < 0)
 		return -EFAULT;
@@ -278,7 +296,7 @@ static ssize_t evdi_write(struct file *f, const char __user *ubuf, size_t len,
 	int err = 0;
 	ssize_t ret = 0;
 
-	LOG("start of evdi_write len= %d, msglen = %d\n", len, sizeof(vevdi->send_msginfo));
+	//LOG("start of evdi_write len= %d, msglen = %d\n", len, sizeof(vevdi->send_msginfo));
 
 	if (vevdi == NULL) {
 		LOG("invalid evdi handle\n");
@@ -288,7 +306,7 @@ static ssize_t evdi_write(struct file *f, const char __user *ubuf, size_t len,
 	memset(&vevdi->send_msginfo, 0, sizeof(vevdi->send_msginfo));
 	ret = copy_from_user(&vevdi->send_msginfo, ubuf, sizeof(vevdi->send_msginfo));
 
-	LOG("copy_from_user ret = %d, msg = %s", ret, vevdi->send_msginfo.buf);
+	//LOG("copy_from_user ret = %d, msg = %s", ret, vevdi->send_msginfo.buf);
 
 	if (ret) {
 		ret = -EFAULT;
@@ -310,7 +328,7 @@ static ssize_t evdi_write(struct file *f, const char __user *ubuf, size_t len,
 
 	virtqueue_kick(vevdi->svq);
 
-	LOG("send to host\n");
+	//LOG("send to host\n");
 
 	return len;
 }
@@ -320,12 +338,9 @@ static unsigned int evdi_poll(struct file *filp, poll_table *wait)
 	struct virtevdi_info *evdi;
 	unsigned int ret;
 
-	LOG("start of evdi_poll \n");
-
 	evdi = filp->private_data;
 	poll_wait(filp, &evdi->waitqueue, wait);
 
-	LOG("pass poll_wait \n");
 	if (!evdi->guest_connected) {
 		/* evdi got unplugged */
 		return POLLHUP;
@@ -339,7 +354,6 @@ static unsigned int evdi_poll(struct file *filp, poll_table *wait)
 		ret |= POLLIN | POLLRDNORM;
 	}
 
-	LOG("end of evdi_poll \n");
 	return ret;
 }
 
@@ -362,7 +376,6 @@ static void evdi_recv_done(struct virtqueue *rvq) {
 	struct msg_buf* msgbuf;
 
 
-	LOG("evdi_recv_done begin\n");
 
 	/* TODO : check if guest has been connected. */
 
@@ -373,25 +386,24 @@ static void evdi_recv_done(struct virtqueue *rvq) {
 	}
 
 	do {
-		LOG("msg use = %d\n", _msg->use);
-		LOG("msg data = %s\n", _msg->buf);
+		//LOG("msg use = %d\n", _msg->use);
+		//LOG("msg data = %s\n", _msg->buf);
 
 		/* insert into queue */
 		msgbuf = (struct msg_buf*) __xmalloc(SIZEOF_MSG_BUF);
 		memset(msgbuf, 0x00, sizeof(*msgbuf));
 		memcpy(&(msgbuf->msg), _msg, sizeof(*_msg));
 
-		LOG("copied msg data = %s, %s\n", msgbuf->msg.buf, _msg->buf);
+		//LOG("copied msg data = %s, %s\n", msgbuf->msg.buf, _msg->buf);
 
 		spin_lock_irqsave(&pevdi_info[EVID_READ]->inbuf_lock, flags);
 
 		list_add_tail(&msgbuf->list, &vevdi->read_list);
+		//LOG("== wake_up_interruptible = %d!\n", ++g_wake_up_interruptible_count);
 
 		spin_unlock_irqrestore(&pevdi_info[EVID_READ]->inbuf_lock, flags);
 
 		wake_up_interruptible(&pevdi_info[EVID_READ]->waitqueue);
-
-		LOG("wake_up_interruptible!\n");
 
 		_msg = (struct msg_info*) virtqueue_get_buf(vevdi->rvq, &len);
 		if (_msg == NULL) {
@@ -400,13 +412,17 @@ static void evdi_recv_done(struct virtqueue *rvq) {
 
 	} while (true);
 
-	LOG("evdi_recv_done end\n");
+
+	/*
+	if (add_inbuf(vevdi->rvq, &vevdi->read_msginfo) < 0)
+	{
+		LOG("failed add_buf\n");
+	}
+	*/
 }
 
 static void evdi_send_done(struct virtqueue *svq) {
 	unsigned int len = 0;
-
-	LOG("evdi_send_done\n");
 
 	virtqueue_get_buf(svq, &len);
 }

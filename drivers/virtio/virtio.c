@@ -47,12 +47,30 @@ static ssize_t features_show(struct device *_d,
 	len += sprintf(buf+len, "\n");
 	return len;
 }
+
+#ifdef CONFIG_MARU // for virtio sdcard...
+#include "linux/virtio_ids.h"
+static ssize_t type_show(struct device *_d,
+			     struct device_attribute *attr, char *buf)
+{
+	struct virtio_device *dev = container_of(_d, struct virtio_device, dev);
+
+    if (dev->id.device == VIRTIO_ID_BLOCK) {
+        //FIXME
+        return sprintf(buf, "SD\n");
+    }
+    return sprintf(buf, "0\n");
+}
+#endif
 static struct device_attribute virtio_dev_attrs[] = {
 	__ATTR_RO(device),
 	__ATTR_RO(vendor),
 	__ATTR_RO(status),
 	__ATTR_RO(modalias),
 	__ATTR_RO(features),
+#ifdef CONFIG_MARU
+    __ATTR_RO(type),
+#endif
 	__ATTR_NULL
 };
 

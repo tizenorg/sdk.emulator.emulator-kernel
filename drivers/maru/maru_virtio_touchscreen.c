@@ -1,7 +1,7 @@
 /*
  * Maru Virtio Touchscreen Device Driver
  *
- * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2012 - 2013 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact: 
  *  GiWoong Kim <giwoong.kim@samsung.com>
@@ -67,7 +67,7 @@ typedef struct virtio_touchscreen
 virtio_touchscreen *vt;
 
 
-#define MAX_TRKID 6
+#define MAX_TRKID 10
 #define TOUCHSCREEN_RESOLUTION_X 5040
 #define TOUCHSCREEN_RESOLUTION_Y 3780
 #define ABS_PRESSURE_MAX 255
@@ -199,22 +199,27 @@ static void vq_touchscreen_callback(struct virtqueue *vq)
 
         finger_id = event->z;
 
-        /* Multi-touch Protocol is B */
-        if (event->state != 0)
-        { /* pressed */
-            input_mt_slot(vt->idev, finger_id);
-            input_mt_report_slot_state(vt->idev, MT_TOOL_FINGER, true);
-            input_report_abs(vt->idev, ABS_MT_TOUCH_MAJOR, 10);
-            input_report_abs(vt->idev, ABS_MT_POSITION_X, event->x);
-            input_report_abs(vt->idev, ABS_MT_POSITION_Y, event->y);
-        }
-        else
-        { /* released */
-            input_mt_slot(vt->idev, finger_id);
-            input_mt_report_slot_state(vt->idev, MT_TOOL_FINGER, false);
-        }
+        if (finger_id < MAX_TRKID) {
+            /* Multi-touch Protocol is B */
 
-        input_sync(vt->idev);
+            if (event->state != 0)
+            { /* pressed */
+                input_mt_slot(vt->idev, finger_id);
+                input_mt_report_slot_state(vt->idev, MT_TOOL_FINGER, true);
+                input_report_abs(vt->idev, ABS_MT_TOUCH_MAJOR, 10);
+                input_report_abs(vt->idev, ABS_MT_POSITION_X, event->x);
+                input_report_abs(vt->idev, ABS_MT_POSITION_Y, event->y);
+            }
+            else
+            { /* released */
+                input_mt_slot(vt->idev, finger_id);
+                input_mt_report_slot_state(vt->idev, MT_TOOL_FINGER, false);
+            }
+
+            input_sync(vt->idev);
+        } else {
+            printk(KERN_ERR "%d is an invalid finger id!\n", finger_id);
+        }
 
         /* expose buffer to other end */
         err = virtqueue_add_buf(vt->vq, sg, 0,
@@ -332,9 +337,9 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     input_mt_init_slots(vt->idev, MAX_TRKID);
 
     input_set_abs_params(vt->idev, ABS_X, 0,
-        /*TOUCHSCREEN_RESOLUTION_X*/0, 0, 0); //TODO:
+        /* TOUCHSCREEN_RESOLUTION_X */0, 0, 0); //TODO:
     input_set_abs_params(vt->idev, ABS_Y, 0,
-        /*TOUCHSCREEN_RESOLUTION_Y*/0, 0, 0); //TODO:
+        /* TOUCHSCREEN_RESOLUTION_Y */0, 0, 0); //TODO:
     input_set_abs_params(vt->idev, ABS_MT_TRACKING_ID, 0,
         MAX_TRKID, 0, 0);
     input_set_abs_params(vt->idev, ABS_MT_TOUCH_MAJOR, 0,
