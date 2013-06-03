@@ -537,4 +537,11 @@ source "drivers/misc/carma/Kconfig"
 source "drivers/misc/altera-stapl/Kconfig"
 source "drivers/misc/mei/Kconfig"
 source "drivers/misc/vmw_vmci/Kconfig"
+
+config SLP_GLOBAL_LOCK
+	bool "Enable Global Lock"
+	default y
+	---help---
+	  This supports global lock feature for SLP.
+
 endmenu
