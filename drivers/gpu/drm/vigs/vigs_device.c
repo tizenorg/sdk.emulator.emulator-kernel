@@ -41,12 +41,12 @@ static void vigs_device_mman_vram_to_gpu(void *user_data,
     struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
     struct vigs_surface *vigs_sfc = vigs_gem_to_vigs_surface(vigs_gem);
 
-    if (vigs_sfc->is_dirty) {
+    if (vigs_sfc->dirty_flag == vigs_dirty_vram) {
         vigs_comm_update_gpu(vigs_dev->comm,
                              vigs_sfc->id,
                              vigs_gem_offset(vigs_gem));
-        vigs_sfc->is_dirty = false;
     }
+    vigs_sfc->dirty_flag = vigs_dirty_none;
 }
 
 static void vigs_device_mman_gpu_to_vram(void *user_data,
@@ -94,8 +94,7 @@ static bool vigs_gem_is_reserved(struct list_head* gem_list,
 {
     struct vigs_gem_object *tmp;
 
-    list_for_each_entry(tmp, gem_list, list)
-    {
+    list_for_each_entry(tmp, gem_list, list) {
         if (tmp == gem) {
             return true;
         }
@@ -116,8 +115,13 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
     struct vigsp_cmd_batch_header *batch_header = data;
     struct vigsp_cmd_request_header *request_header =
         (struct vigsp_cmd_request_header*)(batch_header + 1);
-    struct vigsp_cmd_update_vram_request *update_vram_request;
-    struct vigsp_cmd_update_gpu_request *update_gpu_request;
+    union
+    {
+        struct vigsp_cmd_update_vram_request *update_vram;
+        struct vigsp_cmd_update_gpu_request *update_gpu;
+        struct vigsp_cmd_copy_request *copy;
+        struct vigsp_cmd_solid_fill_request *solid_fill;
+    } request;
     vigsp_u32 i;
     struct vigs_surface *sfc;
     int ret = 0;
@@ -144,11 +148,11 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
 
         switch (request_header->cmd) {
         case vigsp_cmd_update_vram:
-            update_vram_request =
+            request.update_vram =
                 (struct vigsp_cmd_update_vram_request*)(request_header + 1);
-            sfc = vigs_device_reference_surface_unlocked(vigs_dev, update_vram_request->sfc_id);
+            sfc = vigs_device_reference_surface_unlocked(vigs_dev, request.update_vram->sfc_id);
             if (!sfc) {
-                DRM_ERROR("Surface %u not found\n", update_vram_request->sfc_id);
+                DRM_ERROR("Surface %u not found\n", request.update_vram->sfc_id);
                 ret = -EINVAL;
                 break;
             }
@@ -159,19 +163,20 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
                 list_add_tail(&sfc->gem.list, gem_list);
             }
             if (vigs_gem_in_vram(&sfc->gem)) {
-                update_vram_request->offset = vigs_gem_offset(&sfc->gem);
+                request.update_vram->offset = vigs_gem_offset(&sfc->gem);
+                sfc->dirty_flag = vigs_dirty_none;
             } else {
                 DRM_DEBUG_DRIVER("Surface %u not in VRAM, ignoring update_vram\n",
-                                 update_vram_request->sfc_id);
-                update_vram_request->sfc_id = 0;
+                                 request.update_vram->sfc_id);
+                request.update_vram->sfc_id = 0;
             }
             break;
         case vigsp_cmd_update_gpu:
-            update_gpu_request =
+            request.update_gpu =
                 (struct vigsp_cmd_update_gpu_request*)(request_header + 1);
-            sfc = vigs_device_reference_surface_unlocked(vigs_dev, update_gpu_request->sfc_id);
+            sfc = vigs_device_reference_surface_unlocked(vigs_dev, request.update_gpu->sfc_id);
             if (!sfc) {
-                DRM_ERROR("Surface %u not found\n", update_gpu_request->sfc_id);
+                DRM_ERROR("Surface %u not found\n", request.update_gpu->sfc_id);
                 ret = -EINVAL;
                 break;
             }
@@ -182,12 +187,50 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
                 list_add_tail(&sfc->gem.list, gem_list);
             }
             if (vigs_gem_in_vram(&sfc->gem)) {
-                update_gpu_request->offset = vigs_gem_offset(&sfc->gem);
-                sfc->is_dirty = false;
+                request.update_gpu->offset = vigs_gem_offset(&sfc->gem);
+                sfc->dirty_flag = vigs_dirty_none;
             } else {
                 DRM_DEBUG_DRIVER("Surface %u not in VRAM, ignoring update_gpu\n",
-                                 update_gpu_request->sfc_id);
-                update_gpu_request->sfc_id = 0;
+                                 request.update_gpu->sfc_id);
+                request.update_gpu->sfc_id = 0;
+            }
+            break;
+        case vigsp_cmd_copy:
+            request.copy =
+                (struct vigsp_cmd_copy_request*)(request_header + 1);
+            sfc = vigs_device_reference_surface_unlocked(vigs_dev, request.copy->dst_id);
+            if (!sfc) {
+                DRM_ERROR("Surface %u not found\n", request.copy->dst_id);
+                ret = -EINVAL;
+                break;
+            }
+            if (vigs_gem_is_reserved(gem_list, &sfc->gem)) {
+                drm_gem_object_unreference_unlocked(&sfc->gem.base);
+            } else {
+                vigs_gem_reserve(&sfc->gem);
+                list_add_tail(&sfc->gem.list, gem_list);
+            }
+            if (vigs_gem_in_vram(&sfc->gem)) {
+                sfc->dirty_flag = vigs_dirty_gpu;
+            }
+            break;
+        case vigsp_cmd_solid_fill:
+            request.solid_fill =
+                (struct vigsp_cmd_solid_fill_request*)(request_header + 1);
+            sfc = vigs_device_reference_surface_unlocked(vigs_dev, request.solid_fill->sfc_id);
+            if (!sfc) {
+                DRM_ERROR("Surface %u not found\n", request.solid_fill->sfc_id);
+                ret = -EINVAL;
+                break;
+            }
+            if (vigs_gem_is_reserved(gem_list, &sfc->gem)) {
+                drm_gem_object_unreference_unlocked(&sfc->gem.base);
+            } else {
+                vigs_gem_reserve(&sfc->gem);
+                list_add_tail(&sfc->gem.list, gem_list);
+            }
+            if (vigs_gem_in_vram(&sfc->gem)) {
+                sfc->dirty_flag = vigs_dirty_gpu;
             }
             break;
         default:
@@ -206,8 +249,7 @@ static void vigs_device_finish_patch_commands(struct list_head* gem_list)
 {
     struct vigs_gem_object *gem, *gem_tmp;
 
-    list_for_each_entry_safe(gem, gem_tmp, gem_list, list)
-    {
+    list_for_each_entry_safe(gem, gem_tmp, gem_list, list) {
         list_del(&gem->list);
         vigs_gem_unreserve(gem);
         drm_gem_object_unreference_unlocked(&gem->base);
