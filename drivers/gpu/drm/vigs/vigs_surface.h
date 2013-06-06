@@ -5,6 +5,13 @@
 #include "vigs_protocol.h"
 #include "vigs_gem.h"
 
+typedef enum
+{
+    vigs_dirty_none = 0,
+    vigs_dirty_vram = 1,
+    vigs_dirty_gpu = 2
+} vigs_dirty_flag;
+
 struct vigs_surface
 {
     /*
@@ -24,7 +31,7 @@ struct vigs_surface
      * @{
      */
 
-    bool is_dirty;
+    vigs_dirty_flag dirty_flag;
 
     /*
      * @}
@@ -56,9 +63,21 @@ int vigs_surface_info_ioctl(struct drm_device *drm_dev,
                             void *data,
                             struct drm_file *file_priv);
 
-int vigs_surface_set_dirty_ioctl(struct drm_device *drm_dev,
-                                 void *data,
-                                 struct drm_file *file_priv);
+int vigs_surface_set_vram_dirty_ioctl(struct drm_device *drm_dev,
+                                      void *data,
+                                      struct drm_file *file_priv);
+
+int vigs_surface_set_gpu_dirty_ioctl(struct drm_device *drm_dev,
+                                     void *data,
+                                     struct drm_file *file_priv);
+
+int vigs_surface_update_vram_ioctl(struct drm_device *drm_dev,
+                                   void *data,
+                                   struct drm_file *file_priv);
+
+int vigs_surface_update_gpu_ioctl(struct drm_device *drm_dev,
+                                  void *data,
+                                  struct drm_file *file_priv);
 
 /*
  * @}
