@@ -361,6 +361,8 @@ int vigs_comm_update_vram(struct vigs_comm *comm,
 
 int vigs_comm_update_gpu(struct vigs_comm *comm,
                          vigsp_surface_id id,
+                         u32 width,
+                         u32 height,
                          vigsp_offset offset)
 {
     int ret;
@@ -372,7 +374,7 @@ int vigs_comm_update_gpu(struct vigs_comm *comm,
 
     ret = vigs_comm_prepare(comm,
                             vigsp_cmd_update_gpu,
-                            sizeof(*request),
+                            sizeof(*request) + sizeof(struct vigsp_rect),
                             0,
                             (void**)&request,
                             NULL);
@@ -380,6 +382,11 @@ int vigs_comm_update_gpu(struct vigs_comm *comm,
     if (ret == 0) {
         request->sfc_id = id;
         request->offset = offset;
+        request->num_entries = 1;
+        request->entries[0].pos.x = 0;
+        request->entries[0].pos.y = 0;
+        request->entries[0].size.w = width;
+        request->entries[0].size.h = height;
 
         ret = vigs_comm_exec_internal(comm);
     }
