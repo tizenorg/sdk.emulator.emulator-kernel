@@ -35,7 +35,6 @@ int vigs_surface_create(struct vigs_device *vigs_dev,
     (*sfc)->height = height;
     (*sfc)->stride = stride;
     (*sfc)->format = format;
-    (*sfc)->dirty_flag = vigs_dirty_none;
 
     ret = vigs_gem_init(&(*sfc)->gem,
                         vigs_dev,
@@ -151,43 +150,6 @@ int vigs_surface_info_ioctl(struct drm_device *drm_dev,
     return 0;
 }
 
-int vigs_surface_set_vram_dirty_ioctl(struct drm_device *drm_dev,
-                                      void *data,
-                                      struct drm_file *file_priv)
-{
-    struct drm_vigs_surface_set_vram_dirty *args = data;
-    struct drm_gem_object *gem;
-    struct vigs_gem_object *vigs_gem;
-    struct vigs_surface *sfc;
-
-    gem = drm_gem_object_lookup(drm_dev, file_priv, args->handle);
-
-    if (gem == NULL) {
-        return -ENOENT;
-    }
-
-    vigs_gem = gem_to_vigs_gem(gem);
-
-    if (vigs_gem->type != VIGS_GEM_TYPE_SURFACE) {
-        drm_gem_object_unreference_unlocked(gem);
-        return -ENOENT;
-    }
-
-    sfc = vigs_gem_to_vigs_surface(vigs_gem);
-
-    vigs_gem_reserve(&sfc->gem);
-
-    if (vigs_gem_in_vram(&sfc->gem)) {
-        sfc->dirty_flag = vigs_dirty_vram;
-    }
-
-    vigs_gem_unreserve(&sfc->gem);
-
-    drm_gem_object_unreference_unlocked(gem);
-
-    return 0;
-}
-
 int vigs_surface_set_gpu_dirty_ioctl(struct drm_device *drm_dev,
                                      void *data,
                                      struct drm_file *file_priv)
@@ -215,7 +177,7 @@ int vigs_surface_set_gpu_dirty_ioctl(struct drm_device *drm_dev,
     vigs_gem_reserve(&sfc->gem);
 
     if (vigs_gem_in_vram(&sfc->gem)) {
-        sfc->dirty_flag = vigs_dirty_gpu;
+        sfc->is_gpu_dirty = true;
     }
 
     vigs_gem_unreserve(&sfc->gem);
@@ -252,11 +214,11 @@ int vigs_surface_update_vram_ioctl(struct drm_device *drm_dev,
 
     vigs_gem_reserve(&sfc->gem);
 
-    if (vigs_gem_in_vram(&sfc->gem) && (sfc->dirty_flag == vigs_dirty_gpu)) {
+    if (vigs_gem_in_vram(&sfc->gem) && sfc->is_gpu_dirty) {
         vigs_comm_update_vram(vigs_dev->comm,
                               sfc->id,
                               vigs_gem_offset(vigs_gem));
-        sfc->dirty_flag = vigs_dirty_none;
+        sfc->is_gpu_dirty = false;
     }
 
     vigs_gem_unreserve(&sfc->gem);
@@ -296,8 +258,10 @@ int vigs_surface_update_gpu_ioctl(struct drm_device *drm_dev,
     if (vigs_gem_in_vram(&sfc->gem)) {
         vigs_comm_update_gpu(vigs_dev->comm,
                              sfc->id,
+                             sfc->width,
+                             sfc->height,
                              vigs_gem_offset(vigs_gem));
-        sfc->dirty_flag = vigs_dirty_none;
+        sfc->is_gpu_dirty = false;
     }
 
     vigs_gem_unreserve(&sfc->gem);

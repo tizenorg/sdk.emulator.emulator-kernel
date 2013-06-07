@@ -85,11 +85,24 @@ static int vigs_mman_global_init(struct vigs_mman *mman)
         return ret;
     }
 
+    /*
+     * Hack. Assign 'shrink' to NULL in order to prevent
+     * swapping out BOs, we don't need this because
+     * we don't occupy any system RAM at all, our GPU
+     * placement is entirely on host.
+     */
+
+    mman->old_shrink = mman->bo_global_ref.mem_glob->shrink;
+    mman->bo_global_ref.mem_glob->shrink = NULL;
+
     return 0;
 }
 
 static void vigs_mman_global_cleanup(struct vigs_mman *mman)
 {
+    mman->bo_global_ref.mem_glob->shrink = mman->old_shrink;
+    mman->old_shrink = NULL;
+
     drm_global_item_unref(&mman->bo_global_ref.ref);
     drm_global_item_unref(&mman->mem_global_ref);
 }
@@ -234,7 +247,7 @@ static int vigs_ttm_move(struct ttm_buffer_object *bo,
 
     if ((old_mem->mem_type == TTM_PL_VRAM) &&
         (new_mem->mem_type == TTM_PL_TT)) {
-        DRM_DEBUG_DRIVER("ttm_move: 0x%llX vram -> gpu\n", bo->addr_space_offset);
+        DRM_INFO("ttm_move: 0x%llX vram -> gpu\n", bo->addr_space_offset);
 
         mman->ops->vram_to_gpu(mman->user_data, bo);
 
@@ -266,6 +279,43 @@ static int vigs_ttm_move(struct ttm_buffer_object *bo,
 static int vigs_ttm_verify_access(struct ttm_buffer_object *bo,
                                   struct file *filp)
 {
+    return 0;
+}
+
+int vigs_ttm_fault_reserve_notify(struct ttm_buffer_object *bo)
+{
+    u32 placements[1];
+    struct ttm_placement placement;
+    int ret;
+
+    if (bo->mem.mem_type != TTM_PL_TT) {
+        /*
+         * We're only interested in GPU memory page faults.
+         */
+
+        return 0;
+    }
+
+    /*
+     * It's GPU memory page fault. Move this buffer into VRAM.
+     */
+
+    placements[0] = TTM_PL_FLAG_CACHED | TTM_PL_FLAG_VRAM;
+
+    memset(&placement, 0, sizeof(placement));
+
+    placement.placement = placements;
+    placement.busy_placement = placements;
+    placement.num_placement = 1;
+    placement.num_busy_placement = 1;
+
+    ret = ttm_bo_validate(bo, &placement, false, true, false);
+
+    if (ret != 0) {
+        DRM_ERROR("movement failed for 0x%llX\n", bo->addr_space_offset);
+        return ret;
+    }
+
     return 0;
 }
 
@@ -321,6 +371,7 @@ static struct ttm_bo_driver vigs_ttm_bo_driver =
     .evict_flags = &vigs_ttm_evict_flags,
     .move = &vigs_ttm_move,
     .verify_access = &vigs_ttm_verify_access,
+    .fault_reserve_notify = &vigs_ttm_fault_reserve_notify,
     .io_mem_reserve = &vigs_ttm_io_mem_reserve,
     .io_mem_free = &vigs_ttm_io_mem_free,
 };
@@ -459,26 +510,6 @@ void vigs_mman_destroy(struct vigs_mman *mman)
 static struct vm_operations_struct vigs_ttm_vm_ops;
 static const struct vm_operations_struct *ttm_vm_ops = NULL;
 
-static void vigs_ttm_open(struct vm_area_struct *vma)
-{
-    struct ttm_buffer_object *bo = vma->vm_private_data;
-    struct vigs_mman *mman = bo_dev_to_vigs_mman(bo->bdev);
-
-    mman->ops->map(mman->user_data, bo);
-
-    ttm_vm_ops->open(vma);
-}
-
-static void vigs_ttm_close(struct vm_area_struct *vma)
-{
-    struct ttm_buffer_object *bo = vma->vm_private_data;
-    struct vigs_mman *mman = bo_dev_to_vigs_mman(bo->bdev);
-
-    mman->ops->unmap(mman->user_data, bo);
-
-    ttm_vm_ops->close(vma);
-}
-
 static int vigs_ttm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
     struct ttm_buffer_object *bo = vma->vm_private_data;
@@ -494,7 +525,6 @@ int vigs_mman_mmap(struct vigs_mman *mman,
                    struct file *filp,
                    struct vm_area_struct *vma)
 {
-    struct ttm_buffer_object *bo;
     int ret;
 
     if (unlikely(vma->vm_pgoff < DRM_FILE_PAGE_OFFSET)) {
@@ -510,21 +540,10 @@ int vigs_mman_mmap(struct vigs_mman *mman,
     if (unlikely(ttm_vm_ops == NULL)) {
         ttm_vm_ops = vma->vm_ops;
         vigs_ttm_vm_ops = *ttm_vm_ops;
-        vigs_ttm_vm_ops.open = &vigs_ttm_open;
-        vigs_ttm_vm_ops.close = &vigs_ttm_close;
         vigs_ttm_vm_ops.fault = &vigs_ttm_fault;
     }
 
     vma->vm_ops = &vigs_ttm_vm_ops;
-
-    bo = vma->vm_private_data;
-
-    ret = mman->ops->map(mman->user_data, bo);
-
-    if (ret != 0) {
-        ttm_vm_ops->close(vma);
-        return ret;
-    }
 
     return 0;
 }

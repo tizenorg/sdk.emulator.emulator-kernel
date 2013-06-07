@@ -77,7 +77,7 @@ static inline unsigned long vigs_gem_size(struct vigs_gem_object *vigs_gem)
 
 /*
  * GEM offset in a placement. In case of execbuffer always the same.
- * In case of surface only valid when GEM is pinned.
+ * In case of surface only valid when GEM is in VRAM.
  */
 static inline unsigned long vigs_gem_offset(struct vigs_gem_object *vigs_gem)
 {

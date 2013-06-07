@@ -9,31 +9,6 @@
 #include "vigs_surface.h"
 #include <drm/vigs_drm.h>
 
-static int vigs_device_mman_map(void *user_data, struct ttm_buffer_object *bo)
-{
-    struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
-    int ret;
-
-    vigs_gem_reserve(vigs_gem);
-
-    ret = vigs_gem_pin(vigs_gem);
-
-    vigs_gem_unreserve(vigs_gem);
-
-    return ret;
-}
-
-static void vigs_device_mman_unmap(void *user_data, struct ttm_buffer_object *bo)
-{
-    struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
-
-    vigs_gem_reserve(vigs_gem);
-
-    vigs_gem_unpin(vigs_gem);
-
-    vigs_gem_unreserve(vigs_gem);
-}
-
 static void vigs_device_mman_vram_to_gpu(void *user_data,
                                          struct ttm_buffer_object *bo)
 {
@@ -41,12 +16,15 @@ static void vigs_device_mman_vram_to_gpu(void *user_data,
     struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
     struct vigs_surface *vigs_sfc = vigs_gem_to_vigs_surface(vigs_gem);
 
-    if (vigs_sfc->dirty_flag == vigs_dirty_vram) {
+    if (!vigs_sfc->is_gpu_dirty) {
         vigs_comm_update_gpu(vigs_dev->comm,
                              vigs_sfc->id,
+                             vigs_sfc->width,
+                             vigs_sfc->height,
                              vigs_gem_offset(vigs_gem));
     }
-    vigs_sfc->dirty_flag = vigs_dirty_none;
+
+    vigs_sfc->is_gpu_dirty = false;
 }
 
 static void vigs_device_mman_gpu_to_vram(void *user_data,
@@ -64,8 +42,6 @@ static void vigs_device_mman_gpu_to_vram(void *user_data,
 
 static struct vigs_mman_ops mman_ops =
 {
-    .map = &vigs_device_mman_map,
-    .unmap = &vigs_device_mman_unmap,
     .vram_to_gpu = &vigs_device_mman_vram_to_gpu,
     .gpu_to_vram = &vigs_device_mman_gpu_to_vram
 };
@@ -164,7 +140,7 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
             }
             if (vigs_gem_in_vram(&sfc->gem)) {
                 request.update_vram->offset = vigs_gem_offset(&sfc->gem);
-                sfc->dirty_flag = vigs_dirty_none;
+                sfc->is_gpu_dirty = false;
             } else {
                 DRM_DEBUG_DRIVER("Surface %u not in VRAM, ignoring update_vram\n",
                                  request.update_vram->sfc_id);
@@ -188,7 +164,7 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
             }
             if (vigs_gem_in_vram(&sfc->gem)) {
                 request.update_gpu->offset = vigs_gem_offset(&sfc->gem);
-                sfc->dirty_flag = vigs_dirty_none;
+                sfc->is_gpu_dirty = false;
             } else {
                 DRM_DEBUG_DRIVER("Surface %u not in VRAM, ignoring update_gpu\n",
                                  request.update_gpu->sfc_id);
@@ -211,7 +187,7 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
                 list_add_tail(&sfc->gem.list, gem_list);
             }
             if (vigs_gem_in_vram(&sfc->gem)) {
-                sfc->dirty_flag = vigs_dirty_gpu;
+                sfc->is_gpu_dirty = true;
             }
             break;
         case vigsp_cmd_solid_fill:
@@ -230,7 +206,7 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
                 list_add_tail(&sfc->gem.list, gem_list);
             }
             if (vigs_gem_in_vram(&sfc->gem)) {
-                sfc->dirty_flag = vigs_dirty_gpu;
+                sfc->is_gpu_dirty = true;
             }
             break;
         default:
