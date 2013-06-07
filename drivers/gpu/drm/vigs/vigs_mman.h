@@ -7,18 +7,10 @@
 struct vigs_mman_ops
 {
     /*
-     * 'bo' is unreserved while calling these.
-     */
-    int (*map)(void *user_data, struct ttm_buffer_object *bo);
-    void (*unmap)(void *user_data, struct ttm_buffer_object *bo);
-    /*
-     * @}
-     */
-
-    /*
      * 'bo' is reserved while calling these.
      * @{
      */
+
     void (*vram_to_gpu)(void *user_data, struct ttm_buffer_object *bo);
     void (*gpu_to_vram)(void *user_data, struct ttm_buffer_object *bo,
                         unsigned long new_offset);
@@ -31,6 +23,7 @@ struct vigs_mman
 {
     struct drm_global_reference mem_global_ref;
     struct ttm_bo_global_ref bo_global_ref;
+    struct ttm_mem_shrink *old_shrink;
     struct ttm_bo_device bo_dev;
 
     resource_size_t vram_base;

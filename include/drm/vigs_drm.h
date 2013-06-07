@@ -8,7 +8,7 @@
 /*
  * Bump this whenever driver interface changes.
  */
-#define DRM_VIGS_DRIVER_VERSION 6
+#define DRM_VIGS_DRIVER_VERSION 7
 
 struct drm_vigs_get_protocol_version
 {
@@ -51,11 +51,6 @@ struct drm_vigs_exec
     uint32_t handle;
 };
 
-struct drm_vigs_surface_set_vram_dirty
-{
-    uint32_t handle;
-};
-
 struct drm_vigs_surface_set_gpu_dirty
 {
     uint32_t handle;
@@ -76,10 +71,9 @@ struct drm_vigs_surface_update_gpu
 #define DRM_VIGS_CREATE_EXECBUFFER 0x02
 #define DRM_VIGS_SURFACE_INFO 0x03
 #define DRM_VIGS_EXEC 0x04
-#define DRM_VIGS_SURFACE_SET_VRAM_DIRTY 0x05
-#define DRM_VIGS_SURFACE_SET_GPU_DIRTY 0x06
-#define DRM_VIGS_SURFACE_UPDATE_VRAM 0x07
-#define DRM_VIGS_SURFACE_UPDATE_GPU 0x08
+#define DRM_VIGS_SURFACE_SET_GPU_DIRTY 0x05
+#define DRM_VIGS_SURFACE_UPDATE_VRAM 0x06
+#define DRM_VIGS_SURFACE_UPDATE_GPU 0x07
 
 #define DRM_IOCTL_VIGS_GET_PROTOCOL_VERSION DRM_IOR(DRM_COMMAND_BASE + \
             DRM_VIGS_GET_PROTOCOL_VERSION, struct drm_vigs_get_protocol_version)
@@ -91,8 +85,6 @@ struct drm_vigs_surface_update_gpu
             DRM_VIGS_SURFACE_INFO, struct drm_vigs_surface_info)
 #define DRM_IOCTL_VIGS_EXEC DRM_IOW(DRM_COMMAND_BASE + \
             DRM_VIGS_EXEC, struct drm_vigs_exec)
-#define DRM_IOCTL_VIGS_SURFACE_SET_VRAM_DIRTY DRM_IOW(DRM_COMMAND_BASE + \
-            DRM_VIGS_SURFACE_SET_VRAM_DIRTY, struct drm_vigs_surface_set_vram_dirty)
 #define DRM_IOCTL_VIGS_SURFACE_SET_GPU_DIRTY DRM_IOW(DRM_COMMAND_BASE + \
             DRM_VIGS_SURFACE_SET_GPU_DIRTY, struct drm_vigs_surface_set_gpu_dirty)
 #define DRM_IOCTL_VIGS_SURFACE_UPDATE_VRAM DRM_IOW(DRM_COMMAND_BASE + \

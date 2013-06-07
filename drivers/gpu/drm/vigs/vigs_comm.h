@@ -59,6 +59,8 @@ int vigs_comm_update_vram(struct vigs_comm *comm,
 
 int vigs_comm_update_gpu(struct vigs_comm *comm,
                          vigsp_surface_id id,
+                         u32 width,
+                         u32 height,
                          vigsp_offset offset);
 
 /*
