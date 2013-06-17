@@ -88,29 +88,26 @@ static int vigs_connector_get_modes(struct drm_connector *connector)
 {
     struct vigs_output *vigs_output = connector_to_vigs_output(connector);
     struct drm_device *drm_dev = vigs_output->connector.dev;
-    int i;
-    struct
-    {
-        int w;
-        int h;
-    } modes[] =
-    {
-        { 480, 800 },
-        { 720, 1280 },
-    };
+    char *option = NULL;
 
     DRM_DEBUG_KMS("enter\n");
 
-    for (i = 0; i < ARRAY_SIZE(modes); i++) {
-        struct drm_display_mode *mode =
-            drm_cvt_mode(drm_dev,
-                         modes[i].w,
-                         modes[i].h,
-                         60, false, false, false);
-        drm_mode_probed_add(connector, mode);
+    if (fb_get_options(drm_get_connector_name(connector), &option) == 0) {
+        struct drm_cmdline_mode cmdline_mode;
+
+        if (drm_mode_parse_command_line_for_connector(option,
+                                                      connector,
+                                                      &cmdline_mode)) {
+            struct drm_display_mode *preferred_mode =
+                drm_mode_create_from_cmdline_mode(drm_dev,
+                                                  &cmdline_mode);
+            preferred_mode->type = DRM_MODE_TYPE_PREFERRED | DRM_MODE_TYPE_DRIVER;
+            drm_mode_probed_add(connector, preferred_mode);
+            return 1;
+        }
     }
 
-    return (i - 1);
+    return 0;
 }
 
 static int vigs_connector_mode_valid(struct drm_connector *connector,
