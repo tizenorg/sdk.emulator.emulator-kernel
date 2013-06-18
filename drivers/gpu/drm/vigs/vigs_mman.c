@@ -85,24 +85,11 @@ static int vigs_mman_global_init(struct vigs_mman *mman)
         return ret;
     }
 
-    /*
-     * Hack. Assign 'shrink' to NULL in order to prevent
-     * swapping out BOs, we don't need this because
-     * we don't occupy any system RAM at all, our GPU
-     * placement is entirely on host.
-     */
-
-    mman->old_shrink = mman->bo_global_ref.mem_glob->shrink;
-    mman->bo_global_ref.mem_glob->shrink = NULL;
-
     return 0;
 }
 
 static void vigs_mman_global_cleanup(struct vigs_mman *mman)
 {
-    mman->bo_global_ref.mem_glob->shrink = mman->old_shrink;
-    mman->old_shrink = NULL;
-
     drm_global_item_unref(&mman->bo_global_ref.ref);
     drm_global_item_unref(&mman->mem_global_ref);
 }

@@ -23,7 +23,6 @@ struct vigs_mman
 {
     struct drm_global_reference mem_global_ref;
     struct ttm_bo_global_ref bo_global_ref;
-    struct ttm_mem_shrink *old_shrink;
     struct ttm_bo_device bo_dev;
 
     resource_size_t vram_base;

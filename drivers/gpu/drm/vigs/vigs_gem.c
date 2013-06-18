@@ -63,7 +63,7 @@ int vigs_gem_init(struct vigs_gem_object *vigs_gem,
 
     ret = ttm_bo_init(&vigs_dev->mman->bo_dev, &vigs_gem->bo, size, bo_type,
                       &placement, 0, 0,
-                      false, NULL, size,
+                      false, NULL, 0,
                       &vigs_gem_bo_destroy);
 
     if (ret != 0) {
