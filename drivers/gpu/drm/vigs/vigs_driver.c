@@ -5,6 +5,7 @@
 #include "vigs_comm.h"
 #include "vigs_surface.h"
 #include "vigs_execbuffer.h"
+#include "vigs_irq.h"
 #include "drmP.h"
 #include "drm.h"
 #include <linux/module.h>
@@ -60,6 +61,7 @@ static const struct file_operations vigs_drm_driver_fops =
     .poll = drm_poll,
     .fasync = drm_fasync,
     .mmap = vigs_device_mmap,
+    .read = drm_read
 };
 
 static int vigs_drm_load(struct drm_device *dev, unsigned long flags)
@@ -106,6 +108,30 @@ static int vigs_drm_unload(struct drm_device *dev)
     return 0;
 }
 
+
+static void vigs_drm_preclose(struct drm_device *dev,
+                              struct drm_file *file_priv)
+{
+    struct vigs_device *vigs_dev = dev->dev_private;
+    struct drm_pending_vblank_event *event, *tmp;
+    unsigned long flags;
+
+    DRM_DEBUG_DRIVER("enter\n");
+
+    spin_lock_irqsave(&dev->event_lock, flags);
+
+    list_for_each_entry_safe(event, tmp,
+                             &vigs_dev->pageflip_event_list,
+                             base.link) {
+        if (event->base.file_priv == file_priv) {
+            list_del(&event->base.link);
+            event->base.destroy(&event->base);
+        }
+    }
+
+    spin_unlock_irqrestore(&dev->event_lock, flags);
+}
+
 static void vigs_drm_postclose(struct drm_device *dev,
                                struct drm_file *file_priv)
 {
@@ -127,11 +153,17 @@ static void vigs_drm_lastclose(struct drm_device *dev)
 
 static struct drm_driver vigs_drm_driver =
 {
-    .driver_features = DRIVER_GEM | DRIVER_MODESET,
+    .driver_features = DRIVER_GEM | DRIVER_MODESET |
+                       DRIVER_HAVE_IRQ | DRIVER_IRQ_SHARED,
     .load = vigs_drm_load,
     .unload = vigs_drm_unload,
+    .preclose = vigs_drm_preclose,
     .postclose = vigs_drm_postclose,
     .lastclose = vigs_drm_lastclose,
+    .get_vblank_counter = drm_vblank_count,
+    .enable_vblank = vigs_enable_vblank,
+    .disable_vblank = vigs_disable_vblank,
+    .irq_handler = vigs_irq_handler,
     .gem_init_object = vigs_gem_init_object,
     .gem_free_object = vigs_gem_free_object,
     .gem_open_object = vigs_gem_open_object,

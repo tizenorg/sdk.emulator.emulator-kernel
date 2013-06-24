@@ -14,7 +14,7 @@
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 13
+#define VIGS_PROTOCOL_VERSION 14
 
 typedef signed char vigsp_s8;
 typedef signed short vigsp_s16;

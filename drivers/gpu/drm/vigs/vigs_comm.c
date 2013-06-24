@@ -1,6 +1,7 @@
 #include "vigs_comm.h"
 #include "vigs_device.h"
 #include "vigs_execbuffer.h"
+#include "vigs_regs.h"
 #include <drm/vigs_drm.h>
 
 static int vigs_comm_prepare(struct vigs_comm *comm,
@@ -80,7 +81,7 @@ static int vigs_comm_prepare(struct vigs_comm *comm,
 static void vigs_comm_exec_locked(struct vigs_comm *comm,
                                   struct vigs_execbuffer *execbuffer)
 {
-    writel(vigs_gem_offset(&execbuffer->gem), comm->io_ptr);
+    writel(vigs_gem_offset(&execbuffer->gem), comm->io_ptr + VIGS_REG_EXEC);
 }
 
 static int vigs_comm_exec_internal(struct vigs_comm *comm)
