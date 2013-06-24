@@ -14,6 +14,7 @@ vigs_drm-y := main.o \
               vigs_output.o \
               vigs_framebuffer.o \
               vigs_comm.o \
-              vigs_fbdev.o
+              vigs_fbdev.o \
+              vigs_irq.o
 
 obj-$(CONFIG_DRM_VIGS) += vigs_drm.o
