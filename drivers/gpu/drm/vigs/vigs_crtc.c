@@ -15,33 +15,8 @@ static inline struct vigs_crtc *crtc_to_vigs_crtc(struct drm_crtc *crtc)
     return container_of(crtc, struct vigs_crtc, base);
 }
 
-static void vigs_crtc_destroy(struct drm_crtc *crtc)
-{
-    struct vigs_crtc *vigs_crtc = crtc_to_vigs_crtc(crtc);
-
-    DRM_DEBUG_KMS("enter");
-
-    drm_crtc_cleanup(crtc);
-
-    kfree(vigs_crtc);
-}
-
-static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
-{
-    DRM_DEBUG_KMS("enter: mode = %d\n", mode);
-}
-
-static bool vigs_crtc_mode_fixup(struct drm_crtc *crtc,
-                                 struct drm_display_mode *mode,
-                                 struct drm_display_mode *adjusted_mode)
-{
-    DRM_DEBUG_KMS("enter\n");
-
-    return true;
-}
-
-static int vigs_crtc_mode_set_base(struct drm_crtc *crtc, int x, int y,
-                                   struct drm_framebuffer *old_fb)
+static int vigs_crtc_update(struct drm_crtc *crtc,
+                            struct drm_framebuffer *old_fb)
 {
     struct vigs_device *vigs_dev = crtc->dev->dev_private;
     struct vigs_framebuffer *vigs_fb;
@@ -51,8 +26,6 @@ static int vigs_crtc_mode_set_base(struct drm_crtc *crtc, int x, int y,
      * New framebuffer has been attached, notify the host that
      * root surface has been updated.
      */
-
-    DRM_DEBUG_KMS("enter: x = %d, y = %d\n", x, y);
 
     if (!crtc->fb) {
         DRM_ERROR("crtc->fb is NULL\n");
@@ -83,6 +56,39 @@ static int vigs_crtc_mode_set_base(struct drm_crtc *crtc, int x, int y,
     return 0;
 }
 
+static void vigs_crtc_destroy(struct drm_crtc *crtc)
+{
+    struct vigs_crtc *vigs_crtc = crtc_to_vigs_crtc(crtc);
+
+    DRM_DEBUG_KMS("enter");
+
+    drm_crtc_cleanup(crtc);
+
+    kfree(vigs_crtc);
+}
+
+static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
+{
+    DRM_DEBUG_KMS("enter: mode = %d\n", mode);
+}
+
+static bool vigs_crtc_mode_fixup(struct drm_crtc *crtc,
+                                 struct drm_display_mode *mode,
+                                 struct drm_display_mode *adjusted_mode)
+{
+    DRM_DEBUG_KMS("enter\n");
+
+    return true;
+}
+
+static int vigs_crtc_mode_set_base(struct drm_crtc *crtc, int x, int y,
+                                   struct drm_framebuffer *old_fb)
+{
+    DRM_DEBUG_KMS("enter: x = %d, y = %d\n", x, y);
+
+    return vigs_crtc_update(crtc, old_fb);
+}
+
 static int vigs_crtc_mode_set(struct drm_crtc *crtc,
                               struct drm_display_mode *mode,
                               struct drm_display_mode *adjusted_mode,
@@ -106,6 +112,46 @@ static void vigs_crtc_commit(struct drm_crtc *crtc)
 
 static void vigs_crtc_load_lut(struct drm_crtc *crtc)
 {
+}
+
+static int vigs_crtc_page_flip(struct drm_crtc *crtc,
+                               struct drm_framebuffer *fb,
+                               struct drm_pending_vblank_event *event)
+{
+    struct vigs_device *vigs_dev = crtc->dev->dev_private;
+    struct drm_framebuffer *old_fb = crtc->fb;
+    int ret = -EINVAL;
+
+    mutex_lock(&vigs_dev->drm_dev->struct_mutex);
+
+    if (event) {
+        event->pipe = 0;
+
+        ret = drm_vblank_get(vigs_dev->drm_dev, 0);
+
+        if (ret != 0) {
+            DRM_ERROR("failed to acquire vblank counter\n");
+            list_del(&event->base.link);
+            goto out;
+        }
+
+        list_add_tail(&event->base.link,
+                      &vigs_dev->pageflip_event_list);
+
+        crtc->fb = fb;
+        ret = vigs_crtc_update(crtc, old_fb);
+        if (ret != 0) {
+            crtc->fb = old_fb;
+            drm_vblank_put(vigs_dev->drm_dev, 0);
+            list_del(&event->base.link);
+            goto out;
+        }
+    }
+
+out:
+    mutex_unlock(&vigs_dev->drm_dev->struct_mutex);
+
+    return ret;
 }
 
 static void vigs_crtc_disable(struct drm_crtc *crtc)
@@ -135,6 +181,7 @@ static void vigs_crtc_disable(struct drm_crtc *crtc)
 static const struct drm_crtc_funcs vigs_crtc_funcs =
 {
     .set_config = drm_crtc_helper_set_config,
+    .page_flip = vigs_crtc_page_flip,
     .destroy = vigs_crtc_destroy,
 };
 

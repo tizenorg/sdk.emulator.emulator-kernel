@@ -245,6 +245,8 @@ int vigs_device_init(struct vigs_device *vigs_dev,
     vigs_dev->drm_dev = drm_dev;
     vigs_dev->pci_dev = pci_dev;
 
+    INIT_LIST_HEAD(&vigs_dev->pageflip_event_list);
+
     vigs_dev->vram_base = pci_resource_start(pci_dev, 0);
     vigs_dev->vram_size = pci_resource_len(pci_dev, 0);
 
@@ -311,14 +313,36 @@ int vigs_device_init(struct vigs_device *vigs_dev,
         goto fail4;
     }
 
-    ret = vigs_fbdev_create(vigs_dev, &vigs_dev->fbdev);
+    ret = drm_vblank_init(drm_dev, 1);
 
     if (ret != 0) {
         goto fail4;
     }
 
+    /*
+     * We allow VBLANK interrupt disabling right from the start. There's
+     * no point in "waiting until first modeset".
+     */
+    drm_dev->vblank_disable_allowed = 1;
+
+    ret = drm_irq_install(drm_dev);
+
+    if (ret != 0) {
+        goto fail5;
+    }
+
+    ret = vigs_fbdev_create(vigs_dev, &vigs_dev->fbdev);
+
+    if (ret != 0) {
+        goto fail6;
+    }
+
     return 0;
 
+fail6:
+    drm_irq_uninstall(drm_dev);
+fail5:
+    drm_vblank_cleanup(drm_dev);
 fail4:
     drm_mode_config_cleanup(vigs_dev->drm_dev);
     vigs_comm_destroy(vigs_dev->comm);
@@ -337,6 +361,8 @@ void vigs_device_cleanup(struct vigs_device *vigs_dev)
     DRM_DEBUG_DRIVER("enter\n");
 
     vigs_fbdev_destroy(vigs_dev->fbdev);
+    drm_irq_uninstall(vigs_dev->drm_dev);
+    drm_vblank_cleanup(vigs_dev->drm_dev);
     drm_mode_config_cleanup(vigs_dev->drm_dev);
     vigs_comm_destroy(vigs_dev->comm);
     vigs_mman_destroy(vigs_dev->mman);

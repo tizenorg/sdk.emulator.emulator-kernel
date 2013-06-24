@@ -15,6 +15,8 @@ struct vigs_device
     struct drm_device *drm_dev;
     struct pci_dev *pci_dev;
 
+    struct list_head pageflip_event_list;
+
     resource_size_t vram_base;
     resource_size_t vram_size;
 
