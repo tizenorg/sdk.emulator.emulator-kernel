@@ -1,3 +1,6 @@
+* 1.4.23
+- fixed one of Smack bugs which is about IP packet access check.
+== Kitae Kim <kt920.kim@samsung.com> 2013-06-28
 * 1.4.22
 - applied smack patches
 == Kitae Kim <kt920.kim@samsung.com> 2013-05-28
