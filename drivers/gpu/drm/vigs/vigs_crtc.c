@@ -3,17 +3,8 @@
 #include "vigs_framebuffer.h"
 #include "vigs_surface.h"
 #include "vigs_comm.h"
+#include "vigs_fbdev.h"
 #include "drm_crtc_helper.h"
-
-struct vigs_crtc
-{
-    struct drm_crtc base;
-};
-
-static inline struct vigs_crtc *crtc_to_vigs_crtc(struct drm_crtc *crtc)
-{
-    return container_of(crtc, struct vigs_crtc, base);
-}
 
 static int vigs_crtc_update(struct drm_crtc *crtc,
                             struct drm_framebuffer *old_fb)
@@ -74,7 +65,41 @@ static void vigs_crtc_destroy(struct drm_crtc *crtc)
 
 static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
 {
-    DRM_DEBUG_KMS("enter: mode = %d\n", mode);
+    struct vigs_crtc *vigs_crtc = crtc_to_vigs_crtc(crtc);
+    struct vigs_device *vigs_dev = crtc->dev->dev_private;
+    int blank;
+    struct fb_event event;
+
+    DRM_DEBUG_KMS("enter: fb_blank = %d, mode = %d\n",
+                  vigs_crtc->in_fb_blank,
+                  mode);
+
+    if (vigs_crtc->in_fb_blank) {
+        return;
+    }
+
+    switch (mode) {
+    case DRM_MODE_DPMS_ON:
+        blank = FB_BLANK_UNBLANK;
+        break;
+    case DRM_MODE_DPMS_STANDBY:
+        blank = FB_BLANK_NORMAL;
+        break;
+    case DRM_MODE_DPMS_SUSPEND:
+        blank = FB_BLANK_VSYNC_SUSPEND;
+        break;
+    case DRM_MODE_DPMS_OFF:
+        blank = FB_BLANK_POWERDOWN;
+        break;
+    default:
+        DRM_ERROR("unspecified mode %d\n", mode);
+        return;
+    }
+
+    event.info = vigs_dev->fbdev->base.fbdev;
+    event.data = &blank;
+
+    fb_notifier_call_chain(FB_EVENT_BLANK, &event);
 }
 
 static bool vigs_crtc_mode_fixup(struct drm_crtc *crtc,

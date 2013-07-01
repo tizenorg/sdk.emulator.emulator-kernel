@@ -3,6 +3,7 @@
 #include "vigs_surface.h"
 #include "vigs_framebuffer.h"
 #include "vigs_output.h"
+#include "vigs_crtc.h"
 #include "drm_crtc_helper.h"
 #include <drm/vigs_drm.h>
 
@@ -130,11 +131,85 @@ static int vigs_fbdev_setcmap(struct fb_cmap *cmap, struct fb_info *fbi)
  * @}
  */
 
-int vigs_fbdev_set_par(struct fb_info *fbi)
+static int vigs_fbdev_set_par(struct fb_info *fbi)
 {
     DRM_DEBUG_KMS("enter\n");
 
     return drm_fb_helper_set_par(fbi);
+}
+
+/*
+ * This is 'drm_fb_helper_dpms' modified to set 'fbdev'
+ * flag inside 'mode_config.mutex'.
+ */
+static void vigs_fbdev_dpms(struct fb_info *fbi, int dpms_mode)
+{
+    struct drm_fb_helper *fb_helper = fbi->par;
+    struct drm_device *dev = fb_helper->dev;
+    struct drm_crtc *crtc;
+    struct vigs_crtc *vigs_crtc;
+    struct drm_connector *connector;
+    int i, j;
+
+    /*
+     * For each CRTC in this fb, turn the connectors on/off.
+     */
+    mutex_lock(&dev->mode_config.mutex);
+
+    for (i = 0; i < fb_helper->crtc_count; i++) {
+        crtc = fb_helper->crtc_info[i].mode_set.crtc;
+        vigs_crtc = crtc_to_vigs_crtc(crtc);
+
+        if (!crtc->enabled) {
+            continue;
+        }
+
+        vigs_crtc->in_fb_blank = true;
+
+        /* Walk the connectors & encoders on this fb turning them on/off */
+        for (j = 0; j < fb_helper->connector_count; j++) {
+            connector = fb_helper->connector_info[j]->connector;
+            drm_helper_connector_dpms(connector, dpms_mode);
+            drm_connector_property_set_value(connector,
+                dev->mode_config.dpms_property, dpms_mode);
+        }
+
+        vigs_crtc->in_fb_blank = false;
+    }
+
+    mutex_unlock(&dev->mode_config.mutex);
+}
+
+/*
+ * This is 'drm_fb_helper_blank' modified to use
+ * 'vigs_fbdev_dpms'.
+ */
+static int vigs_fbdev_blank(int blank, struct fb_info *fbi)
+{
+    switch (blank) {
+    /* Display: On; HSync: On, VSync: On */
+    case FB_BLANK_UNBLANK:
+        vigs_fbdev_dpms(fbi, DRM_MODE_DPMS_ON);
+        break;
+    /* Display: Off; HSync: On, VSync: On */
+    case FB_BLANK_NORMAL:
+        vigs_fbdev_dpms(fbi, DRM_MODE_DPMS_STANDBY);
+        break;
+    /* Display: Off; HSync: Off, VSync: On */
+    case FB_BLANK_HSYNC_SUSPEND:
+        vigs_fbdev_dpms(fbi, DRM_MODE_DPMS_STANDBY);
+        break;
+    /* Display: Off; HSync: On, VSync: Off */
+    case FB_BLANK_VSYNC_SUSPEND:
+        vigs_fbdev_dpms(fbi, DRM_MODE_DPMS_SUSPEND);
+        break;
+    /* Display: Off; HSync: Off, VSync: Off */
+    case FB_BLANK_POWERDOWN:
+        vigs_fbdev_dpms(fbi, DRM_MODE_DPMS_OFF);
+        break;
+    }
+
+    return 0;
 }
 
 static struct fb_ops vigs_fbdev_ops =
@@ -145,7 +220,7 @@ static struct fb_ops vigs_fbdev_ops =
     .fb_imageblit = cfb_imageblit,
     .fb_check_var = drm_fb_helper_check_var,
     .fb_set_par = vigs_fbdev_set_par,
-    .fb_blank = drm_fb_helper_blank,
+    .fb_blank = vigs_fbdev_blank,
     .fb_pan_display = drm_fb_helper_pan_display,
     .fb_setcmap = vigs_fbdev_setcmap,
     .fb_debug_enter = drm_fb_helper_debug_enter,
