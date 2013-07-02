@@ -8,7 +8,14 @@
 /*
  * Bump this whenever driver interface changes.
  */
-#define DRM_VIGS_DRIVER_VERSION 7
+#define DRM_VIGS_DRIVER_VERSION 8
+
+/*
+ * Surface access flags.
+ */
+#define DRM_VIGS_SAF_READ 1
+#define DRM_VIGS_SAF_WRITE 2
+#define DRM_VIGS_SAF_MASK 3
 
 struct drm_vigs_get_protocol_version
 {
@@ -56,14 +63,16 @@ struct drm_vigs_surface_set_gpu_dirty
     uint32_t handle;
 };
 
-struct drm_vigs_surface_update_vram
+struct drm_vigs_surface_start_access
 {
-    uint32_t handle;
+    unsigned long address;
+    uint32_t saf;
 };
 
-struct drm_vigs_surface_update_gpu
+struct drm_vigs_surface_end_access
 {
-    uint32_t handle;
+    unsigned long address;
+    int sync;
 };
 
 #define DRM_VIGS_GET_PROTOCOL_VERSION 0x00
@@ -72,8 +81,8 @@ struct drm_vigs_surface_update_gpu
 #define DRM_VIGS_SURFACE_INFO 0x03
 #define DRM_VIGS_EXEC 0x04
 #define DRM_VIGS_SURFACE_SET_GPU_DIRTY 0x05
-#define DRM_VIGS_SURFACE_UPDATE_VRAM 0x06
-#define DRM_VIGS_SURFACE_UPDATE_GPU 0x07
+#define DRM_VIGS_SURFACE_START_ACCESS 0x06
+#define DRM_VIGS_SURFACE_END_ACCESS 0x07
 
 #define DRM_IOCTL_VIGS_GET_PROTOCOL_VERSION DRM_IOR(DRM_COMMAND_BASE + \
             DRM_VIGS_GET_PROTOCOL_VERSION, struct drm_vigs_get_protocol_version)
@@ -87,9 +96,9 @@ struct drm_vigs_surface_update_gpu
             DRM_VIGS_EXEC, struct drm_vigs_exec)
 #define DRM_IOCTL_VIGS_SURFACE_SET_GPU_DIRTY DRM_IOW(DRM_COMMAND_BASE + \
             DRM_VIGS_SURFACE_SET_GPU_DIRTY, struct drm_vigs_surface_set_gpu_dirty)
-#define DRM_IOCTL_VIGS_SURFACE_UPDATE_VRAM DRM_IOW(DRM_COMMAND_BASE + \
-            DRM_VIGS_SURFACE_UPDATE_VRAM, struct drm_vigs_surface_update_vram)
-#define DRM_IOCTL_VIGS_SURFACE_UPDATE_GPU DRM_IOW(DRM_COMMAND_BASE + \
-            DRM_VIGS_SURFACE_UPDATE_GPU, struct drm_vigs_surface_update_gpu)
+#define DRM_IOCTL_VIGS_SURFACE_START_ACCESS DRM_IOW(DRM_COMMAND_BASE + \
+            DRM_VIGS_SURFACE_START_ACCESS, struct drm_vigs_surface_start_access)
+#define DRM_IOCTL_VIGS_SURFACE_END_ACCESS DRM_IOW(DRM_COMMAND_BASE + \
+            DRM_VIGS_SURFACE_END_ACCESS, struct drm_vigs_surface_end_access)
 
 #endif
