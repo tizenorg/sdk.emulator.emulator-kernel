@@ -234,8 +234,6 @@ static int vigs_ttm_move(struct ttm_buffer_object *bo,
 
     if ((old_mem->mem_type == TTM_PL_VRAM) &&
         (new_mem->mem_type == TTM_PL_TT)) {
-        DRM_INFO("ttm_move: 0x%llX vram -> gpu\n", bo->addr_space_offset);
-
         mman->ops->vram_to_gpu(mman->user_data, bo);
 
         ttm_bo_mem_put(bo, old_mem);
@@ -246,8 +244,6 @@ static int vigs_ttm_move(struct ttm_buffer_object *bo,
         return 0;
     } else if ((old_mem->mem_type == TTM_PL_TT) &&
                (new_mem->mem_type == TTM_PL_VRAM)) {
-        DRM_DEBUG_DRIVER("ttm_move: 0x%llX gpu -> vram\n", bo->addr_space_offset);
-
         mman->ops->gpu_to_vram(mman->user_data, bo,
                                (new_mem->start << PAGE_SHIFT) +
                                bo->bdev->man[new_mem->mem_type].gpu_offset);
@@ -363,18 +359,68 @@ static struct ttm_bo_driver vigs_ttm_bo_driver =
     .io_mem_free = &vigs_ttm_io_mem_free,
 };
 
+/*
+ * VMA related.
+ * @{
+ */
+
+static u32 vigs_vma_cache_index = 0;
+static struct vm_operations_struct vigs_ttm_vm_ops;
+static const struct vm_operations_struct *ttm_vm_ops = NULL;
+
+/*
+ * Represents per-VMA data.
+ *
+ * Since TTM already uses struct vm_area_struct::vm_private_data
+ * we're forced to use some other way to add our own data
+ * to VMA. Currently we use struct vm_area_struct::vm_ops for this.
+ * Generally, TTM should be refactored to not use
+ * struct vm_area_struct directly, but provide helper functions
+ * instead so that user could store whatever he wants into
+ * struct vm_area_struct::vm_private_data.
+ */
+struct vigs_mman_vma
+{
+    struct vm_operations_struct vm_ops;
+    struct vm_area_struct *vma;
+    struct kref kref;
+    u8 data[1];
+};
+
+static void vigs_mman_vma_release(struct kref *kref)
+{
+    struct vigs_mman_vma *vigs_vma =
+        container_of(kref, struct vigs_mman_vma, kref);
+    struct ttm_buffer_object *bo = vigs_vma->vma->vm_private_data;
+    struct vigs_mman *mman = bo_dev_to_vigs_mman(bo->bdev);
+
+    mman->ops->cleanup_vma(mman->user_data, &vigs_vma->data[0]);
+
+    vigs_vma->vma->vm_ops = &vigs_ttm_vm_ops;
+
+    kmem_cache_free(mman->vma_cache, vigs_vma);
+}
+
+/*
+ * @}
+ */
+
 int vigs_mman_create(resource_size_t vram_base,
                      resource_size_t vram_size,
                      resource_size_t ram_base,
                      resource_size_t ram_size,
+                     uint32_t vma_data_size,
                      struct vigs_mman_ops *ops,
                      void *user_data,
                      struct vigs_mman **mman)
 {
     int ret = 0;
+    char vma_cache_name[100];
     unsigned long num_pages = 0;
 
     DRM_DEBUG_DRIVER("enter\n");
+
+    BUG_ON(vma_data_size <= 0);
 
     *mman = kzalloc(sizeof(**mman), GFP_KERNEL);
 
@@ -383,10 +429,22 @@ int vigs_mman_create(resource_size_t vram_base,
         goto fail1;
     }
 
+    sprintf(vma_cache_name, "vigs_vma_cache%u", vigs_vma_cache_index++);
+
+    (*mman)->vma_cache = kmem_cache_create(vma_cache_name,
+                                           sizeof(struct vigs_mman_vma) +
+                                           vma_data_size - 1,
+                                           0, 0, NULL);
+
+    if (!(*mman)->vma_cache) {
+        ret = -ENOMEM;
+        goto fail2;
+    }
+
     ret = vigs_mman_global_init(*mman);
 
     if (ret != 0) {
-        goto fail2;
+        goto fail3;
     }
 
     (*mman)->vram_base = vram_base;
@@ -401,7 +459,7 @@ int vigs_mman_create(resource_size_t vram_base,
                              0);
     if (ret != 0) {
         DRM_ERROR("failed initializing bo driver: %d\n", ret);
-        goto fail3;
+        goto fail4;
     }
 
     /*
@@ -418,7 +476,7 @@ int vigs_mman_create(resource_size_t vram_base,
                          (0xFFFFFFFFUL / PAGE_SIZE));
     if (ret != 0) {
         DRM_ERROR("failed initializing GPU mm\n");
-        goto fail4;
+        goto fail5;
     }
 
     /*
@@ -437,7 +495,7 @@ int vigs_mman_create(resource_size_t vram_base,
                          num_pages);
     if (ret != 0) {
         DRM_ERROR("failed initializing VRAM mm\n");
-        goto fail5;
+        goto fail6;
     }
 
     /*
@@ -456,7 +514,7 @@ int vigs_mman_create(resource_size_t vram_base,
                          num_pages);
     if (ret != 0) {
         DRM_ERROR("failed initializing RAM mm\n");
-        goto fail6;
+        goto fail7;
     }
 
     /*
@@ -465,14 +523,16 @@ int vigs_mman_create(resource_size_t vram_base,
 
     return 0;
 
-fail6:
+fail7:
     ttm_bo_clean_mm(&(*mman)->bo_dev, TTM_PL_VRAM);
-fail5:
+fail6:
     ttm_bo_clean_mm(&(*mman)->bo_dev, TTM_PL_TT);
-fail4:
+fail5:
     ttm_bo_device_release(&(*mman)->bo_dev);
-fail3:
+fail4:
     vigs_mman_global_cleanup(*mman);
+fail3:
+    kmem_cache_destroy((*mman)->vma_cache);
 fail2:
     kfree(*mman);
 fail1:
@@ -490,12 +550,28 @@ void vigs_mman_destroy(struct vigs_mman *mman)
     ttm_bo_clean_mm(&mman->bo_dev, TTM_PL_TT);
     ttm_bo_device_release(&mman->bo_dev);
     vigs_mman_global_cleanup(mman);
+    kmem_cache_destroy(mman->vma_cache);
 
     kfree(mman);
 }
 
-static struct vm_operations_struct vigs_ttm_vm_ops;
-static const struct vm_operations_struct *ttm_vm_ops = NULL;
+static void vigs_ttm_open(struct vm_area_struct *vma)
+{
+    struct vigs_mman_vma *vigs_vma = (struct vigs_mman_vma*)vma->vm_ops;
+
+    kref_get(&vigs_vma->kref);
+
+    ttm_vm_ops->open(vma);
+}
+
+static void vigs_ttm_close(struct vm_area_struct *vma)
+{
+    struct vigs_mman_vma *vigs_vma = (struct vigs_mman_vma*)vma->vm_ops;
+
+    kref_put(&vigs_vma->kref, &vigs_mman_vma_release);
+
+    ttm_vm_ops->close(vma);
+}
 
 static int vigs_ttm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
@@ -512,15 +588,24 @@ int vigs_mman_mmap(struct vigs_mman *mman,
                    struct file *filp,
                    struct vm_area_struct *vma)
 {
+    struct vigs_mman_vma *vigs_vma;
     int ret;
+    struct ttm_buffer_object *bo;
 
     if (unlikely(vma->vm_pgoff < DRM_FILE_PAGE_OFFSET)) {
         return drm_mmap(filp, vma);
     }
 
+    vigs_vma = kmem_cache_alloc(mman->vma_cache, GFP_KERNEL);
+
+    if (!vigs_vma) {
+        return -ENOMEM;
+    }
+
     ret = ttm_bo_mmap(filp, vma, &mman->bo_dev);
 
     if (unlikely(ret != 0)) {
+        kmem_cache_free(mman->vma_cache, vigs_vma);
         return ret;
     }
 
@@ -530,7 +615,57 @@ int vigs_mman_mmap(struct vigs_mman *mman,
         vigs_ttm_vm_ops.fault = &vigs_ttm_fault;
     }
 
-    vma->vm_ops = &vigs_ttm_vm_ops;
+    bo = vma->vm_private_data;
+
+    vigs_vma->vm_ops = vigs_ttm_vm_ops;
+    vigs_vma->vma = vma;
+    vigs_vma->vm_ops.open = &vigs_ttm_open;
+    vigs_vma->vm_ops.close = &vigs_ttm_close;
+    kref_init(&vigs_vma->kref);
+    mman->ops->init_vma(mman->user_data, &vigs_vma->data[0], bo);
+
+    vma->vm_ops = &vigs_vma->vm_ops;
 
     return 0;
+}
+
+int vigs_mman_access_vma(struct vigs_mman *mman,
+                         unsigned long address,
+                         vigs_mman_access_vma_func func,
+                         void *user_data)
+{
+    struct mm_struct *mm = current->mm;
+    struct vm_area_struct *vma;
+    int ret;
+    struct ttm_buffer_object *bo;
+    struct vigs_mman_vma *vigs_vma;
+
+    down_read(&mm->mmap_sem);
+
+    vma = find_vma(mm, address);
+
+    if (!vma ||
+        !vma->vm_ops ||
+        (vma->vm_ops->fault != &vigs_ttm_fault)) {
+        ret = -ENOENT;
+        goto out;
+    }
+
+    bo = vma->vm_private_data;
+
+    BUG_ON(!bo);
+
+    if (bo->bdev != &mman->bo_dev) {
+        ret = -ENOENT;
+        goto out;
+    }
+
+    vigs_vma = (struct vigs_mman_vma*)vma->vm_ops;
+
+    ret = func(user_data, &vigs_vma->data[0]);
+
+out:
+    up_read(&mm->mmap_sem);
+
+    return ret;
 }

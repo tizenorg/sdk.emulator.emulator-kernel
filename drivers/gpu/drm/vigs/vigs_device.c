@@ -15,13 +15,17 @@ static void vigs_device_mman_vram_to_gpu(void *user_data,
     struct vigs_device *vigs_dev = user_data;
     struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
     struct vigs_surface *vigs_sfc = vigs_gem_to_vigs_surface(vigs_gem);
+    bool need_gpu_update = vigs_surface_need_gpu_update(vigs_sfc);
 
-    if (!vigs_sfc->is_gpu_dirty) {
+    if (!vigs_sfc->is_gpu_dirty && need_gpu_update) {
+        DRM_INFO("vram_to_gpu: 0x%llX\n", bo->addr_space_offset);
         vigs_comm_update_gpu(vigs_dev->comm,
                              vigs_sfc->id,
                              vigs_sfc->width,
                              vigs_sfc->height,
                              vigs_gem_offset(vigs_gem));
+    } else {
+        DRM_INFO("vram_to_gpu: 0x%llX (no-op)\n", bo->addr_space_offset);
     }
 
     vigs_sfc->is_gpu_dirty = false;
@@ -35,15 +39,49 @@ static void vigs_device_mman_gpu_to_vram(void *user_data,
     struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
     struct vigs_surface *vigs_sfc = vigs_gem_to_vigs_surface(vigs_gem);
 
-    vigs_comm_update_vram(vigs_dev->comm,
-                          vigs_sfc->id,
-                          new_offset);
+    if (vigs_surface_need_vram_update(vigs_sfc)) {
+        DRM_DEBUG_DRIVER("0x%llX\n", bo->addr_space_offset);
+        vigs_comm_update_vram(vigs_dev->comm,
+                              vigs_sfc->id,
+                              new_offset);
+    } else {
+        DRM_DEBUG_DRIVER("0x%llX (no-op)\n", bo->addr_space_offset);
+    }
+}
+
+static void vigs_device_mman_init_vma(void *user_data,
+                                      void *vma_data_opaque,
+                                      struct ttm_buffer_object *bo)
+{
+    struct vigs_vma_data *vma_data = vma_data_opaque;
+    struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
+
+    if (vigs_gem->type != VIGS_GEM_TYPE_SURFACE) {
+        vma_data->sfc = NULL;
+        return;
+    }
+
+    vigs_vma_data_init(vma_data, vigs_gem_to_vigs_surface(vigs_gem));
+}
+
+static void vigs_device_mman_cleanup_vma(void *user_data,
+                                         void *vma_data_opaque)
+{
+    struct vigs_vma_data *vma_data = vma_data_opaque;
+
+    if (!vma_data->sfc) {
+        return;
+    }
+
+    vigs_vma_data_cleanup(vma_data);
 }
 
 static struct vigs_mman_ops mman_ops =
 {
     .vram_to_gpu = &vigs_device_mman_vram_to_gpu,
-    .gpu_to_vram = &vigs_device_mman_gpu_to_vram
+    .gpu_to_vram = &vigs_device_mman_gpu_to_vram,
+    .init_vma = &vigs_device_mman_init_vma,
+    .cleanup_vma = &vigs_device_mman_cleanup_vma
 };
 
 static struct vigs_surface
@@ -65,7 +103,7 @@ static struct vigs_surface
     return sfc;
 }
 
-static bool vigs_gem_is_reserved(struct list_head* gem_list,
+static bool vigs_gem_is_reserved(struct list_head *gem_list,
                                  struct vigs_gem_object *gem)
 {
     struct vigs_gem_object *tmp;
@@ -77,6 +115,29 @@ static bool vigs_gem_is_reserved(struct list_head* gem_list,
     }
 
     return false;
+}
+
+static struct vigs_surface
+    *vigs_surface_reserve(struct vigs_device *vigs_dev,
+                          struct list_head *gem_list,
+                          vigsp_surface_id sfc_id)
+{
+    struct vigs_surface *sfc =
+        vigs_device_reference_surface_unlocked(vigs_dev, sfc_id);
+
+    if (!sfc) {
+        DRM_ERROR("Surface %u not found\n", sfc_id);
+        return NULL;
+    }
+
+    if (vigs_gem_is_reserved(gem_list, &sfc->gem)) {
+        drm_gem_object_unreference_unlocked(&sfc->gem.base);
+    } else {
+        vigs_gem_reserve(&sfc->gem);
+        list_add_tail(&sfc->gem.list, gem_list);
+    }
+
+    return sfc;
 }
 
 /*
@@ -97,6 +158,7 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
         struct vigsp_cmd_update_gpu_request *update_gpu;
         struct vigsp_cmd_copy_request *copy;
         struct vigsp_cmd_solid_fill_request *solid_fill;
+        void *data;
     } request;
     vigsp_u32 i;
     struct vigs_surface *sfc;
@@ -122,25 +184,26 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
             break;
         }
 
+        request.data = (request_header + 1);
+
         switch (request_header->cmd) {
         case vigsp_cmd_update_vram:
-            request.update_vram =
-                (struct vigsp_cmd_update_vram_request*)(request_header + 1);
-            sfc = vigs_device_reference_surface_unlocked(vigs_dev, request.update_vram->sfc_id);
+            sfc = vigs_surface_reserve(vigs_dev,
+                                       gem_list,
+                                       request.update_vram->sfc_id);
             if (!sfc) {
-                DRM_ERROR("Surface %u not found\n", request.update_vram->sfc_id);
                 ret = -EINVAL;
                 break;
             }
-            if (vigs_gem_is_reserved(gem_list, &sfc->gem)) {
-                drm_gem_object_unreference_unlocked(&sfc->gem.base);
-            } else {
-                vigs_gem_reserve(&sfc->gem);
-                list_add_tail(&sfc->gem.list, gem_list);
-            }
             if (vigs_gem_in_vram(&sfc->gem)) {
-                request.update_vram->offset = vigs_gem_offset(&sfc->gem);
-                sfc->is_gpu_dirty = false;
+                if (vigs_surface_need_vram_update(sfc)) {
+                    request.update_vram->offset = vigs_gem_offset(&sfc->gem);
+                    sfc->is_gpu_dirty = false;
+                } else {
+                    DRM_DEBUG_DRIVER("Surface %u doesn't need to be updated, ignoring update_vram\n",
+                                     request.update_vram->sfc_id);
+                    request.update_vram->sfc_id = 0;
+                }
             } else {
                 DRM_DEBUG_DRIVER("Surface %u not in VRAM, ignoring update_vram\n",
                                  request.update_vram->sfc_id);
@@ -148,23 +211,22 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
             }
             break;
         case vigsp_cmd_update_gpu:
-            request.update_gpu =
-                (struct vigsp_cmd_update_gpu_request*)(request_header + 1);
-            sfc = vigs_device_reference_surface_unlocked(vigs_dev, request.update_gpu->sfc_id);
+            sfc = vigs_surface_reserve(vigs_dev,
+                                       gem_list,
+                                       request.update_gpu->sfc_id);
             if (!sfc) {
-                DRM_ERROR("Surface %u not found\n", request.update_gpu->sfc_id);
                 ret = -EINVAL;
                 break;
             }
-            if (vigs_gem_is_reserved(gem_list, &sfc->gem)) {
-                drm_gem_object_unreference_unlocked(&sfc->gem.base);
-            } else {
-                vigs_gem_reserve(&sfc->gem);
-                list_add_tail(&sfc->gem.list, gem_list);
-            }
             if (vigs_gem_in_vram(&sfc->gem)) {
-                request.update_gpu->offset = vigs_gem_offset(&sfc->gem);
-                sfc->is_gpu_dirty = false;
+                if (vigs_surface_need_gpu_update(sfc)) {
+                    request.update_gpu->offset = vigs_gem_offset(&sfc->gem);
+                    sfc->is_gpu_dirty = false;
+                } else {
+                    DRM_DEBUG_DRIVER("Surface %u doesn't need to be updated, ignoring update_gpu\n",
+                                     request.update_gpu->sfc_id);
+                    request.update_gpu->sfc_id = 0;
+                }
             } else {
                 DRM_DEBUG_DRIVER("Surface %u not in VRAM, ignoring update_gpu\n",
                                  request.update_gpu->sfc_id);
@@ -172,38 +234,24 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
             }
             break;
         case vigsp_cmd_copy:
-            request.copy =
-                (struct vigsp_cmd_copy_request*)(request_header + 1);
-            sfc = vigs_device_reference_surface_unlocked(vigs_dev, request.copy->dst_id);
+            sfc = vigs_surface_reserve(vigs_dev,
+                                       gem_list,
+                                       request.copy->dst_id);
             if (!sfc) {
-                DRM_ERROR("Surface %u not found\n", request.copy->dst_id);
                 ret = -EINVAL;
                 break;
-            }
-            if (vigs_gem_is_reserved(gem_list, &sfc->gem)) {
-                drm_gem_object_unreference_unlocked(&sfc->gem.base);
-            } else {
-                vigs_gem_reserve(&sfc->gem);
-                list_add_tail(&sfc->gem.list, gem_list);
             }
             if (vigs_gem_in_vram(&sfc->gem)) {
                 sfc->is_gpu_dirty = true;
             }
             break;
         case vigsp_cmd_solid_fill:
-            request.solid_fill =
-                (struct vigsp_cmd_solid_fill_request*)(request_header + 1);
-            sfc = vigs_device_reference_surface_unlocked(vigs_dev, request.solid_fill->sfc_id);
+            sfc = vigs_surface_reserve(vigs_dev,
+                                       gem_list,
+                                       request.solid_fill->sfc_id);
             if (!sfc) {
-                DRM_ERROR("Surface %u not found\n", request.solid_fill->sfc_id);
                 ret = -EINVAL;
                 break;
-            }
-            if (vigs_gem_is_reserved(gem_list, &sfc->gem)) {
-                drm_gem_object_unreference_unlocked(&sfc->gem.base);
-            } else {
-                vigs_gem_reserve(&sfc->gem);
-                list_add_tail(&sfc->gem.list, gem_list);
             }
             if (vigs_gem_in_vram(&sfc->gem)) {
                 sfc->is_gpu_dirty = true;
@@ -214,8 +262,8 @@ static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
         }
 
         request_header =
-            (struct vigsp_cmd_request_header*)((u8*)(request_header + 1) +
-            request_header->size);
+            (struct vigsp_cmd_request_header*)(request.data +
+                                               request_header->size);
     }
 
     return 0;
@@ -283,6 +331,7 @@ int vigs_device_init(struct vigs_device *vigs_dev,
 
     ret = vigs_mman_create(vigs_dev->vram_base, vigs_dev->vram_size,
                            vigs_dev->ram_base, vigs_dev->ram_size,
+                           sizeof(struct vigs_vma_data),
                            &mman_ops,
                            vigs_dev,
                            &vigs_dev->mman);

@@ -46,9 +46,9 @@ static struct drm_ioctl_desc vigs_drm_ioctls[] =
                                  DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_SURFACE_SET_GPU_DIRTY, vigs_surface_set_gpu_dirty_ioctl,
                                                   DRM_UNLOCKED | DRM_AUTH),
-    DRM_IOCTL_DEF_DRV(VIGS_SURFACE_UPDATE_VRAM, vigs_surface_update_vram_ioctl,
-                                                DRM_UNLOCKED | DRM_AUTH),
-    DRM_IOCTL_DEF_DRV(VIGS_SURFACE_UPDATE_GPU, vigs_surface_update_gpu_ioctl,
+    DRM_IOCTL_DEF_DRV(VIGS_SURFACE_START_ACCESS, vigs_surface_start_access_ioctl,
+                                                 DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_SURFACE_END_ACCESS, vigs_surface_end_access_ioctl,
                                                DRM_UNLOCKED | DRM_AUTH)
 };
 
