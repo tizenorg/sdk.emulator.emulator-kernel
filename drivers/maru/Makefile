@@ -14,3 +14,4 @@ obj-$(CONFIG_MARU_USB_MODE) += maru_usb_mode.o
 obj-$(CONFIG_MARU_VIRTIO_KEYBOARD) += maru_virtio_keyboard.o
 obj-$(CONFIG_MARU_VIRTIO_ESM) += maru_virtio_esm.o
 obj-$(CONFIG_MARU_VIRTIO_EVDI) += maru_virtio_evdi.o
+obj-$(CONFIG_MARU_VIRTIO_EVDI) += maru_virtio_sensor.o

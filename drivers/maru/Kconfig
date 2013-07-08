@@ -71,3 +71,7 @@ config MARU_VIRTIO_ESM
 config MARU_VIRTIO_EVDI
 	tristate "MARU VirtIO Emulator Virtual Device Interface Driver"
 	depends on MARU != n
+
+config MARU_VIRTIO_SENSOR
+	tristate "MARU VirtIO Virtual Sensor Device Driver"
+	depends on MARU != n

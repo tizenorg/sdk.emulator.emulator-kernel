@@ -46,6 +46,7 @@
 #define VIRTIO_ID_ESM		13 /* virtio ESM */
 #define VIRTIO_ID_HWKEY		14 /* virtio hwkey */
 #define VIRTIO_ID_EVDI		15 /* virtio evdi */
+#define VIRTIO_ID_SENSOR	16 /* virtio sensor */
 
 #endif
 
