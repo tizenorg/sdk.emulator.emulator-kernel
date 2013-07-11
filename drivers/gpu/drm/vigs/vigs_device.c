@@ -51,7 +51,8 @@ static void vigs_device_mman_gpu_to_vram(void *user_data,
 
 static void vigs_device_mman_init_vma(void *user_data,
                                       void *vma_data_opaque,
-                                      struct ttm_buffer_object *bo)
+                                      struct ttm_buffer_object *bo,
+                                      bool track_access)
 {
     struct vigs_vma_data *vma_data = vma_data_opaque;
     struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
@@ -61,7 +62,9 @@ static void vigs_device_mman_init_vma(void *user_data,
         return;
     }
 
-    vigs_vma_data_init(vma_data, vigs_gem_to_vigs_surface(vigs_gem));
+    vigs_vma_data_init(vma_data,
+                       vigs_gem_to_vigs_surface(vigs_gem),
+                       track_access);
 }
 
 static void vigs_device_mman_cleanup_vma(void *user_data,
@@ -429,7 +432,10 @@ int vigs_device_mmap(struct file *filp, struct vm_area_struct *vma)
         return -EINVAL;
     }
 
-    return vigs_mman_mmap(vigs_dev->mman, filp, vma);
+    return vigs_mman_mmap(vigs_dev->mman,
+                          filp,
+                          vma,
+                          vigs_dev->track_gem_access);
 }
 
 int vigs_device_add_surface(struct vigs_device *vigs_dev,

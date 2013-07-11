@@ -165,6 +165,19 @@ void vigs_gem_close_object(struct drm_gem_object *gem,
  */
 
 /*
+ * IOCTLs
+ * @{
+ */
+
+int vigs_gem_map_ioctl(struct drm_device *drm_dev,
+                       void *data,
+                       struct drm_file *file_priv);
+
+/*
+ * @}
+ */
+
+/*
  * Dumb
  * @{
  */

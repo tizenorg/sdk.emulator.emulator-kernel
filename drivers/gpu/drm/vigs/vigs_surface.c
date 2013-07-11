@@ -98,17 +98,57 @@ out:
  */
 
 void vigs_vma_data_init(struct vigs_vma_data *vma_data,
-                        struct vigs_surface *sfc)
+                        struct vigs_surface *sfc,
+                        bool track_access)
 {
+    struct vigs_device *vigs_dev = sfc->gem.base.dev->dev_private;
+    u32 old_saf;
+
     vma_data->sfc = sfc;
     vma_data->saf = 0;
+    vma_data->track_access = track_access;
+
+    if (track_access) {
+        return;
+    }
+
+    /*
+     * If we don't want to track access for this VMA
+     * then register as both reader and writer.
+     */
+
+    vigs_gem_reserve(&sfc->gem);
+
+    old_saf = vigs_surface_saf(sfc);
+
+    ++sfc->num_writers;
+    ++sfc->num_readers;
+
+    if (vigs_gem_in_vram(&sfc->gem) && sfc->is_gpu_dirty) {
+        vigs_comm_update_vram(vigs_dev->comm,
+                              sfc->id,
+                              vigs_gem_offset(&sfc->gem));
+        sfc->is_gpu_dirty = false;
+    }
+
+    vma_data->saf = DRM_VIGS_SAF_READ | DRM_VIGS_SAF_WRITE;
+
+    vigs_surface_saf_changed(sfc, old_saf);
+
+    vigs_gem_unreserve(&sfc->gem);
 }
 
 void vigs_vma_data_cleanup(struct vigs_vma_data *vma_data)
 {
     vigs_gem_reserve(&vma_data->sfc->gem);
 
-    vigs_vma_data_end_access(vma_data, true);
+    /*
+     * On unmap we sync only when access tracking is enabled.
+     * Otherwise, we pretend we're going to sync
+     * some time later, but we never will.
+     */
+    vigs_vma_data_end_access(vma_data,
+                             vma_data->track_access);
 
     vigs_gem_unreserve(&vma_data->sfc->gem);
 }
@@ -238,7 +278,6 @@ int vigs_surface_create_ioctl(struct drm_device *drm_dev,
     if (ret == 0) {
         args->handle = handle;
         args->size = vigs_gem_size(&sfc->gem);
-        args->mmap_offset = vigs_gem_mmap_offset(&sfc->gem);
         args->id = sfc->id;
     }
 
@@ -274,7 +313,6 @@ int vigs_surface_info_ioctl(struct drm_device *drm_dev,
     args->stride = sfc->stride;
     args->format = sfc->format;
     args->size = vigs_gem_size(vigs_gem);
-    args->mmap_offset = vigs_gem_mmap_offset(vigs_gem);
     args->id = sfc->id;
 
     drm_gem_object_unreference_unlocked(gem);
@@ -329,6 +367,10 @@ static int vigs_surface_start_access(void *user_data, void *vma_data_opaque)
 
     if (!sfc) {
         return -ENOENT;
+    }
+
+    if (!vma_data->track_access) {
+        return 0;
     }
 
     vigs_dev = sfc->gem.base.dev->dev_private;
@@ -394,6 +436,10 @@ static int vigs_surface_end_access(void *user_data, void *vma_data_opaque)
 
     if (!sfc) {
         return -ENOENT;
+    }
+
+    if (!vma_data->track_access) {
+        return 0;
     }
 
     vigs_gem_reserve(&sfc->gem);
