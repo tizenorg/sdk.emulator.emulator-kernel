@@ -5,6 +5,7 @@
 #include "vigs_comm.h"
 #include "vigs_fbdev.h"
 #include "drm_crtc_helper.h"
+#include <linux/console.h>
 
 static int vigs_crtc_update(struct drm_crtc *crtc,
                             struct drm_framebuffer *old_fb)
@@ -67,7 +68,7 @@ static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
 {
     struct vigs_crtc *vigs_crtc = crtc_to_vigs_crtc(crtc);
     struct vigs_device *vigs_dev = crtc->dev->dev_private;
-    int blank;
+    int blank, i;
     struct fb_event event;
 
     DRM_DEBUG_KMS("enter: fb_blank = %d, mode = %d\n",
@@ -99,7 +100,34 @@ static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
     event.info = vigs_dev->fbdev->base.fbdev;
     event.data = &blank;
 
-    fb_notifier_call_chain(FB_EVENT_BLANK, &event);
+    /*
+     * We can't just 'console_lock' here, since
+     * this may result in deadlock:
+     * fb func:
+     * console_lock();
+     * mutex_lock(&dev->mode_config.mutex);
+     * DRM func:
+     * mutex_lock(&dev->mode_config.mutex);
+     * console_lock();
+     *
+     * So we just try to acquire it for 5 times with a delay
+     * and then just skip.
+     *
+     * This code is here only because pm is currently done via
+     * backlight which is bad, we need to make proper pm via
+     * kernel support.
+     */
+    for (i = 0; i < 5; ++i) {
+        if (console_trylock()) {
+            fb_notifier_call_chain(FB_EVENT_BLANK, &event);
+            console_unlock();
+            return;
+        }
+        msleep(100);
+        DRM_ERROR("unable to lock console, trying again\n");
+    }
+
+    DRM_ERROR("unable to lock console, skipping fb call chain\n");
 }
 
 static bool vigs_crtc_mode_fixup(struct drm_crtc *crtc,
