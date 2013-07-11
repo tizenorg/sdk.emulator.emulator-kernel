@@ -40,6 +40,8 @@ static struct drm_ioctl_desc vigs_drm_ioctls[] =
                                            DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_CREATE_EXECBUFFER, vigs_execbuffer_create_ioctl,
                                               DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_GEM_MAP, vigs_gem_map_ioctl,
+                                    DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_SURFACE_INFO, vigs_surface_info_ioctl,
                                          DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_EXEC, vigs_device_exec_ioctl,

@@ -23,12 +23,15 @@ struct vigs_mman_ops
      * Per-VMA data init/cleanup. VMA may be opened/closed many times
      * as the result of split/copy, but the init/cleanup handlers are called
      * only once, i.e. vigs_mman is handling the reference counts.
+     *
+     * current's 'mmap_sem' is locked while calling this.
      * @{
      */
 
     void (*init_vma)(void *user_data,
                      void *vma_data,
-                     struct ttm_buffer_object *bo);
+                     struct ttm_buffer_object *bo,
+                     bool track_access);
 
     /*
      * current's 'mmap_sem' is locked while calling this.
@@ -75,7 +78,8 @@ void vigs_mman_destroy(struct vigs_mman *mman);
 
 int vigs_mman_mmap(struct vigs_mman *mman,
                    struct file *filp,
-                   struct vm_area_struct *vma);
+                   struct vm_area_struct *vma,
+                   bool track_access);
 
 /*
  * current's 'mmap_sem' is locked while calling 'func'.
