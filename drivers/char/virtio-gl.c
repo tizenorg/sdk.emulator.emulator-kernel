@@ -29,7 +29,7 @@
 #include <linux/virtio_ids.h>
 #include <linux/virtio_config.h>
 
-#define VIRTIO_ID_GL 6
+//#define VIRTIO_ID_GL 36 /* use "include/linux/virtio_ids.h" file instead */
 #define DEVICE_NAME "glmem"
 
 /* Define to use debugging checksums on transfers */
