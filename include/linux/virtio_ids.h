@@ -47,6 +47,7 @@
 #define VIRTIO_ID_HWKEY		14 /* virtio hwkey */
 #define VIRTIO_ID_EVDI		15 /* virtio evdi */
 #define VIRTIO_ID_SENSOR	16 /* virtio sensor */
+#define VIRTIO_ID_NFC		17 /* virtio NFC */
 
 #endif
 
