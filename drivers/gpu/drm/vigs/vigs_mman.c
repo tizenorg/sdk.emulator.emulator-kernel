@@ -586,7 +586,8 @@ static int vigs_ttm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 int vigs_mman_mmap(struct vigs_mman *mman,
                    struct file *filp,
-                   struct vm_area_struct *vma)
+                   struct vm_area_struct *vma,
+                   bool track_access)
 {
     struct vigs_mman_vma *vigs_vma;
     int ret;
@@ -622,7 +623,10 @@ int vigs_mman_mmap(struct vigs_mman *mman,
     vigs_vma->vm_ops.open = &vigs_ttm_open;
     vigs_vma->vm_ops.close = &vigs_ttm_close;
     kref_init(&vigs_vma->kref);
-    mman->ops->init_vma(mman->user_data, &vigs_vma->data[0], bo);
+    mman->ops->init_vma(mman->user_data,
+                        &vigs_vma->data[0],
+                        bo,
+                        track_access);
 
     vma->vm_ops = &vigs_vma->vm_ops;
 

@@ -36,6 +36,14 @@ struct vigs_device
     struct vigs_comm *comm;
 
     struct vigs_fbdev *fbdev;
+
+    /*
+     * A hack we're forced to have in order to tell if we
+     * need to track GEM access or not in 'vigs_device_mmap'.
+     * current's 'mmap_sem' is write-locked while this is true,
+     * so no race will occur.
+     */
+    bool track_gem_access;
 };
 
 int vigs_device_init(struct vigs_device *vigs_dev,

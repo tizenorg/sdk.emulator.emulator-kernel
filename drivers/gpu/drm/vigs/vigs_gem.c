@@ -277,6 +277,57 @@ void vigs_gem_close_object(struct drm_gem_object *gem,
 {
 }
 
+int vigs_gem_map_ioctl(struct drm_device *drm_dev,
+                       void *data,
+                       struct drm_file *file_priv)
+{
+    struct vigs_device *vigs_dev = drm_dev->dev_private;
+    struct drm_vigs_gem_map *args = data;
+    struct drm_gem_object *gem;
+    struct vigs_gem_object *vigs_gem;
+    struct mm_struct *mm = current->mm;
+    unsigned long address;
+
+    gem = drm_gem_object_lookup(drm_dev, file_priv, args->handle);
+
+    if (gem == NULL) {
+        return -ENOENT;
+    }
+
+    vigs_gem = gem_to_vigs_gem(gem);
+
+    down_write(&mm->mmap_sem);
+
+    /*
+     * We can't use 'do_mmap' here (like in i915, exynos and others) because
+     * 'do_mmap' takes an offset in bytes and our
+     * offset is 64-bit (since it's TTM offset) and it can't fit into 32-bit
+     * variable.
+     * For this to work we had to export
+     * 'do_mmap_pgoff'. 'do_mmap_pgoff' was exported prior to
+     * 3.4 and it's available after 3.5, but for some reason it's
+     * static in 3.4.
+     */
+    vigs_dev->track_gem_access = args->track_access;
+    address = do_mmap_pgoff(file_priv->filp, 0, vigs_gem_size(vigs_gem),
+                            PROT_READ | PROT_WRITE,
+                            MAP_SHARED,
+                            vigs_gem_mmap_offset(vigs_gem) >> PAGE_SHIFT);
+    vigs_dev->track_gem_access = false;
+
+    up_write(&mm->mmap_sem);
+
+    drm_gem_object_unreference_unlocked(gem);
+
+    if (IS_ERR((void*)address)) {
+        return PTR_ERR((void*)address);
+    }
+
+    args->address = address;
+
+    return 0;
+}
+
 int vigs_gem_dumb_create(struct drm_file *file_priv,
                          struct drm_device *drm_dev,
                          struct drm_mode_create_dumb *args)

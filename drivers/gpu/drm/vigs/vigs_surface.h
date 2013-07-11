@@ -59,10 +59,12 @@ struct vigs_vma_data
 {
     struct vigs_surface *sfc;
     u32 saf;
+    bool track_access;
 };
 
 void vigs_vma_data_init(struct vigs_vma_data *vma_data,
-                        struct vigs_surface *sfc);
+                        struct vigs_surface *sfc,
+                        bool track_access);
 
 void vigs_vma_data_cleanup(struct vigs_vma_data *vma_data);
 
