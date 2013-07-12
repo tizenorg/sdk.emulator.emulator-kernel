@@ -172,6 +172,28 @@ static void vigs_crtc_load_lut(struct drm_crtc *crtc)
 {
 }
 
+static int vigs_crtc_cursor_set(struct drm_crtc *crtc,
+                                struct drm_file *file_priv,
+                                uint32_t handle,
+                                uint32_t width,
+                                uint32_t height)
+{
+    /*
+     * Not supported.
+     */
+
+    return 0;
+}
+
+static int vigs_crtc_cursor_move(struct drm_crtc *crtc, int x, int y)
+{
+    /*
+     * Not supported.
+     */
+
+    return 0;
+}
+
 static int vigs_crtc_page_flip(struct drm_crtc *crtc,
                                struct drm_framebuffer *fb,
                                struct drm_pending_vblank_event *event)
@@ -238,6 +260,8 @@ static void vigs_crtc_disable(struct drm_crtc *crtc)
 
 static const struct drm_crtc_funcs vigs_crtc_funcs =
 {
+    .cursor_set = vigs_crtc_cursor_set,
+    .cursor_move = vigs_crtc_cursor_move,
     .set_config = drm_crtc_helper_set_config,
     .page_flip = vigs_crtc_page_flip,
     .destroy = vigs_crtc_destroy,

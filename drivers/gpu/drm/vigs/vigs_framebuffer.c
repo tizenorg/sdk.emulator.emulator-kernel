@@ -23,7 +23,7 @@ static struct drm_framebuffer *vigs_fb_create(struct drm_device *drm_dev,
 
     if (!gem) {
         DRM_ERROR("GEM lookup failed, handle = %u\n", mode_cmd->handles[0]);
-        return NULL;
+        return ERR_PTR(-ENOENT);
     }
 
     vigs_gem = gem_to_vigs_gem(gem);
@@ -31,7 +31,7 @@ static struct drm_framebuffer *vigs_fb_create(struct drm_device *drm_dev,
     if (vigs_gem->type != VIGS_GEM_TYPE_SURFACE) {
         DRM_ERROR("GEM is not a surface, handle = %u\n", mode_cmd->handles[0]);
         drm_gem_object_unreference_unlocked(gem);
-        return NULL;
+        return ERR_PTR(-ENOENT);
     }
 
     vigs_sfc = vigs_gem_to_vigs_surface(vigs_gem);
@@ -45,7 +45,7 @@ static struct drm_framebuffer *vigs_fb_create(struct drm_device *drm_dev,
 
     if (ret != 0) {
         DRM_ERROR("unable to create the framebuffer: %d\n", ret);
-        return NULL;
+        return ERR_PTR(ret);
     }
 
     return &vigs_fb->base;
@@ -151,7 +151,9 @@ int vigs_framebuffer_create(struct vigs_device *vigs_dev,
     if ((fb_sfc->width != mode_cmd->width) ||
         (fb_sfc->height != mode_cmd->height) ||
         (fb_sfc->stride != mode_cmd->pitches[0])) {
-        DRM_DEBUG_KMS("surface format mismatch\n");
+        DRM_DEBUG_KMS("surface format mismatch, sfc - (%u,%u,%u), mode - (%u,%u,%u)\n",
+                      fb_sfc->width, fb_sfc->height, fb_sfc->stride,
+                      mode_cmd->width, mode_cmd->height, mode_cmd->pitches[0]);
         ret = -EINVAL;
         goto fail2;
     }
