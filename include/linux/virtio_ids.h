@@ -34,21 +34,18 @@
 #define VIRTIO_ID_CONSOLE	3 /* virtio console */
 #define VIRTIO_ID_RNG		4 /* virtio ring */
 #define VIRTIO_ID_BALLOON	5 /* virtio balloon */
-#define VIRTIO_ID_GL		6 /* virtio usermem */
 #define VIRTIO_ID_RPMSG		7 /* virtio remote processor messaging */
 #define VIRTIO_ID_SCSI		8 /* virtio scsi */
 #define VIRTIO_ID_9P		9 /* 9p virtio console */
 
 #ifdef CONFIG_MARU
 /* Maru devices */
-#define VIRTIO_ID_TOUCHSCREEN	11 /* virtio touchscreen */
-#define VIRTIO_ID_KEYBOARD	12 /* virtio keyboard */
-#define VIRTIO_ID_ESM		13 /* virtio ESM */
-#define VIRTIO_ID_HWKEY		14 /* virtio hwkey */
-#define VIRTIO_ID_EVDI		15 /* virtio evdi */
-#define VIRTIO_ID_SENSOR	16 /* virtio sensor */
-#define VIRTIO_ID_NFC		17 /* virtio NFC */
-
+#define VIRTIO_ID_TOUCHSCREEN	31 /* virtio touchscreen */
+#define VIRTIO_ID_KEYBOARD		32 /* virtio keyboard */
+#define VIRTIO_ID_ESM			33 /* virtio Emulator Status Monitor */
+#define VIRTIO_ID_HWKEY			34 /* virtio hwkey */
+#define VIRTIO_ID_EVDI			35 /* virtio emulator virtual device interface */
+#define VIRTIO_ID_GL			36 /* virtio glmem */
 #endif
 
 #endif /* _LINUX_VIRTIO_IDS_H */
