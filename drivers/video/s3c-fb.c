@@ -1498,6 +1498,16 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 
 	pd->setup_gpio();
 
+	/* check if fimd is there */
+	writel(VIDCON0_VIDOUT_TV, sfb->regs + VIDCON0);
+	if ((readl(sfb->regs + VIDCON0) & VIDCON0_VIDOUT_MASK) != VIDCON0_VIDOUT_TV) {
+		writel(VIDCON0_VIDOUT_RGB, sfb->regs + VIDCON0);
+		dev_dbg(dev, "fimd not found\n");
+		ret = -ENOENT;
+		goto err_pm_runtime;
+	}
+	writel(VIDCON0_VIDOUT_RGB, sfb->regs + VIDCON0);
+
 	writel(pd->vidcon1, sfb->regs + VIDCON1);
 
 	/* set video clock running at under-run */
