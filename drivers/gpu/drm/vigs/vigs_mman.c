@@ -391,7 +391,8 @@ static void vigs_mman_vma_release(struct kref *kref)
 {
     struct vigs_mman_vma *vigs_vma =
         container_of(kref, struct vigs_mman_vma, kref);
-    struct ttm_buffer_object *bo = vigs_vma->vma->vm_private_data;
+    struct vm_area_struct *vma = vigs_vma->vma;
+    struct ttm_buffer_object *bo = vma->vm_private_data;
     struct vigs_mman *mman = bo_dev_to_vigs_mman(bo->bdev);
 
     mman->ops->cleanup_vma(mman->user_data, &vigs_vma->data[0]);
@@ -399,6 +400,12 @@ static void vigs_mman_vma_release(struct kref *kref)
     vigs_vma->vma->vm_ops = &vigs_ttm_vm_ops;
 
     kmem_cache_free(mman->vma_cache, vigs_vma);
+
+    /*
+     * TTM doesn't implement proper reference count for BOs,
+     * so we do it ourselves.
+     */
+    ttm_vm_ops->close(vma);
 }
 
 /*
@@ -560,8 +567,6 @@ static void vigs_ttm_open(struct vm_area_struct *vma)
     struct vigs_mman_vma *vigs_vma = (struct vigs_mman_vma*)vma->vm_ops;
 
     kref_get(&vigs_vma->kref);
-
-    ttm_vm_ops->open(vma);
 }
 
 static void vigs_ttm_close(struct vm_area_struct *vma)
@@ -569,8 +574,6 @@ static void vigs_ttm_close(struct vm_area_struct *vma)
     struct vigs_mman_vma *vigs_vma = (struct vigs_mman_vma*)vma->vm_ops;
 
     kref_put(&vigs_vma->kref, &vigs_mman_vma_release);
-
-    ttm_vm_ops->close(vma);
 }
 
 static int vigs_ttm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
