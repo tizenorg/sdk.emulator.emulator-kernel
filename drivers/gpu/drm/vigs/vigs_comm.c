@@ -224,6 +224,7 @@ void vigs_comm_destroy(struct vigs_comm *comm)
 {
     DRM_DEBUG_DRIVER("enter\n");
 
+    mutex_destroy(&comm->mutex);
     vigs_comm_exit(comm);
     if (comm->execbuffer) {
         drm_gem_object_unreference_unlocked(&comm->execbuffer->gem.base);
