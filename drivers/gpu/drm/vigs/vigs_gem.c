@@ -9,6 +9,11 @@ static void vigs_gem_bo_destroy(struct ttm_buffer_object *bo)
 {
     struct vigs_gem_object *vigs_gem = bo_to_vigs_gem(bo);
 
+    if (vigs_gem->destroy) {
+        vigs_gem->destroy(vigs_gem);
+    }
+
+    drm_gem_object_release(&vigs_gem->base);
     kfree(vigs_gem);
 }
 
@@ -61,6 +66,13 @@ int vigs_gem_init(struct vigs_gem_object *vigs_gem,
         vigs_dev->mman->bo_dev.dev_mapping = vigs_dev->drm_dev->dev_mapping;
     }
 
+    ret = drm_gem_object_init(vigs_dev->drm_dev, &vigs_gem->base, size);
+
+    if (ret != 0) {
+        kfree(vigs_gem);
+        return ret;
+    }
+
     ret = ttm_bo_init(&vigs_dev->mman->bo_dev, &vigs_gem->bo, size, bo_type,
                       &placement, 0, 0,
                       false, NULL, 0,
@@ -74,14 +86,6 @@ int vigs_gem_init(struct vigs_gem_object *vigs_gem,
     vigs_gem->pin_count = 0;
     vigs_gem->destroy = destroy;
 
-    ret = drm_gem_object_init(vigs_dev->drm_dev, &vigs_gem->base, size);
-
-    if (ret != 0) {
-        struct ttm_buffer_object *bo = &vigs_gem->bo;
-        ttm_bo_unref(&bo);
-        return ret;
-    }
-
     DRM_DEBUG_DRIVER("GEM created (type = %u, off = 0x%llX, sz = %lu)\n",
                      type,
                      vigs_gem_mmap_offset(vigs_gem),
@@ -94,18 +98,6 @@ void vigs_gem_cleanup(struct vigs_gem_object *vigs_gem)
 {
     struct ttm_buffer_object *bo = &vigs_gem->bo;
 
-    vigs_gem_reserve(vigs_gem);
-
-    vigs_gem_kunmap(vigs_gem);
-
-    vigs_gem_unreserve(vigs_gem);
-
-    DRM_DEBUG_DRIVER("GEM destroyed (type = %u, off = 0x%llX, sz = %lu)\n",
-                     vigs_gem->type,
-                     vigs_gem_mmap_offset(vigs_gem),
-                     vigs_gem_size(vigs_gem));
-
-    drm_gem_object_release(&vigs_gem->base);
     ttm_bo_unref(&bo);
 }
 
@@ -258,7 +250,20 @@ void vigs_gem_free_object(struct drm_gem_object *gem)
 {
     struct vigs_gem_object *vigs_gem = gem_to_vigs_gem(gem);
 
-    vigs_gem->destroy(vigs_gem);
+    vigs_gem_reserve(vigs_gem);
+
+    vigs_gem_kunmap(vigs_gem);
+
+    vigs_gem_unreserve(vigs_gem);
+
+    vigs_gem->freed = true;
+
+    DRM_DEBUG_DRIVER("GEM free (type = %u, off = 0x%llX, sz = %lu)\n",
+                     vigs_gem->type,
+                     vigs_gem_mmap_offset(vigs_gem),
+                     vigs_gem_size(vigs_gem));
+
+    vigs_gem_cleanup(vigs_gem);
 }
 
 int vigs_gem_init_object(struct drm_gem_object *gem)
