@@ -3,9 +3,6 @@
 
 static void vigs_execbuffer_destroy(struct vigs_gem_object *gem)
 {
-    struct vigs_execbuffer *execbuffer = vigs_gem_to_vigs_execbuffer(gem);
-
-    vigs_gem_cleanup(&execbuffer->gem);
 }
 
 int vigs_execbuffer_create(struct vigs_device *vigs_dev,

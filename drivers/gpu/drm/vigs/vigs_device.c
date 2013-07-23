@@ -95,11 +95,19 @@ static struct vigs_surface
 
     mutex_lock(&vigs_dev->drm_dev->struct_mutex);
 
+    mutex_lock(&vigs_dev->surface_idr_mutex);
+
     sfc = idr_find(&vigs_dev->surface_idr, sfc_id);
 
     if (sfc) {
-        drm_gem_object_reference(&sfc->gem.base);
+        if (vigs_gem_freed(&sfc->gem)) {
+            sfc = NULL;
+        } else {
+            drm_gem_object_reference(&sfc->gem.base);
+        }
     }
+
+    mutex_unlock(&vigs_dev->surface_idr_mutex);
 
     mutex_unlock(&vigs_dev->drm_dev->struct_mutex);
 
@@ -308,6 +316,7 @@ int vigs_device_init(struct vigs_device *vigs_dev,
     vigs_dev->io_size = pci_resource_len(pci_dev, 2);
 
     idr_init(&vigs_dev->surface_idr);
+    mutex_init(&vigs_dev->surface_idr_mutex);
 
     if (!vigs_dev->vram_base || !vigs_dev->ram_base || !vigs_dev->io_base) {
         DRM_ERROR("VRAM, RAM or IO bar not found on device\n");
@@ -404,6 +413,7 @@ fail2:
     drm_rmmap(vigs_dev->drm_dev, vigs_dev->io_map);
 fail1:
     idr_destroy(&vigs_dev->surface_idr);
+    mutex_destroy(&vigs_dev->surface_idr_mutex);
 
     return ret;
 }
@@ -420,6 +430,7 @@ void vigs_device_cleanup(struct vigs_device *vigs_dev)
     vigs_mman_destroy(vigs_dev->mman);
     drm_rmmap(vigs_dev->drm_dev, vigs_dev->io_map);
     idr_destroy(&vigs_dev->surface_idr);
+    mutex_destroy(&vigs_dev->surface_idr_mutex);
 }
 
 int vigs_device_mmap(struct file *filp, struct vm_area_struct *vma)
@@ -444,8 +455,11 @@ int vigs_device_add_surface(struct vigs_device *vigs_dev,
 {
     int ret, tmp_id = 0;
 
+    mutex_lock(&vigs_dev->surface_idr_mutex);
+
     do {
         if (unlikely(idr_pre_get(&vigs_dev->surface_idr, GFP_KERNEL) == 0)) {
+            mutex_unlock(&vigs_dev->surface_idr_mutex);
             return -ENOMEM;
         }
 
@@ -454,13 +468,17 @@ int vigs_device_add_surface(struct vigs_device *vigs_dev,
 
     *id = tmp_id;
 
+    mutex_unlock(&vigs_dev->surface_idr_mutex);
+
     return ret;
 }
 
 void vigs_device_remove_surface(struct vigs_device *vigs_dev,
                                 vigsp_surface_id sfc_id)
 {
+    mutex_lock(&vigs_dev->surface_idr_mutex);
     idr_remove(&vigs_dev->surface_idr, sfc_id);
+    mutex_unlock(&vigs_dev->surface_idr_mutex);
 }
 
 int vigs_device_add_surface_unlocked(struct vigs_device *vigs_dev,

@@ -158,11 +158,13 @@ static void vigs_surface_destroy(struct vigs_gem_object *gem)
     struct vigs_surface *sfc = vigs_gem_to_vigs_surface(gem);
     struct vigs_device *vigs_dev = gem->base.dev->dev_private;
 
-    vigs_comm_destroy_surface(vigs_dev->comm, sfc->id);
+    if (sfc->id) {
+        vigs_comm_destroy_surface(vigs_dev->comm, sfc->id);
 
-    vigs_device_remove_surface(vigs_dev, sfc->id);
+        vigs_device_remove_surface(vigs_dev, sfc->id);
 
-    vigs_gem_cleanup(&sfc->gem);
+        DRM_DEBUG_DRIVER("Surface destroyed (id = %u)\n", sfc->id);
+    }
 }
 
 int vigs_surface_create(struct vigs_device *vigs_dev,
@@ -219,6 +221,7 @@ int vigs_surface_create(struct vigs_device *vigs_dev,
 fail3:
     vigs_device_remove_surface_unlocked(vigs_dev, (*sfc)->id);
 fail2:
+    (*sfc)->id = 0;
     vigs_gem_cleanup(&(*sfc)->gem);
 fail1:
     *sfc = NULL;

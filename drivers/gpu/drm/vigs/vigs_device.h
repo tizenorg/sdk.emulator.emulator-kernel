@@ -27,6 +27,7 @@ struct vigs_device
     resource_size_t io_size;
 
     struct idr surface_idr;
+    struct mutex surface_idr_mutex;
 
     /* Map of IO BAR. */
     drm_local_map_t *io_map;
@@ -55,18 +56,16 @@ void vigs_device_cleanup(struct vigs_device *vigs_dev);
 
 int vigs_device_mmap(struct file *filp, struct vm_area_struct *vma);
 
-/*
- * Must be called with drm_device::struct_mutex held.
- * @{
- */
 int vigs_device_add_surface(struct vigs_device *vigs_dev,
                             struct vigs_surface *sfc,
                             vigsp_surface_id* id);
 
 void vigs_device_remove_surface(struct vigs_device *vigs_dev,
                                 vigsp_surface_id sfc_id);
+
 /*
- * @}
+ * Locks drm_device::struct_mutex.
+ * @{
  */
 
 int vigs_device_add_surface_unlocked(struct vigs_device *vigs_dev,
@@ -75,6 +74,10 @@ int vigs_device_add_surface_unlocked(struct vigs_device *vigs_dev,
 
 void vigs_device_remove_surface_unlocked(struct vigs_device *vigs_dev,
                                          vigsp_surface_id sfc_id);
+
+/*
+ * @}
+ */
 
 /*
  * IOCTLs

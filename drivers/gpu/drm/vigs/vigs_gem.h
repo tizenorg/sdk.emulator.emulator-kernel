@@ -20,6 +20,11 @@ struct vigs_gem_object
     struct ttm_buffer_object bo;
 
     /*
+     * Indicates that drm_driver::gem_free_object was called.
+     */
+    bool freed;
+
+    /*
      * Use it only when this GEM is reserved. This makes it easier
      * to reserve a set of GEMs and then unreserve them later.
      */
@@ -53,6 +58,20 @@ static inline struct vigs_gem_object *bo_to_vigs_gem(struct ttm_buffer_object *b
 {
     return container_of(bo, struct vigs_gem_object, bo);
 }
+
+/*
+ * Must be called with drm_device::struct_mutex held.
+ * @{
+ */
+
+static inline bool vigs_gem_freed(struct vigs_gem_object *vigs_gem)
+{
+    return vigs_gem->freed;
+}
+
+/*
+ * @}
+ */
 
 /*
  * Initializes a gem object. 'size' is automatically rounded up to page size.
