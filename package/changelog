@@ -1,3 +1,6 @@
+* 1.4.24
+- modified structure of virtio-hwkey
+== Sungmin Ha <sungmin82.ha@samsung.com> 2013-07-25
 * 1.4.23
 - fixed one of Smack bugs which is about IP packet access check.
 == Kitae Kim <kt920.kim@samsung.com> 2013-06-28
