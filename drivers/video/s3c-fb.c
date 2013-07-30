@@ -1216,6 +1216,46 @@ static void s3c_fb_release_win(struct s3c_fb *sfb, struct s3c_fb_win *win)
 	}
 }
 
+static int s3c_fb_cmdline_to_dpi(const char *name)
+{
+    int val = 0, i = 0;
+
+    for (; i < 4; i++) {
+        switch (name[i]) {
+            case '0' ... '9':
+                val = 10 * val + (name[i] - '0');
+                break;
+            default:
+                return val;
+        }
+    }
+    return val;
+}
+
+extern char *saved_command_line;
+#define DPI_DEF_VALUE       3160
+#define DPI_MIN_VALUE       1000
+#define DPI_MAX_VALUE       4800
+
+static void s3c_fb_var_init_dpi(struct fb_var_screeninfo *var)
+{
+    char *cmdline_dpi;
+    int dpi = DPI_DEF_VALUE;
+
+    /* panel physical width/height(mm) */
+    cmdline_dpi = strstr(saved_command_line, "dpi=");
+    if (cmdline_dpi != NULL) {
+        cmdline_dpi += 4;
+        dpi = s3c_fb_cmdline_to_dpi(cmdline_dpi);
+        if (dpi < DPI_MIN_VALUE || dpi > DPI_MAX_VALUE) {
+            dpi = DPI_DEF_VALUE;
+        }
+    }
+    /* round up */
+    var->height = ((var->yres * 2540 / dpi) + 5) / 10;
+    var->width = ((var->xres * 2540 / dpi)+ 5) / 10;
+}
+
 /**
  * s3c_fb_probe_win() - register an hardware window
  * @sfb: The base resources for the hardware
@@ -1312,6 +1352,7 @@ static int __devinit s3c_fb_probe_win(struct s3c_fb *sfb, unsigned int win_no,
 		dev_err(sfb->dev, "check_var failed on initial video params\n");
 		return ret;
 	}
+    s3c_fb_var_init_dpi(&fbinfo->var);
 
 	/* create initial colour map */
 

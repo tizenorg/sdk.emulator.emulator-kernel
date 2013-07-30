@@ -39,7 +39,12 @@
 #define VIRTIO_ID_SCSI		8 /* virtio scsi */
 #define VIRTIO_ID_9P		9 /* 9p virtio console */
 
+#ifdef CONFIG_MARU
 /* Maru devices */
-#define VIRTIO_ID_TOUCHSCREEN 10 /* virtio touchscreen */
+#define VIRTIO_ID_TOUCHSCREEN	11 /* virtio touchscreen */
+#define VIRTIO_ID_KEYBOARD	12 /* virtio keyboard */
+#define VIRTIO_ID_ESM		13 /* virtio ESM */
+#define VIRTIO_ID_HWKEY		14 /* virtio hwkey */
+#endif
 
 #endif /* _LINUX_VIRTIO_IDS_H */

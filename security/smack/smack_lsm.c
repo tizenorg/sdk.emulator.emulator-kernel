@@ -654,7 +654,7 @@ static int smack_inode_unlink(struct inode *dir, struct dentry *dentry)
 		/*
 		 * You also need write access to the containing directory
 		 */
-		smk_ad_setfield_u_fs_path_dentry(&ad, NULL);
+		smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_INODE);
 		smk_ad_setfield_u_fs_inode(&ad, dir);
 		rc = smk_curacc(smk_of_inode(dir), MAY_WRITE, &ad);
 	}
@@ -685,7 +685,7 @@ static int smack_inode_rmdir(struct inode *dir, struct dentry *dentry)
 		/*
 		 * You also need write access to the containing directory
 		 */
-		smk_ad_setfield_u_fs_path_dentry(&ad, NULL);
+		smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_INODE);
 		smk_ad_setfield_u_fs_inode(&ad, dir);
 		rc = smk_curacc(smk_of_inode(dir), MAY_WRITE, &ad);
 	}
@@ -1697,40 +1697,19 @@ static int smack_task_kill(struct task_struct *p, struct siginfo *info,
  * smack_task_wait - Smack access check for waiting
  * @p: task to wait for
  *
- * Returns 0 if current can wait for p, error code otherwise
+ * Returns 0
  */
 static int smack_task_wait(struct task_struct *p)
 {
-	struct smk_audit_info ad;
-	char *sp = smk_of_current();
-	char *tsp = smk_of_forked(task_security(p));
-	int rc;
-
-	/* we don't log here, we can be overriden */
-	rc = smk_access(tsp, sp, MAY_WRITE, NULL);
-	if (rc == 0)
-		goto out_log;
-
 	/*
-	 * Allow the operation to succeed if either task
-	 * has privilege to perform operations that might
-	 * account for the smack labels having gotten to
-	 * be different in the first place.
-	 *
-	 * This breaks the strict subject/object access
-	 * control ideal, taking the object's privilege
-	 * state into account in the decision as well as
-	 * the smack value.
+	 * Allow the operation to succeed.
+	 * Zombies are bad.
+	 * In userless environments (e.g. phones) programs
+	 * get marked with SMACK64EXEC and even if the parent
+	 * and child shouldn't be talking the parent still
+	 * may expect to know when the child exits.
 	 */
-	if (smack_privileged(CAP_MAC_OVERRIDE) ||
-	    has_capability(p, CAP_MAC_OVERRIDE))
-		rc = 0;
-	/* we log only if we didn't get overriden */
- out_log:
-	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_TASK);
-	smk_ad_setfield_u_tsk(&ad, p);
-	smack_log(tsp, sp, MAY_WRITE, rc, &ad);
-	return rc;
+	return 0;
 }
 
 /**
@@ -2711,9 +2690,7 @@ static int smack_getprocattr(struct task_struct *p, char *name, char **value)
 static int smack_setprocattr(struct task_struct *p, char *name,
 			     void *value, size_t size)
 {
-	int rc;
 	struct task_smack *tsp;
-	struct task_smack *oldtsp;
 	struct cred *new;
 	char *newsmack;
 
@@ -2743,21 +2720,13 @@ static int smack_setprocattr(struct task_struct *p, char *name,
 	if (newsmack == smack_known_web.smk_known)
 		return -EPERM;
 
-	oldtsp = p->cred->security;
 	new = prepare_creds();
 	if (new == NULL)
 		return -ENOMEM;
 
-	tsp = new_task_smack(newsmack, oldtsp->smk_forked, GFP_KERNEL);
-	if (tsp == NULL) {
-		kfree(new);
-		return -ENOMEM;
-	}
-	rc = smk_copy_rules(&tsp->smk_rules, &oldtsp->smk_rules, GFP_KERNEL);
-	if (rc != 0)
-		return rc;
+	tsp = new->security;
+	tsp->smk_task = newsmack;
 
-	new->security = tsp;
 	commit_creds(new);
 	return size;
 }
@@ -2866,6 +2835,8 @@ static char *smack_from_secattr(struct netlbl_lsm_secattr *sap,
 	struct smack_known *kp;
 	char *sp;
 	int found = 0;
+	int acat;
+	int kcat;
 
 	if ((sap->flags & NETLBL_SECATTR_MLS_LVL) != 0) {
 		/*
@@ -2882,12 +2853,28 @@ static char *smack_from_secattr(struct netlbl_lsm_secattr *sap,
 		list_for_each_entry(kp, &smack_known_list, list) {
 			if (sap->attr.mls.lvl != kp->smk_netlabel.attr.mls.lvl)
 				continue;
-			if (memcmp(sap->attr.mls.cat,
-				kp->smk_netlabel.attr.mls.cat,
-				SMK_CIPSOLEN) != 0)
-				continue;
-			found = 1;
-			break;
+			/*
+			 * Compare the catsets. Use the netlbl APIs.
+			 */
+			if ((sap->flags & NETLBL_SECATTR_MLS_CAT) == 0) {
+				if ((kp->smk_netlabel.flags &
+							NETLBL_SECATTR_MLS_CAT) == 0)
+					found = 1;
+				break;
+			}
+			for (acat = -1, kcat = -1; acat == kcat; ) {
+				acat = netlbl_secattr_catmap_walk(
+						sap->attr.mls.cat, acat + 1);
+				kcat = netlbl_secattr_catmap_walk(
+						kp->smk_netlabel.attr.mls.cat,
+						kcat + 1);
+				if (acat < 0 || kcat < 0)
+					break;
+			}
+			if (acat == kcat) {
+				found = 1;
+				break;
+			}
 		}
 		rcu_read_unlock();
 

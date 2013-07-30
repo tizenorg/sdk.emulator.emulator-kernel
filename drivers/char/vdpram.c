@@ -28,6 +28,7 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 
+#include <linux/types.h>
 #include <linux/kernel.h>	/* printk(), min() */
 #include <linux/slab.h>		/* kmalloc() */
 #include <linux/fs.h>		/* everything... */
@@ -37,6 +38,7 @@
 #include <linux/fcntl.h>
 #include <linux/poll.h>
 #include <linux/cdev.h>
+#include <linux/device.h>
 #include <linux/sched.h>
 #include <asm/uaccess.h>
 
@@ -104,6 +106,7 @@ module_param(vdpram_buffer, int, 0);
 static struct vdpram_dev *vdpram_devices;
 static struct buffer_t *buffer;
 static struct queue_t *queue;
+static struct class *vdpram_class;
 
 static int vdpram_fasync(int fd, struct file *filp, int mode);
 static int spacefree(struct vdpram_dev *dev);
@@ -580,52 +583,57 @@ long vdpram_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
  */
 static void vdpram_setup_cdev(struct vdpram_dev *dev, int index)
 {
-	int err, devno = vdpram_devno + index;
-    	
-	if (index % 2 ==0) {
-		dev->flag = 1;
-	 	cdev_init(&dev->cdev, &vdpram_even_fops);
-		dev->cdev.owner = THIS_MODULE;
-		err = cdev_add (&dev->cdev, devno, 1);
-		dev->index = index;
-	}
-	else {
-		dev->flag = 0;
-	 	cdev_init(&dev->cdev, &vdpram_odd_fops);
-		dev->cdev.owner = THIS_MODULE;
-		err = cdev_add (&dev->cdev, devno, 1);
-		dev->index = index;
-	}
+	dev_t node = MKDEV(vdpram_major, index);
+	int err;
+	int is_odd = index & 1; // "index % 2" equivalent
+
+	dev->flag = !is_odd;
+	cdev_init(&dev->cdev, is_odd ? &vdpram_odd_fops : &vdpram_even_fops);
+	dev->cdev.owner = THIS_MODULE;
+	err = cdev_add (&dev->cdev, node, 1);
+	dev->index = index;
 	
 	/* Fail gracefully if need be */
 	if (err)
-		printk(KERN_NOTICE "Error %d adding deive%d\n", err, index);
+		printk(KERN_NOTICE "Error %d adding device%d\n", err, index);
 }
 
- 
+static char *vdpram_devnode(struct device *dev, umode_t *mode)
+{
+	return kasprintf(GFP_KERNEL, "%s", dev_name(dev));
+}
 
 /* Initialize the devs; return how many we did */
 int vdpram_init(void)
 {
 	int i, result;
-//	dev_t dev;
 	dev_t dev = MKDEV(vdpram_major, 0);
 
 	printk("Initializing vdpram device driver ...\n");
 	result = register_chrdev_region(dev, vdpram_nr_devs, "vdpram");
-//	result = alloc_chrdev_region(&dev, 0, vdpram_nr_devs, "vdpram");
 	if (result < 0) {
 		printk("Unable to get vdpram region, error %d\n", result);
-		return 0;
+		goto err_out;
 	}
-//	vdpram_major = MAJOR( dev );
-	printk( " vdpram device major num = %d \n", vdpram_major );
+
+	printk("vdpram device major num = %d \n", vdpram_major);
 	vdpram_devno = dev;
+
 	vdpram_devices = kmalloc(vdpram_nr_devs * sizeof(struct vdpram_dev), GFP_KERNEL);
-	if (vdpram_devices == NULL) {
-		unregister_chrdev_region(dev, vdpram_nr_devs);
-		return 0;
+	buffer = kmalloc(vdpram_nr_devs * sizeof(struct buffer_t), GFP_KERNEL);
+	queue = kmalloc(vdpram_nr_devs * sizeof(struct queue_t), GFP_KERNEL);
+	if (!vdpram_devices || !buffer || !queue) {
+		result = -ENOMEM;
+		goto err_alloc;
 	}
+
+	vdpram_class = class_create(THIS_MODULE, "vdpram");
+	if (IS_ERR(vdpram_class)) {
+		result = PTR_ERR(vdpram_class);
+		goto err_alloc;
+	}
+	vdpram_class->devnode = vdpram_devnode;
+
 	memset(vdpram_devices, 0, vdpram_nr_devs * sizeof(struct vdpram_dev));
 	for (i = 0; i < vdpram_nr_devs; i++) {
 		if (i% 2 ==1) {
@@ -638,9 +646,7 @@ int vdpram_init(void)
 		vdpram_setup_cdev(vdpram_devices + i, i);
 	}
 
-	buffer = kmalloc(vdpram_nr_devs * sizeof(struct buffer_t) , GFP_KERNEL);
 	memset(buffer, 0, vdpram_nr_devs * sizeof(struct buffer_t));
-	queue = kmalloc(vdpram_nr_devs * sizeof(struct queue_t) , GFP_KERNEL);
 	// hwjang fix buffer -> queue
 	memset(queue, 0, vdpram_nr_devs * sizeof(struct queue_t));
 	for (i = 0; i < vdpram_nr_devs; i++) {
@@ -657,9 +663,23 @@ int vdpram_init(void)
 //printk("%s buffer[%x].begin      =%x\n", __FUNCTION__, i,  buffer[i].begin );
 //printk("%s buffer[%x].buffersize =%x\n", __FUNCTION__, i,  buffer[i].buffersize );
 //printk("%s buffer[%x].end        =%x\n", __FUNCTION__, i,  buffer[i].end );
-	} 
+	}
+
+	for (i = 0; i < vdpram_nr_devs; i++)
+		device_create(vdpram_class, NULL, MKDEV(vdpram_major, i), NULL,
+			      kasprintf(GFP_KERNEL, "vdpram%d", i));
 
 	return 0;
+
+err_alloc:
+	kfree(vdpram_devices);
+	kfree(buffer);
+	kfree(queue);
+
+	unregister_chrdev_region(dev, vdpram_nr_devs);
+
+err_out:
+	return result;
 }
 
 /*
@@ -676,8 +696,10 @@ void vdpram_cleanup(void)
 		return; /* nothing else to release */
 
 	for (i = 0; i < vdpram_nr_devs; i++) {
+		device_destroy(vdpram_class, MKDEV(vdpram_major, i));
 		cdev_del(&vdpram_devices[i].cdev);
 	}
+	class_destroy(vdpram_class);
 	kfree(vdpram_devices);
 
 	for (i= 0;i < vdpram_nr_devs ; i++) {
