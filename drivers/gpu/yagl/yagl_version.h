@@ -6,7 +6,7 @@
 /*
  * Version number.
  */
-#define YAGL_VERSION 18
+#define YAGL_VERSION 19
 
 /*
  * Device control codes magic.
