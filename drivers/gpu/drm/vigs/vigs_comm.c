@@ -327,63 +327,25 @@ int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id)
 
 int vigs_comm_set_root_surface(struct vigs_comm *comm,
                                vigsp_surface_id id,
-                               vigsp_offset offset,
-                               bool update_vram)
+                               vigsp_offset offset)
 {
     int ret;
-    struct vigsp_cmd_batch_header *batch_header;
-    struct vigsp_cmd_request_header *update_vram_header = NULL;
-    struct vigsp_cmd_update_vram_request *update_vram_request = NULL;
-    struct vigsp_cmd_request_header *set_root_surface_header;
-    struct vigsp_cmd_set_root_surface_request *set_root_surface_request;
-    void *ptr;
+    struct vigsp_cmd_set_root_surface_request *request;
 
     DRM_DEBUG_DRIVER("id = %u, offset = %u\n", id, offset);
 
     mutex_lock(&comm->mutex);
 
-    ret = vigs_comm_alloc(comm,
-                          sizeof(*batch_header) +
-                          (update_vram ? sizeof(*update_vram_header) +
-                                         sizeof(*update_vram_request)
-                                       : 0) +
-                          sizeof(*set_root_surface_header) +
-                          sizeof(*set_root_surface_request) +
-                          sizeof(struct vigsp_cmd_response_header),
-                          &ptr);
+    ret = vigs_comm_prepare(comm,
+                            vigsp_cmd_set_root_surface,
+                            sizeof(*request),
+                            0,
+                            (void**)&request,
+                            NULL);
 
     if (ret == 0) {
-        batch_header = ptr;
-        ptr = batch_header + 1;
-
-        if (update_vram) {
-            update_vram_header = ptr;
-            ptr = update_vram_header + 1;
-            update_vram_request = ptr;
-            ptr = update_vram_request + 1;
-        }
-
-        set_root_surface_header = ptr;
-        ptr = set_root_surface_header + 1;
-        set_root_surface_request = ptr;
-
-        if (update_vram) {
-            batch_header->num_requests = 2;
-
-            update_vram_header->cmd = vigsp_cmd_update_vram;
-            update_vram_header->size = sizeof(*update_vram_request);
-
-            update_vram_request->sfc_id = id;
-            update_vram_request->offset = offset;
-        } else {
-            batch_header->num_requests = 1;
-        }
-
-        set_root_surface_header->cmd = vigsp_cmd_set_root_surface;
-        set_root_surface_header->size = sizeof(*set_root_surface_request);
-
-        set_root_surface_request->id = id;
-        set_root_surface_request->offset = offset;
+        request->id = id;
+        request->offset = offset;
 
         ret = vigs_comm_exec_internal(comm);
     }
