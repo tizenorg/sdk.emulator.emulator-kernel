@@ -36,8 +36,7 @@ static int vigs_crtc_update(struct drm_crtc *crtc,
 
     ret = vigs_comm_set_root_surface(vigs_dev->comm,
                                      vigs_fb->fb_sfc->id,
-                                     vigs_gem_offset(&vigs_fb->fb_sfc->gem),
-                                     vigs_fb->fb_sfc->is_gpu_dirty);
+                                     vigs_gem_offset(&vigs_fb->fb_sfc->gem));
 
     vigs_gem_unreserve(&vigs_fb->fb_sfc->gem);
 
@@ -253,7 +252,7 @@ static void vigs_crtc_disable(struct drm_crtc *crtc)
         return;
     }
 
-    vigs_comm_set_root_surface(vigs_dev->comm, 0, 0, false);
+    vigs_comm_set_root_surface(vigs_dev->comm, 0, 0);
 
     vigs_framebuffer_unpin(fb_to_vigs_fb(crtc->fb));
 }
