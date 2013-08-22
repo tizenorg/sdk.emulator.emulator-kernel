@@ -139,7 +139,7 @@ const char *smack_cipso_option = SMACK_CIPSO_OPTION;
  * SMK_LOADLEN: Smack rule length
  */
 #define SMK_OACCESS	"rwxa"
-#define SMK_ACCESS	"rwxat"
+#define SMK_ACCESS	"rwxatl"
 #define SMK_OACCESSLEN	(sizeof(SMK_OACCESS) - 1)
 #define SMK_ACCESSLEN	(sizeof(SMK_ACCESS) - 1)
 #define SMK_OLOADLEN	(SMK_LABELLEN + SMK_LABELLEN + SMK_OACCESSLEN)
@@ -279,6 +279,10 @@ static int smk_perm_from_str(const char *string)
 		case 't':
 		case 'T':
 			perm |= MAY_TRANSMUTE;
+			break;
+		case 'l':
+		case 'L':
+			perm |= MAY_LOCK;
 			break;
 		default:
 			return perm;
@@ -451,6 +455,7 @@ static ssize_t smk_write_rules_list(struct file *file, const char __user *buf,
 	int datalen;
 	int rc = -EINVAL;
 	int load = 0;
+	int i;
 
 	/*
 	 * No partial writes.
@@ -463,9 +468,9 @@ static ssize_t smk_write_rules_list(struct file *file, const char __user *buf,
 		/*
 		 * Minor hack for backward compatibility
 		 */
-		if (count != SMK_OLOADLEN && count != SMK_LOADLEN)
+		if (count < SMK_OLOADLEN || count > SMK_LOADLEN)
 			return -EINVAL;
-		datalen = SMK_LOADLEN;
+		datalen = SMK_LOADLEN + 1;
 	} else
 		datalen = count + 1;
 
@@ -499,8 +504,8 @@ static ssize_t smk_write_rules_list(struct file *file, const char __user *buf,
 		/*
 		 * More on the minor hack for backward compatibility
 		 */
-		if (count == (SMK_OLOADLEN))
-			data[SMK_OLOADLEN] = '-';
+		for (i = count; i < SMK_LOADLEN; i++)
+			data[i] = '-';
 		if (smk_parse_rule(data, rule, 1))
 			goto out_free_rule;
 	}
@@ -599,6 +604,8 @@ static void smk_rule_show(struct seq_file *s, struct smack_rule *srp, int max)
 		seq_putc(s, 'a');
 	if (srp->smk_access & MAY_TRANSMUTE)
 		seq_putc(s, 't');
+	if (srp->smk_access & MAY_LOCK)
+		seq_putc(s, 'l');
 
 	seq_putc(s, '\n');
 }
@@ -1873,8 +1880,6 @@ static ssize_t smk_user_access(struct file *file, const char __user *buf,
 
 	simple_transaction_set(file, 2);
 
-	if (format == SMK_FIXED24_FMT)
-		return SMK_LOADLEN;
 	return count;
 }
 
