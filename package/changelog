@@ -1,3 +1,6 @@
+* 1.4.26
+- package version up
+== Munkyu Im <munkyu.im@samsung.com> 2013-09-02
 * 1.4.25
 - Support virtio evdi, sensor, nfc
 == Jinhyung Choi <jinhyung2.choi@samsung.com> 2013-07-30
