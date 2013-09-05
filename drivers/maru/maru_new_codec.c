@@ -53,18 +53,18 @@ MODULE_DESCRIPTION("Virtual Codec Device Driver");
 MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_LICENSE("GPL2");
 
-#define DEVICE_NAME	 "newcodec"
+#define DEVICE_NAME	"newcodec"
 
 /* vendor, device value for PCI.*/
 #define PCI_VENDOR_ID_TIZEN_EMUL			0xC9B5
 #define PCI_DEVICE_ID_VIRTUAL_NEW_CODEC		0x1040
 
 /* interrupt identifier for NEWCODEC */
-#define CODEC_IRQ_TASK 0x1f
+#define CODEC_IRQ_TASK	0x1f
 
 //
-#define DEVICE_MEMORY_COUNT 8
-#define CODEC_CONTEXT_SIZE 1024
+#define DEVICE_MEMORY_COUNT	8
+#define CODEC_CONTEXT_SIZE	1024
 
 // DEBUG
 #ifndef CODEC_DEBUG
@@ -131,13 +131,13 @@ enum codec_io_cmd {
 };
 
 enum codec_api_index {
-    CODEC_INIT = 0,
-    CODEC_DECODE_VIDEO,
-    CODEC_ENCODE_VIDEO,
-    CODEC_DECODE_AUDIO,
-    CODEC_ENCODE_AUDIO,
-    CODEC_PICTURE_COPY,
-    CODEC_DEINIT,
+	CODEC_INIT = 0,
+	CODEC_DECODE_VIDEO,
+	CODEC_ENCODE_VIDEO,
+	CODEC_DECODE_AUDIO,
+	CODEC_ENCODE_AUDIO,
+	CODEC_PICTURE_COPY,
+	CODEC_DEINIT,
 };
 
 struct device_mem {
@@ -185,7 +185,7 @@ static DEFINE_MUTEX(newcodec_blk_mutex);
 static struct semaphore newcodec_buffer_mutex =
 	__SEMAPHORE_INITIALIZER(newcodec_buffer_mutex, DEVICE_MEMORY_COUNT);
 
-#define	ENTER_CRITICAL_SECTION	mutex_lock(&critical_section);
+#define ENTER_CRITICAL_SECTION	mutex_lock(&critical_section);
 #define LEAVE_CRITICAL_SECTION	mutex_unlock(&critical_section);
 
 #define CODEC_S_DEVICE_MEM_COUNT	63	// small		(256K)	8M
@@ -292,7 +292,7 @@ static int lock_buffer(void)
 
 static void unlock_buffer(void)
 {
-    up(&newcodec_buffer_mutex);
+	up(&newcodec_buffer_mutex);
 //	DEBUG("unlock buffer_mutex: %d\n", newcodec_buffer_mutex.count);
 }
 
@@ -359,7 +359,7 @@ static void release_s_device_memory(uint32_t mem_offset)
 				elem->occupied = false;
 				list_move_tail(&elem->entry, &newcodec->avail_s_memblk);
 
-			    up(&s_buffer_sema);
+				up(&s_buffer_sema);
 				DEBUG("unlock s_buffer_sema: %d\n", s_buffer_sema.count);
 
 				break;
@@ -377,9 +377,7 @@ static int secure_m_device_memory(uint32_t blk_id)
 	struct device_mem *elem = NULL;
 
 	// decrease m_buffer_semaphore
-	INFO("before down m_buffer_sema: %d\n", m_buffer_sema.count);
 	ret = down_interruptible(&m_buffer_sema);
-	INFO("after down m_buffer_sema: %d\n", m_buffer_sema.count);
 	if (ret < 0) {
 		ERROR("m_buffer_sema: %d\n", m_buffer_sema.count);
 		ERROR("no available memory block\n");
@@ -431,9 +429,7 @@ static void release_m_device_memory(uint32_t mem_offset)
 				elem->occupied = false;
 				list_move_tail(&elem->entry, &newcodec->avail_m_memblk);
 
-			    up(&m_buffer_sema);
-				INFO("unlock m_buffer_sema: %d\n", m_buffer_sema.count);
-
+				up(&m_buffer_sema);
 				break;
 			}
 		}
@@ -507,7 +503,7 @@ static void release_l_device_memory(uint32_t mem_offset)
 				elem->occupied = false;
 				list_move(&elem->entry, &newcodec->avail_l_memblk);
 
-			    up(&l_buffer_sema);
+				up(&l_buffer_sema);
 				DEBUG("up l_buffer_semaphore: %d\n", l_buffer_sema.count);
 
 				break;
@@ -611,7 +607,7 @@ static long newcodec_ioctl(struct file *file,
 			secure_device_memory((uint32_t)file);
 		if (value < 0) {
 			ERROR("failed to get available memory\n");
-			ret = -EINVAL;	
+			ret = -EINVAL;
 		} else {
 			if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
 				ERROR("ioctl: failed to copy data to user.\n");
@@ -652,7 +648,7 @@ static long newcodec_ioctl(struct file *file,
 		if (copy_to_user((void *)arg, &newcodec->version, sizeof(int))) {
 			ERROR("ioctl: failed to copy data to user\n");
 			ret = -EIO;
-	    }
+		}
 		break;
 	case CODEC_CMD_GET_ELEMENT:
 		DEBUG("request a device to get codec elements\n");
@@ -676,9 +672,9 @@ static long newcodec_ioctl(struct file *file,
 		} else if (copy_to_user((void *)arg, &value, sizeof(int))) {
 			ERROR("ioctl: failed to copy data to user\n");
 			ret = -EIO;
-	    }
+		}
 		break;
-    case CODEC_CMD_SECURE_MEMORY:
+	case CODEC_CMD_SECURE_MEMORY:
 		value =
 			secure_device_memory((uint32_t)file);
 		if (value < 0) {
@@ -690,9 +686,9 @@ static long newcodec_ioctl(struct file *file,
 				ret = -EIO;
 			}
 		}
-        break;
-    case CODEC_CMD_RELEASE_MEMORY:
-    {
+		break;
+	case CODEC_CMD_RELEASE_MEMORY:
+	{
 		uint32_t mem_offset;
 
 		if (copy_from_user(&mem_offset, (void *)arg, sizeof(uint32_t))) {
@@ -701,9 +697,9 @@ static long newcodec_ioctl(struct file *file,
 			break;
 		}
 		release_device_memory(mem_offset);
-    }
-        break;
-    case CODEC_CMD_USE_DEVICE_MEM:
+	}
+		break;
+	case CODEC_CMD_USE_DEVICE_MEM:
 	{
 		uint32_t mem_offset;
 
@@ -799,7 +795,7 @@ static long newcodec_ioctl(struct file *file,
 			}
 		}
 		break;
-    case CODEC_CMD_S_SECURE_BUFFER:
+	case CODEC_CMD_S_SECURE_BUFFER:
 		value =
 			secure_s_device_memory((uint32_t)file);
 		if (value < 0) {
@@ -811,8 +807,8 @@ static long newcodec_ioctl(struct file *file,
 				ret = -EIO;
 			}
 		}
-        break;
-    case CODEC_CMD_M_SECURE_BUFFER:
+		break;
+	case CODEC_CMD_M_SECURE_BUFFER:
 		value =
 			secure_m_device_memory((uint32_t)file);
 		if (value < 0) {
@@ -824,8 +820,8 @@ static long newcodec_ioctl(struct file *file,
 				ret = -EIO;
 			}
 		}
-        break;
-    case CODEC_CMD_L_SECURE_BUFFER:
+		break;
+	case CODEC_CMD_L_SECURE_BUFFER:
 		value =
 			secure_l_device_memory((uint32_t)file);
 		if (value < 0) {
@@ -837,7 +833,7 @@ static long newcodec_ioctl(struct file *file,
 				ret = -EIO;
 			}
 		}
-        break;
+		break;
 	default:
 		DEBUG("no available command.");
 		ret = -EINVAL;
@@ -882,8 +878,6 @@ static void newcodec_func(struct codec_param *param, uint32_t file_index)
 		
 			NEWCODEC_CURRENT_TIME
 
-//			INFO("init context_flags[%d]: %d\n", ctx_index, context_flags[ctx_index]);
-
 //			wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
 //			context_flags[ctx_index] = 0;
 			break;
@@ -903,9 +897,6 @@ static void newcodec_func(struct codec_param *param, uint32_t file_index)
 //				INFO("release small size of data\n");
 				release_s_device_memory(param->mem_offset);
 			}
-#if 0
-			INFO("video ~ audio. context_flags[%d]: %d\n", ctx_index, context_flags[ctx_index]);
-#endif
 			wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
 			context_flags[ctx_index] = 0;
 			break;
@@ -913,8 +904,8 @@ static void newcodec_func(struct codec_param *param, uint32_t file_index)
 			newcodec_write_data(CODEC_CMD_FILE_INDEX,
 								CODEC_CMD_CONTEXT_INDEX,
 								file_index, ctx_index);
-	        wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
-            context_flags[ctx_index] = 0;
+			wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
+			context_flags[ctx_index] = 0;
 			break;
 		case CODEC_DEINIT:
 			newcodec_write_data(CODEC_CMD_FILE_INDEX,
@@ -945,7 +936,7 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 	if (copy_from_user(&ioparam, buf, sizeof(struct codec_param))) {
 		ERROR("failed to get codec parameter from user\n");
 		return -EIO;
-    }
+	}
 
 	newcodec_func(&ioparam, (uint32_t)file);
 
@@ -970,12 +961,12 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 	if (copy_from_user(&ioparam, buf, sizeof(struct codec_param))) {
 		ERROR("failed to get codec parameter info from user\n");
 		return -EIO;
-    }
+	}
 
 	DEBUG("enter %s. %p\n", __func__, file);
 
 	api_index = ioparam.api_index;
-    ctx_index = ioparam.ctx_index;
+	ctx_index = ioparam.ctx_index;
 
 	switch (api_index) {
 	case CODEC_INIT:
@@ -994,11 +985,11 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 //			release_device_memory(ioparam.mem_offset);
 			DEBUG("context index: %d\n", ctx_index);
 
-	        wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
+			wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
 
 			DEBUG("wakeup. %d\n", ctx_index);
 
-            context_flags[ctx_index] = 0;
+			context_flags[ctx_index] = 0;
 		}
 			break;
 		case CODEC_DECODE_VIDEO... CODEC_ENCODE_AUDIO:
@@ -1025,8 +1016,8 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 
 //			release_device_memory(ioparam.mem_offset);
 
-	        wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
-            context_flags[ctx_index] = 0;
+			wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
+			context_flags[ctx_index] = 0;
 		}
 			break;
 
@@ -1043,8 +1034,8 @@ static ssize_t newcodec_write(struct file *file, const char __user *buf, size_t 
 					newcodec->ioaddr + CODEC_CMD_API_INDEX);
 			LEAVE_CRITICAL_SECTION;
 
-   	        wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
-            context_flags[ctx_index] = 0;
+			wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
+			context_flags[ctx_index] = 0;
 		}
 			break;
 
