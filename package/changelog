@@ -1,3 +1,6 @@
+* 1.4.27
+- increase the MT slot size
+== GiWoong Kim <giwoong.kim@samsung.com> 2013-09-24
 * 1.4.26
 - added brillcodec driver. 
 == Kitae Kim <kt920.kim@samsung.com> 2013-09-16
