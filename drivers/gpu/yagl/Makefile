@@ -4,4 +4,6 @@
 
 ccflags-y := -Idrivers/gpu/yagl
 
-obj-$(CONFIG_YAGL) += main.o yagl_driver.o
+yagl-y := main.o yagl_driver.o
+
+obj-$(CONFIG_YAGL) += yagl.o
