@@ -3,7 +3,7 @@
 #
 
 menuconfig YAGL
-	bool "YaGL passthrough driver"
+	tristate "YaGL passthrough driver"
 	depends on (DRM || FB)
 	default n
 	help
