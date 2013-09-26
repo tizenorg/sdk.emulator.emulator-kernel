@@ -11,7 +11,6 @@ obj-$(CONFIG_MARU_JACK) += maru_jack.o
 obj-$(CONFIG_MARU_POWER_SUPPLY) += maru_power_supply.o
 obj-$(CONFIG_MARU_USB_MASS_STORAGE) += maru_usb_mass_storage.o
 obj-$(CONFIG_MARU_USB_MODE) += maru_usb_mode.o
-obj-$(CONFIG_MARU_TUNER) += maru_tuner.o
 obj-$(CONFIG_MARU_VIRTIO_KEYBOARD) += maru_virtio_keyboard.o
 obj-$(CONFIG_MARU_VIRTIO_ESM) += maru_virtio_esm.o
 obj-$(CONFIG_MARU_VIRTIO_EVDI) += maru_virtio_evdi.o

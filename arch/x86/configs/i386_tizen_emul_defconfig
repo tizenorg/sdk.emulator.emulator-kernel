@@ -1943,8 +1943,7 @@ CONFIG_MEDIA_SUPPORT=y
 # CONFIG_MEDIA_CONTROLLER is not set
 CONFIG_VIDEO_DEV=y
 CONFIG_VIDEO_V4L2_COMMON=y
-CONFIG_DVB_CORE=y
-CONFIG_DVB_NET=y
+# CONFIG_DVB_CORE is not set
 CONFIG_VIDEO_MEDIA=y
 
 #
@@ -2084,105 +2083,6 @@ CONFIG_V4L_PCI_DRIVERS=y
 # CONFIG_V4L_PLATFORM_DRIVERS is not set
 # CONFIG_V4L_MEM2MEM_DRIVERS is not set
 # CONFIG_RADIO_ADAPTERS is not set
-CONFIG_DVB_MAX_ADAPTERS=8
-# CONFIG_DVB_DYNAMIC_MINORS is not set
-CONFIG_DVB_CAPTURE_DRIVERS=y
-
-#
-# Supported SAA7146 based PCI Adapters
-#
-# CONFIG_TTPCI_EEPROM is not set
-# CONFIG_DVB_AV7110 is not set
-# CONFIG_DVB_BUDGET_CORE is not set
-
-#
-# Supported USB Adapters
-#
-# CONFIG_DVB_TTUSB_BUDGET is not set
-# CONFIG_DVB_TTUSB_DEC is not set
-
-#
-# Supported FlexCopII (B2C2) Adapters
-#
-# CONFIG_DVB_B2C2_FLEXCOP is not set
-
-#
-# Supported BT878 Adapters
-#
-
-#
-# Supported Pluto2 Adapters
-#
-# CONFIG_DVB_PLUTO2 is not set
-
-#
-# Supported SDMC DM1105 Adapters
-#
-
-#
-# Supported Earthsoft PT1 Adapters
-#
-# CONFIG_DVB_PT1 is not set
-
-#
-# Supported Mantis Adapters
-#
-
-#
-# Supported nGene Adapters
-#
-# CONFIG_DVB_NGENE is not set
-
-#
-# Supported ddbridge ('Octopus') Adapters
-#
-# CONFIG_DVB_DDBRIDGE is not set
-
-#
-# Supported DVB Frontends
-#
-# CONFIG_DVB_FE_CUSTOMISE is not set
-
-#
-# Multistandard (satellite) frontends
-#
-
-#
-# Multistandard (cable + terrestrial) frontends
-#
-
-#
-# DVB-S (satellite) frontends
-#
-
-#
-# DVB-T (terrestrial) frontends
-#
-
-#
-# DVB-C (cable) frontends
-#
-
-#
-# ATSC (North American/Korean Terrestrial/Cable DTV) frontends
-#
-
-#
-# ISDB-T (terrestrial) frontends
-#
-
-#
-# Digital terrestrial only tuners/PLL
-#
-
-#
-# SEC control devices for DVB-S
-#
-
-#
-# Tools to develop new frontends
-#
-# CONFIG_DVB_DUMMY_FE is not set
 
 #
 # Graphics support
@@ -2887,7 +2787,6 @@ CONFIG_MARU_JACK=y
 CONFIG_MARU_POWER_SUPPLY=y
 CONFIG_MARU_USB_MASS_STORAGE=y
 CONFIG_MARU_USB_MODE=y
-CONFIG_MARU_TUNER=y
 CONFIG_MARU_VIRTIO_KEYBOARD=y
 CONFIG_MARU_VIRTIO_ESM=y
 CONFIG_MARU_VIRTIO_EVDI=y

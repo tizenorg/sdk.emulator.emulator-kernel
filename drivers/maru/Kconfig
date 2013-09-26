@@ -60,10 +60,6 @@ config MARU_USB_MODE
 	tristate "MARU Usb mode Driver"
 	depends on MARU != n
 
-config MARU_TUNER
-	tristate "MARU Tuner Driver"
-	depends on MARU != n && DVB_CORE && PCI
-
 config MARU_VIRTIO_KEYBOARD
 	tristate "MARU VirtIO Keyboard Driver"
 	depends on MARU != n
