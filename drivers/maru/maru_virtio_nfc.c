@@ -55,31 +55,17 @@
 #define DEVICE_NAME     "nfc"
 
 /* device protocol */
-#define __MAX_BUF_SIZE  1024
+#define MAX_BUF_SIZE  255
 
-enum
-{
-    route_qemu = 0,
-    route_control_server = 1,
-    route_monitor = 2
-};
-
-typedef unsigned int CSCliSN;
-
-struct msg_info {
-    char buf[__MAX_BUF_SIZE];
-    uint32_t route;
-};
+unsigned char buf[MAX_BUF_SIZE];
 
 static int g_wake_up_interruptible_count = 0;
 static int g_read_count = 0;
 
 /* device protocol */
 
-#define SIZEOF_MSG_INFO sizeof(struct msg_info)
-
 struct msg_buf {
-    struct msg_info msg;
+    unsigned char msg[MAX_BUF_SIZE];
     struct list_head list;
 };
 
@@ -108,8 +94,8 @@ struct virtio_nfc {
     struct virtqueue* rvq;
     struct virtqueue* svq;
 
-    struct msg_info read_msginfo;
-    struct msg_info send_msginfo;
+    unsigned char read_msginfo[MAX_BUF_SIZE];
+    unsigned char send_msginfo[MAX_BUF_SIZE];
 
     struct list_head read_list;
     struct list_head write_list;
@@ -151,12 +137,12 @@ int make_buf_and_kick(void)
     return 0;
 }
 
-static int add_inbuf(struct virtqueue *vq, struct msg_info *msg)
+static int add_inbuf(struct virtqueue *vq, unsigned char *msg)
 {
     struct scatterlist sg[1];
     int ret;
 
-    sg_init_one(sg, msg, sizeof(struct msg_info));
+    sg_init_one(sg, msg, MAX_BUF_SIZE);
 
     ret = virtqueue_add_buf(vq, sg, 0, 1, msg, GFP_ATOMIC);
     virtqueue_kick(vq);
@@ -190,13 +176,11 @@ static int nfc_open(struct inode* inode, struct file* filp)
     nfc_info = NULL;
     LOG("nfc_open\n");
 
-    for (i = 0; i < NUM_OF_NFC; i++)
-    {
+    for (i = 0; i < NUM_OF_NFC; i++) {
         LOG("nfc info index = %d, cdev dev = %d, inode dev = %d\n",
                 i, pnfc_info[i]->cdev.dev, cdev->dev);
 
-        if (pnfc_info[i]->cdev.dev == cdev->dev)
-        {
+        if (pnfc_info[i]->cdev.dev == cdev->dev) {
             nfc_info = pnfc_info[i];
             break;
         }
@@ -210,7 +194,6 @@ static int nfc_open(struct inode* inode, struct file* filp)
     ret = make_buf_and_kick();
     if (ret < 0)
         return ret;
-
 
     LOG("nfc_opened\n");
     return 0;
@@ -239,10 +222,8 @@ static ssize_t nfc_read(struct file *filp, char __user *ubuf, size_t len,
 
     LOG("nfc_read\n");
     nfc = filp->private_data;
-    if (!has_readdata(nfc))
-    {
-        if (filp->f_flags & O_NONBLOCK)
-        {
+    if (!has_readdata(nfc)) {
+        if (filp->f_flags & O_NONBLOCK) {
             LOG("list is empty, return EAGAIN\n");
             return -EAGAIN;
         }
@@ -263,8 +244,7 @@ static ssize_t nfc_read(struct file *filp, char __user *ubuf, size_t len,
     spin_lock_irqsave(&pnfc_info[NFC_READ]->inbuf_lock, flags);
 
 
-    if (add_inbuf(vnfc->rvq, &vnfc->read_msginfo) < 0)
-    {
+    if (add_inbuf(vnfc->rvq, vnfc->read_msginfo) < 0){
         LOG("failed add_buf\n");
     }
 
@@ -275,8 +255,6 @@ static ssize_t nfc_read(struct file *filp, char __user *ubuf, size_t len,
 
     if (ret < 0)
         return -EFAULT;
-
-
 
     *f_pos += len;
 
@@ -299,9 +277,7 @@ static ssize_t nfc_write(struct file *f, const char __user *ubuf, size_t len,
     memset(&vnfc->send_msginfo, 0, sizeof(vnfc->send_msginfo));
     ret = copy_from_user(&vnfc->send_msginfo, ubuf, sizeof(vnfc->send_msginfo));
 
-    LOG("copy_from_user ret = %d, msg = %s\n", ret, vnfc->send_msginfo.buf);
-    LOG("msg buf: %s, route: %d, \n",
-            vnfc->send_msginfo.buf, vnfc->send_msginfo.route);
+    LOG("copy_from_user ret = %d, msg = %s\n", ret, vnfc->send_msginfo);
 
     if (ret) {
         ret = -EFAULT;
@@ -344,8 +320,7 @@ static unsigned int nfc_poll(struct file *filp, poll_table *wait)
 
     ret = 0;
 
-    if (has_readdata(nfc))
-    {
+    if (has_readdata(nfc)) {
         LOG("POLLIN | POLLRDNORM\n");
         ret |= POLLIN | POLLRDNORM;
     }
@@ -368,12 +343,12 @@ static void nfc_recv_done(struct virtqueue *rvq) {
 
     unsigned int len;
     unsigned long flags;
-    struct msg_info* msg;
+    unsigned char *msg;
     struct msg_buf* msgbuf;
     LOG("nfc_recv_done\n");
     /* TODO : check if guest has been connected. */
 
-    msg = (struct msg_info*) virtqueue_get_buf(vnfc->rvq, &len);
+    msg = (unsigned char*) virtqueue_get_buf(vnfc->rvq, &len);
     if (msg == NULL ) {
         LOG("failed to virtqueue_get_buf\n");
         return;
@@ -398,7 +373,7 @@ static void nfc_recv_done(struct virtqueue *rvq) {
 
         wake_up_interruptible(&pnfc_info[NFC_READ]->waitqueue);
 
-        msg = (struct msg_info*) virtqueue_get_buf(vnfc->rvq, &len);
+        msg = (unsigned char*) virtqueue_get_buf(vnfc->rvq, &len);
         if (msg == NULL) {
             break;
         }
@@ -500,8 +475,7 @@ static int nfc_probe(struct virtio_device* dev) {
     dev->priv = vnfc;
 
     ret = init_device();
-    if (ret)
-    {
+    if (ret) {
         LOG("failed to init_device\n");
         return ret;
     }
@@ -521,10 +495,10 @@ static int nfc_probe(struct virtio_device* dev) {
 
 
     memset(&vnfc->read_msginfo, 0x00, sizeof(vnfc->read_msginfo));
-    sg_set_buf(vnfc->sg_read, &vnfc->read_msginfo, sizeof(struct msg_info));
+    sg_set_buf(vnfc->sg_read, &vnfc->read_msginfo, MAX_BUF_SIZE);
 
     memset(&vnfc->send_msginfo, 0x00, sizeof(vnfc->send_msginfo));
-    sg_set_buf(vnfc->sg_send, &vnfc->send_msginfo, sizeof(struct msg_info));
+    sg_set_buf(vnfc->sg_send, &vnfc->send_msginfo, MAX_BUF_SIZE);
 
 
     sg_init_one(vnfc->sg_read, &vnfc->read_msginfo, sizeof(vnfc->read_msginfo));
@@ -539,8 +513,7 @@ static int nfc_probe(struct virtio_device* dev) {
 static void __devexit nfc_remove(struct virtio_device* dev)
 {
     struct virtio_nfc* _nfc = dev->priv;
-    if (!_nfc)
-    {
+    if (!_nfc) {
         LOG("nfc is NULL\n");
         return;
     }
