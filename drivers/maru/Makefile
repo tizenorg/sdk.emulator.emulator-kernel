@@ -16,4 +16,4 @@ obj-$(CONFIG_MARU_VIRTIO_ESM) += maru_virtio_esm.o
 obj-$(CONFIG_MARU_VIRTIO_EVDI) += maru_virtio_evdi.o
 obj-$(CONFIG_MARU_VIRTIO_SENSOR) += maru_virtio_sensor.o
 obj-$(CONFIG_MARU_VIRTIO_NFC) += maru_virtio_nfc.o
-obj-$(CONFIG_MARU_NEW_CODEC) += maru_new_codec.o
+obj-$(CONFIG_MARU_BRILLCODEC) += maru_brillcodec.o
