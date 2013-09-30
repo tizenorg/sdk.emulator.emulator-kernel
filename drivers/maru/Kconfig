@@ -14,6 +14,6 @@ config MARU_VIRTIO_KEYBOARD
 	tristate "MARU Virtio Keyboard Driver"
 	depends on MARU != n
 
-config MARU_NEW_CODEC
-	tristate "MARU new codec driver"
+config MARU_BRILLCODEC
+	tristate "MARU brillcodec driver"
 	depends on MARU != n
