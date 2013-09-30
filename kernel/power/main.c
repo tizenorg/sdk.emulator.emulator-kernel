@@ -272,8 +272,6 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
-#if 0 // do not allow suspend in emulator
-
 #ifdef CONFIG_SUSPEND
 	suspend_state_t state = PM_SUSPEND_STANDBY;
 	const char * const *s;
@@ -302,10 +300,6 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 
  Exit:
 	return error ? error : n;
-#else
-
-	return n;
-#endif // do not allow suspend in emulator
 }
 
 power_attr(state);
