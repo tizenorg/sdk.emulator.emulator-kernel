@@ -1,3 +1,6 @@
+* 1.4.28
+- added flush buffer routine. 
+== Kitae Kim <kt920.kim@samsung.com> 2013-10-18
 * 1.4.27
 - increase the MT slot size
 == GiWoong Kim <giwoong.kim@samsung.com> 2013-09-24
