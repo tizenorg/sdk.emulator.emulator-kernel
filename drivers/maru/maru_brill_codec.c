@@ -94,34 +94,6 @@ MODULE_LICENSE("GPL2");
 #endif
 
 /* Define i/o and api values.  */
-
-#if 0
-enum codec_io_cmd {
-//	CODEC_CMD_COPY_TO_DEVICE_MEM = 5,	// user and driver
-//	CODEC_CMD_COPY_FROM_DEVICE_MEM,
-	CODEC_CMD_API_INDEX = 10,			// driver and device
-	CODEC_CMD_CONTEXT_INDEX,
-	CODEC_CMD_FILE_INDEX,
-	CODEC_CMD_DEVICE_MEM_OFFSET,
-	CODEC_CMD_GET_THREAD_STATE,
-	CODEC_CMD_GET_QUEUE,
-	CODEC_CMD_POP_WRITE_QUEUE,
-	CODEC_CMD_RELEASE_AVCONTEXT,
-	CODEC_CMD_GET_VERSION = 20,			// user, driver and device
-	CODEC_CMD_GET_ELEMENT_INFO,
-	CODEC_CMD_GET_CONTEXT_INDEX,
-	CODEC_CMD_SECURE_MEMORY= 30,
-	CODEC_CMD_RELEASE_MEMORY,
-	CODEC_CMD_USE_DEVICE_MEM,
-	CODEC_CMD_REQ_FROM_SMALL_MEMORY,
-	CODEC_CMD_REQ_FROM_MEDIUM_MEMORY,
-	CODEC_CMD_REQ_FROM_LARGE_MEMORY,
-	CODEC_CMD_S_SECURE_BUFFER,
-	CODEC_CMD_M_SECURE_BUFFER,
-	CODEC_CMD_L_SECURE_BUFFER,
-};
-#endif
-
 enum codec_io_cmd {
 	CODEC_CMD_API_INDEX = 10,			// driver and device
 	CODEC_CMD_CONTEXT_INDEX,
@@ -145,13 +117,14 @@ enum codec_io_cmd {
 };
 
 enum codec_api_index {
-    CODEC_INIT = 0,
-    CODEC_DECODE_VIDEO,
-    CODEC_ENCODE_VIDEO,
-    CODEC_DECODE_AUDIO,
-    CODEC_ENCODE_AUDIO,
-    CODEC_PICTURE_COPY,
-    CODEC_DEINIT,
+	CODEC_INIT = 0,
+	CODEC_DECODE_VIDEO,
+	CODEC_ENCODE_VIDEO,
+	CODEC_DECODE_AUDIO,
+	CODEC_ENCODE_AUDIO,
+	CODEC_PICTURE_COPY,
+	CODEC_DEINIT,
+	CODEC_FLUSH_BUFFERS,
 };
 
 struct codec_param {
@@ -391,7 +364,7 @@ static void release_s_device_memory(uint32_t mem_offset)
 				elem->occupied = false;
 				list_move_tail(&elem->entry, &maru_brill_codec->avail_s_memblk);
 
-			    up(&s_buffer_sema);
+				up(&s_buffer_sema);
 				DEBUG("unlock s_buffer_sema: %d\n", s_buffer_sema.count);
 
 				break;
@@ -463,7 +436,7 @@ static void release_m_device_memory(uint32_t mem_offset)
 				elem->occupied = false;
 				list_move_tail(&elem->entry, &maru_brill_codec->avail_m_memblk);
 
-			    up(&m_buffer_sema);
+				up(&m_buffer_sema);
 				DEBUG("unlock m_buffer_sema: %d\n", m_buffer_sema.count);
 
 				break;
@@ -534,9 +507,9 @@ static void release_l_device_memory(uint32_t mem_offset)
 
 				elem->blk_id = 0;
 				elem->occupied = false;
-				list_move(&elem->entry, &maru_brill_codec->avail_l_memblk);
+				list_move_tail(&elem->entry, &maru_brill_codec->avail_l_memblk);
 
-			    up(&l_buffer_sema);
+				up(&l_buffer_sema);
 				DEBUG("up l_buffer_semaphore: %d\n", l_buffer_sema.count);
 
 				break;
@@ -615,7 +588,7 @@ static void release_device_memory(uint32_t mem_offset)
 	if (mem_offset < (16 * 1024 * 1024)) {
 		DEBUG("release small size of memory\n");
 		release_s_device_memory(mem_offset);
-	} else if (mem_offset - (24 * 1024 * 1024)) {
+	} else if (mem_offset < (24 * 1024 * 1024)) {
 		DEBUG("release medium size of memory\n");
 		release_m_device_memory(mem_offset);
 	} else {
@@ -679,7 +652,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 		if (copy_to_user((void *)arg, &maru_brill_codec->version, sizeof(int))) {
 			ERROR("ioctl: failed to copy data to user\n");
 			ret = -EIO;
-	    }
+		}
 		break;
 	case CODEC_CMD_GET_ELEMENT_INFO:
 		DEBUG("request a device to get codec elements\n");
@@ -703,9 +676,9 @@ static long maru_brill_codec_ioctl(struct file *file,
 		} else if (copy_to_user((void *)arg, &value, sizeof(int))) {
 			ERROR("ioctl: failed to copy data to user\n");
 			ret = -EIO;
-	    }
+		}
 		break;
-    case CODEC_CMD_SECURE_MEMORY:
+	case CODEC_CMD_SECURE_MEMORY:
 		value =
 			secure_device_memory((uint32_t)file);
 		if (value < 0) {
@@ -717,9 +690,9 @@ static long maru_brill_codec_ioctl(struct file *file,
 				ret = -EIO;
 			}
 		}
-        break;
-    case CODEC_CMD_RELEASE_MEMORY:
-    {
+		break;
+	case CODEC_CMD_RELEASE_MEMORY:
+	{
 		uint32_t mem_offset;
 
 		if (copy_from_user(&mem_offset, (void *)arg, sizeof(uint32_t))) {
@@ -728,9 +701,9 @@ static long maru_brill_codec_ioctl(struct file *file,
 			break;
 		}
 		release_device_memory(mem_offset);
-    }
-        break;
-    case CODEC_CMD_USE_DEVICE_MEM:
+	}
+		break;
+	case CODEC_CMD_USE_DEVICE_MEM:
 	{
 		uint32_t mem_offset;
 
@@ -781,7 +754,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 		}
 		break;
 	case CODEC_CMD_REQ_FROM_MEDIUM_MEMORY:
-		DEBUG("read large size of data from device memory\n");
+		DEBUG("read medium size of data from device memory\n");
 
 		value =
 			secure_m_device_memory((uint32_t)file);
@@ -829,7 +802,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 			}
 		}
 		break;
-    case CODEC_CMD_S_SECURE_BUFFER:
+	case CODEC_CMD_S_SECURE_BUFFER:
 		value =
 			secure_s_device_memory((uint32_t)file);
 		if (value < 0) {
@@ -841,8 +814,8 @@ static long maru_brill_codec_ioctl(struct file *file,
 				ret = -EIO;
 			}
 		}
-        break;
-    case CODEC_CMD_M_SECURE_BUFFER:
+		break;
+	case CODEC_CMD_M_SECURE_BUFFER:
 		value =
 			secure_m_device_memory((uint32_t)file);
 		if (value < 0) {
@@ -854,8 +827,8 @@ static long maru_brill_codec_ioctl(struct file *file,
 				ret = -EIO;
 			}
 		}
-        break;
-    case CODEC_CMD_L_SECURE_BUFFER:
+		break;
+	case CODEC_CMD_L_SECURE_BUFFER:
 		value =
 			secure_l_device_memory((uint32_t)file);
 		if (value < 0) {
@@ -867,7 +840,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 				ret = -EIO;
 			}
 		}
-        break;
+		break;
 	default:
 		DEBUG("no available command.");
 		ret = -EINVAL;
@@ -968,7 +941,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 		}
 		break;
 	case CODEC_CMD_GET_DATA_FROM_MEDIUM_BUFFER:
-		DEBUG("read large size of data from device memory\n");
+		DEBUG("read medium size of data from device memory\n");
 
 		value =
 			secure_m_device_memory((uint32_t)file);
@@ -1099,12 +1072,12 @@ static ssize_t maru_brill_codec_write(struct file *file, const char __user *buf,
 	if (copy_from_user(&ioparam, buf, sizeof(struct codec_param))) {
 		ERROR("failed to get codec parameter info from user\n");
 		return -EIO;
-    }
+	}
 
 	DEBUG("enter %s. %p\n", __func__, file);
 
 	api_index = ioparam.api_index;
-    ctx_index = ioparam.ctx_index;
+	ctx_index = ioparam.ctx_index;
 
 	switch (api_index) {
 	case CODEC_INIT:
@@ -1137,13 +1110,7 @@ static ssize_t maru_brill_codec_write(struct file *file, const char __user *buf,
 					maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 			LEAVE_CRITICAL_SECTION;
 
-			if (api_index == CODEC_ENCODE_VIDEO) {
-				// in case of medium and large size of data
-				release_device_memory(ioparam.mem_offset);
-			} else {
-				// in case of small size of data
-				release_s_device_memory(ioparam.mem_offset);
-			}
+			release_device_memory(ioparam.mem_offset);
 
 			wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
 			context_flags[ctx_index] = 0;
@@ -1162,8 +1129,8 @@ static ssize_t maru_brill_codec_write(struct file *file, const char __user *buf,
 					maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 			LEAVE_CRITICAL_SECTION;
 
-   	        wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
-            context_flags[ctx_index] = 0;
+			wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
+			context_flags[ctx_index] = 0;
 		}
 			break;
 		case CODEC_DEINIT:
@@ -1176,8 +1143,19 @@ static ssize_t maru_brill_codec_write(struct file *file, const char __user *buf,
 					maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 			LEAVE_CRITICAL_SECTION;
 			break;
+		case CODEC_FLUSH_BUFFERS:
+			ENTER_CRITICAL_SECTION;
+			writel((uint32_t)file,
+					maru_brill_codec->ioaddr + CODEC_CMD_FILE_INDEX);
+			writel((int32_t)ioparam.ctx_index,
+					maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
+			writel((int32_t)ioparam.api_index,
+					maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
+			LEAVE_CRITICAL_SECTION;
+			break;
+
 		default:
-			ERROR("wrong api command: %d", api_index);
+			ERROR("invalid api command: %d", api_index);
 	}
 
 	return 0;
