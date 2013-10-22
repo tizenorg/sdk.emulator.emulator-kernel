@@ -83,8 +83,9 @@ struct yagl_file
     struct page **pages;
     u32 num_pages;
 
-    /* Render type for this client, filled on 'open'. */
+    /* Render type and host OpenGL version for this client, filled on 'open'. */
     u32 render_type;
+    u32 gl_version;
 
     /* List of mlock'ed memory regions. */
     struct list_head mlock_list;
@@ -257,6 +258,7 @@ static int yagl_misc_open(struct inode *inode, struct file *file)
     }
 
     yfile->render_type = yagl_marshal_get_uint32_t(&buff);
+    yfile->gl_version = yagl_marshal_get_uint32_t(&buff);
 
     kunmap(yfile->pages[0]);
 
@@ -665,6 +667,7 @@ static long yagl_misc_ioctl(struct file* file, unsigned int cmd, unsigned long a
     case YAGL_IOC_GET_USER_INFO:
         value.user_info.index = yfile->index;
         value.user_info.render_type = yfile->render_type;
+        value.user_info.gl_version = yfile->gl_version;
         if (copy_to_user((struct yagl_user_info __user*)arg,
                          &value.user_info,
                          sizeof(value.user_info)) != 0) {
