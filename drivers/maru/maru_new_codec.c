@@ -63,7 +63,7 @@ MODULE_LICENSE("GPL2");
 #define CODEC_IRQ_TASK 0x1f
 
 // DEBUG
-#ifndef CODEC_DEBUG
+#ifdef CODEC_DEBUG
 #define DEBUG(fmt, ...) \
 	printk(KERN_DEBUG "[%s][%d]: " fmt, DEVICE_NAME, __LINE__, ##__VA_ARGS__)
 
@@ -1327,7 +1327,7 @@ static void maru_brill_codec_get_device_version(void)
 	maru_brill_codec->version =
 		readl(maru_brill_codec->ioaddr + CODEC_CMD_GET_VERSION);
 
-	INFO("device version: %d\n",
+	printk(KERN_INFO "device version: %d\n",
 		maru_brill_codec->version);
 }
 
@@ -1336,7 +1336,7 @@ static int __devinit maru_brill_codec_probe(struct pci_dev *pci_dev,
 {
 	int ret = 0;
 
-	INFO("%s: driver is probed.\n", DEVICE_NAME);
+	printk(KERN_INFO "%s: driver is probed.\n", DEVICE_NAME);
 
 	maru_brill_codec = kzalloc(sizeof(struct maru_brill_codec_device), GFP_KERNEL);
 	if (!maru_brill_codec) {
@@ -1477,7 +1477,7 @@ static struct pci_driver driver = {
 
 static int __init maru_brill_codec_init(void)
 {
-	INFO("driver is initialized.\n");
+	printk(KERN_INFO "driver is initialized.\n");
 
 	maru_brill_codec_bh_workqueue = create_workqueue ("maru_brill_codec");
 	if (!maru_brill_codec_bh_workqueue) {
@@ -1490,7 +1490,7 @@ static int __init maru_brill_codec_init(void)
 
 static void __exit maru_brill_codec_exit(void)
 {
-	INFO("driver is finalized.\n");
+	printk(KERN_INFO "driver is finalized.\n");
 
 	if (maru_brill_codec_bh_workqueue) {
 		destroy_workqueue (maru_brill_codec_bh_workqueue);
