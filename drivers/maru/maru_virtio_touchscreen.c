@@ -67,19 +67,19 @@ typedef struct virtio_touchscreen
 virtio_touchscreen *vt;
 
 
-#define MAX_TRKID 6
+#define MAX_TRKID 10
 #define TOUCHSCREEN_RESOLUTION_X 5040
 #define TOUCHSCREEN_RESOLUTION_Y 3780
 #define ABS_PRESSURE_MAX 255
+
+#define MAX_BUF_COUNT MAX_TRKID
+struct scatterlist sg[MAX_BUF_COUNT];
+EmulTouchEvent vbuf[MAX_BUF_COUNT];
 
 static struct virtio_device_id id_table[] = {
     { VIRTIO_ID_TOUCHSCREEN, VIRTIO_DEV_ANY_ID },
     { 0 },
 };
-
-#define MAX_BUF_COUNT 10
-struct scatterlist sg[MAX_BUF_COUNT];
-EmulTouchEvent vbuf[MAX_BUF_COUNT];
 
 
 #if 0
@@ -192,6 +192,7 @@ static void vq_touchscreen_callback(struct virtqueue *vq)
 
     do {
         event = &vbuf[recv_index - 1];
+
 #if 0
         printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d, recv_index=%d\n",
             event->x, event->y, event->z, event->state, recv_index);

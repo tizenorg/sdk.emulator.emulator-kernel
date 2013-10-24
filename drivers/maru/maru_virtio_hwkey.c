@@ -44,30 +44,33 @@ MODULE_AUTHOR("Sungmin Ha <sungmin82.ha@samsung.com>");
 MODULE_DESCRIPTION("Emulator Virtio Hwkey driver");
 
 #define DEVICE_NAME "virtio-hwkey"
+#define MAX_BUF_COUNT 64
+static int vqidx = 0;
 
 /* This structure must match the qemu definitions */
 typedef struct EmulHwkeyEvent {
     uint8_t event_type;
     uint32_t keycode;
 } EmulHwkeyEvent;
-static EmulHwkeyEvent *event;
 
 typedef struct virtio_hwkey
 {
     struct virtio_device *vdev;
     struct virtqueue *vq;
     struct input_dev *idev;
+
+    struct scatterlist sg[MAX_BUF_COUNT];
+    struct EmulHwkeyEvent vbuf[MAX_BUF_COUNT];
+
+    struct mutex event_mutex;
 } virtio_hwkey;
+
 virtio_hwkey *vh;
 
 static struct virtio_device_id id_table[] = {
     { VIRTIO_ID_HWKEY, VIRTIO_DEV_ANY_ID },
     { 0 },
 };
-
-#define MAX_BUF_COUNT 10
-static struct scatterlist sg[MAX_BUF_COUNT];
-static EmulHwkeyEvent vbuf[MAX_BUF_COUNT];
 
 /* keep it consistent with emulator-skin definition */
 enum {  
@@ -76,36 +79,28 @@ enum {
 };
 
 static int err = 0;
-static unsigned int len = 0; /* not used */
 static unsigned int index = 0;
-static unsigned int recv_index = 0;
 
 /**
 * @brief : callback for virtqueue
 */
 static void vq_hwkey_callback(struct virtqueue *vq)
 {
+    struct EmulHwkeyEvent hwkey_event;
 #if 0
     printk(KERN_INFO "vq hwkey callback\n");
 #endif
-
-    recv_index = (unsigned int)virtqueue_get_buf(vh->vq, &len);
-    if (recv_index == 0) {
-        printk(KERN_ERR "failed to get buffer\n");
-        return;
-    }
-
-    do {
-        event = &vbuf[recv_index - 1];
-#if 0
-        printk(KERN_INFO "hwkey event_type=%d, keycodey=%d, recv_index=%d\n",
-            event->event_type, event->keycode, recv_index);
-#endif
-        if (event->event_type == KEY_PRESSED) { /* pressed */
-          input_event(vh->idev, EV_KEY, event->keycode, true);
+    while (1) {
+        memcpy(&hwkey_event, &vh->vbuf[vqidx], sizeof(hwkey_event));
+        if (hwkey_event.event_type == 0) {
+            break;
         }
-        else if (event->event_type == KEY_RELEASED) { /* released */
-          input_event(vh->idev, EV_KEY, event->keycode, false);
+        printk(KERN_ERR "keycode: %d, event_type: %d, vqidx: %d\n", hwkey_event.keycode, hwkey_event.event_type, vqidx);
+        if (hwkey_event.event_type == KEY_PRESSED) {
+          input_event(vh->idev, EV_KEY, hwkey_event.keycode, true);
+        }
+        else if (hwkey_event.event_type == KEY_RELEASED) {
+          input_event(vh->idev, EV_KEY, hwkey_event.keycode, false);
         }
         else {
           printk(KERN_ERR "Unknown event type\n");
@@ -113,20 +108,12 @@ static void vq_hwkey_callback(struct virtqueue *vq)
         }
 
         input_sync(vh->idev);
-
-        /* expose buffer to other end */
-        err = virtqueue_add_buf(vh->vq, sg, 0,
-            recv_index, (void *)recv_index, GFP_ATOMIC);
-
-        if (err < 0) {
-            printk(KERN_ERR "failed to add buffer!\n");
+        memset(&vh->vbuf[vqidx], 0x00, sizeof(hwkey_event));
+        vqidx++;
+        if (vqidx == MAX_BUF_COUNT) {
+            vqidx = 0;
         }
-
-        recv_index = (unsigned int)virtqueue_get_buf(vh->vq, &len);
-        if (recv_index == 0) {
-            break;
-        }
-    } while(true);
+    }
 
     virtqueue_kick(vh->vq);
 }
@@ -163,6 +150,7 @@ struct file_operations virtio_hwkey_fops = {
 static int virtio_hwkey_probe(struct virtio_device *vdev)
 {
     int ret = 0;
+    vqidx = 0;
 
     printk(KERN_INFO "virtio hwkey driver is probed\n");
 
@@ -171,11 +159,11 @@ static int virtio_hwkey_probe(struct virtio_device *vdev)
     if (!vh) {
         return -ENOMEM;
     }
+    memset(&vh->vbuf, 0x00, sizeof(vh->vbuf));
 
     vh->vdev = vdev;
 
-    vh->vq = virtio_find_single_vq(vh->vdev,
-        vq_hwkey_callback, "virtio-hwkey-vq");
+    vh->vq = virtio_find_single_vq(vh->vdev, vq_hwkey_callback, "virtio-hwkey-vq");
     if (IS_ERR(vh->vq)) {
         ret = PTR_ERR(vh->vq);
 
@@ -187,14 +175,11 @@ static int virtio_hwkey_probe(struct virtio_device *vdev)
     /* enable callback */
     virtqueue_enable_cb(vh->vq);
 
-    sg_init_table(sg, MAX_BUF_COUNT);
+    sg_init_table(vh->sg, MAX_BUF_COUNT);
 
     /* prepare the buffers */
     for (index = 0; index < MAX_BUF_COUNT; index++) {
-        sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulHwkeyEvent));
-
-        err = virtqueue_add_buf(vh->vq, sg, 0,
-            index + 1, (void *)index + 1, GFP_ATOMIC);
+        sg_set_buf(&vh->sg[index], &vh->vbuf[index], sizeof(EmulHwkeyEvent));
 
         if (err < 0) {
             printk(KERN_ERR "failed to add buffer\n");
@@ -204,6 +189,9 @@ static int virtio_hwkey_probe(struct virtio_device *vdev)
             return ret;
         }
     }
+
+    err = virtqueue_add_buf(vh->vq, vh->sg, 0,
+            MAX_BUF_COUNT, (void *)MAX_BUF_COUNT, GFP_ATOMIC);
 
     /* register for input device */
     vh->idev = input_allocate_device();
