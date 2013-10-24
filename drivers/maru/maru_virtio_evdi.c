@@ -77,9 +77,6 @@ struct msg_info {
 	CSCliSN cclisn;
 };
 
-static int g_wake_up_interruptible_count = 0;
-static int g_read_count = 0;
-
 /* device protocol */
 
 #define SIZEOF_MSG_INFO	sizeof(struct msg_info)

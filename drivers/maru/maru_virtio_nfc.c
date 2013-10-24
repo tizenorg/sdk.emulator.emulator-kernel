@@ -59,7 +59,6 @@
 
 unsigned char buf[MAX_BUF_SIZE];
 
-static int g_wake_up_interruptible_count = 0;
 static int g_read_count = 0;
 
 /* device protocol */
