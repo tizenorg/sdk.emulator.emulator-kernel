@@ -1,3 +1,6 @@
+* 1.4.29
+- cached codec information in the driver. 
+== Kitae Kim <kt920.kim@samsung.com> 2013-10-25
 * 1.4.28
 - added flush buffer routine. 
 == Kitae Kim <kt920.kim@samsung.com> 2013-10-18

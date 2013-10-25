@@ -184,7 +184,7 @@ struct maru_brill_codec_device {
 #define DEVICE_MEMORY_COUNT	8
 #define CODEC_CONTEXT_SIZE	1024
 
-#define CODEC_S_DEVICE_MEM_COUNT	63	// small		(256K)	8M
+#define CODEC_S_DEVICE_MEM_COUNT	62	// small		(256K)	8M
 // #define CODEC_XS_DEVICE_MEM_COUNT	8	// extra small	(1M)	8M
 #define CODEC_M_DEVICE_MEM_COUNT	4	// medium		(2M)	8M
 #define CODEC_L_DEVICE_MEM_COUNT	2	// large		(4M)	8M
@@ -247,7 +247,7 @@ static void maru_brill_codec_divide_device_memory(void)
 	}
 
 	for (cnt = 0; cnt < CODEC_S_DEVICE_MEM_COUNT; index++, cnt++) {
-		elem[index].mem_offset = (index + 1) * CODEC_S_DEVICE_MEM_SIZE;
+		elem[index].mem_offset = (index + 2) * CODEC_S_DEVICE_MEM_SIZE;
 		elem[index].occupied = false;
 		list_add_tail(&elem[index].entry, &maru_brill_codec->avail_s_memblk);
 	}
