@@ -4,9 +4,9 @@
  * Copyright (c) 2013 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
- *  Kitae Kim <kt920.kim@samsung.com>
- *  SeokYeon Hwang <syeon.hwang@samsung.com>
- *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
+ *	Kitae Kim <kt920.kim@samsung.com>
+ *	SeokYeon Hwang <syeon.hwang@samsung.com>
+ *	YeongKyoon Lee <yeongkyoon.lee@samsung.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -106,12 +106,9 @@ enum codec_io_cmd {
 	CODEC_CMD_GET_CONTEXT_INDEX,
 	CODEC_CMD_GET_ELEMENT_DATA,
 	CODEC_CMD_USE_DEVICE_MEM = 40,		// plugin and driver
-	CODEC_CMD_GET_DATA_FROM_SMALL_BUFFER,
-	CODEC_CMD_GET_DATA_FROM_MEDIUM_BUFFER,
-	CODEC_CMD_GET_DATA_FROM_LARGE_BUFFER,
-	CODEC_CMD_SECURE_SMALL_BUFFER,
-	CODEC_CMD_SECURE_MEDIUM_BUFFER,
-	CODEC_CMD_SECURE_LARGE_BUFFER,
+	CODEC_CMD_GET_DATA_INTO_DEVICE_MEM,
+	CODEC_CMD_SECURE_BUFFER,
+	CODEC_CMD_TRY_SECURE_BUFFER,
 	CODEC_CMD_RELEASE_BUFFER,
 };
 
@@ -132,23 +129,33 @@ struct codec_param {
 	int32_t mem_offset;
 };
 
-struct codec_mem_info {
-	uint32_t index;
-	uint32_t offset;
+struct codec_element {
+	void *buf;
+	uint32_t buf_size;
 };
 
 /* manage device memory block */
 struct device_mem {
 	uint32_t blk_id;
 	uint32_t mem_offset;
-	bool occupied;
 
 	struct list_head entry;
 };
 
-struct codec_element {
-	void *buf;
-	uint32_t buf_size;
+struct memory_block {
+	uint32_t unit_size;
+	uint32_t n_units;
+
+	uint32_t start_offset;
+	uint32_t end_offset;
+
+	struct device_mem *units;
+
+	struct list_head available;
+	struct list_head occupied;
+
+	struct semaphore semaphore;
+	struct mutex access_mutex;
 };
 
 struct maru_brill_codec_device {
@@ -162,16 +169,8 @@ struct maru_brill_codec_device {
 	resource_size_t mem_start;
 	resource_size_t mem_size;
 
-	//
-	struct device_mem *elem;
-
 	/* task queue */
-	struct list_head avail_s_memblk;
-	struct list_head used_s_memblk;
-	struct list_head avail_m_memblk;
-	struct list_head used_m_memblk;
-	struct list_head avail_l_memblk;
-	struct list_head used_l_memblk;
+	struct memory_block memory_blocks[3];
 
 	spinlock_t lock;
 
@@ -185,15 +184,14 @@ struct maru_brill_codec_device {
 #define CODEC_CONTEXT_SIZE	1024
 
 #define CODEC_S_DEVICE_MEM_COUNT	63	// small		(256K)	8M
-// #define CODEC_XS_DEVICE_MEM_COUNT	8	// extra small	(1M)	8M
 #define CODEC_M_DEVICE_MEM_COUNT	4	// medium		(2M)	8M
 #define CODEC_L_DEVICE_MEM_COUNT	2	// large		(4M)	8M
 
 #define CODEC_S_DEVICE_MEM_SIZE		0x40000		// small
-// #define CODEC_XS_DEVICE_MEM_SIZE	0x100000	// extra small
 #define CODEC_M_DEVICE_MEM_SIZE		0x200000	// medium
 #define CODEC_L_DEVICE_MEM_SIZE		0x400000	// large
 
+enum block_size { SMALL, MEDIUM, LARGE };
 
 static struct maru_brill_codec_device *maru_brill_codec;
 static int context_flags[CODEC_CONTEXT_SIZE] = { 0, };
@@ -201,29 +199,8 @@ static int context_flags[CODEC_CONTEXT_SIZE] = { 0, };
 // semaphore, mutex
 static DEFINE_MUTEX(critical_section);
 
-static DEFINE_MUTEX(s_block_mutex);
-static DEFINE_MUTEX(m_block_mutex);
-static DEFINE_MUTEX(l_block_mutex);
-
-
-#if 0
-static DEFINE_MUTEX(maru_brill_codec_blk_mutex);
-
-static struct semaphore maru_brill_codec_buffer_mutex =
-	__SEMAPHORE_INITIALIZER(maru_brill_codec_buffer_mutex, DEVICE_MEMORY_COUNT);
-#endif
-
 #define ENTER_CRITICAL_SECTION	mutex_lock(&critical_section);
 #define LEAVE_CRITICAL_SECTION	mutex_unlock(&critical_section);
-
-static struct semaphore s_buffer_sema =
-	__SEMAPHORE_INITIALIZER(s_buffer_sema, CODEC_S_DEVICE_MEM_COUNT);
-
-static struct semaphore m_buffer_sema =
-	__SEMAPHORE_INITIALIZER(m_buffer_sema, CODEC_M_DEVICE_MEM_COUNT);
-
-static struct semaphore l_buffer_sema =
-	__SEMAPHORE_INITIALIZER(l_buffer_sema, CODEC_L_DEVICE_MEM_COUNT);
 
 // bottom-half
 static DECLARE_WAIT_QUEUE_HEAD(wait_queue);
@@ -236,35 +213,20 @@ static void maru_brill_codec_bh(struct maru_brill_codec_device *dev);
 
 static void maru_brill_codec_divide_device_memory(void)
 {
-	struct device_mem *elem = NULL;
-	int index = 0, cnt;
+	int i = 0, cnt = 0;
+	// First small memory block reserved for meta data
+	int offset = CODEC_S_DEVICE_MEM_SIZE;
+	for (i = 0; i < 3; ++i) {
+		struct memory_block *block = &maru_brill_codec->memory_blocks[i];
+		block->start_offset = offset;
+		for (cnt = 0; cnt < block->n_units; cnt++) {
+			block->units[cnt].mem_offset = offset;
+			list_add_tail(&block->units[cnt].entry, &block->available);
 
-	elem =
-		kzalloc(sizeof(struct device_mem) * (63 + 4 + 2), GFP_KERNEL);
-	if (!elem) {
-		ERROR("falied to allocate memory!!\n");
-		return;
+			offset += block->unit_size;
+		}
+		block->end_offset = offset;
 	}
-
-	for (cnt = 0; cnt < CODEC_S_DEVICE_MEM_COUNT; index++, cnt++) {
-		elem[index].mem_offset = (index + 1) * CODEC_S_DEVICE_MEM_SIZE;
-		elem[index].occupied = false;
-		list_add_tail(&elem[index].entry, &maru_brill_codec->avail_s_memblk);
-	}
-
-	for (cnt = 0; cnt < CODEC_M_DEVICE_MEM_COUNT; index++, cnt++) {
-		elem[index].mem_offset = (16 * 1024 * 1024) + (cnt * CODEC_M_DEVICE_MEM_SIZE);
-		elem[index].occupied = false;
-		list_add_tail(&elem[index].entry, &maru_brill_codec->avail_m_memblk);
-	}
-
-	for (cnt = 0; cnt < CODEC_L_DEVICE_MEM_COUNT; index++, cnt++) {
-		elem[index].mem_offset = (16 * 1024 * 1024) + (8 * 1024 * 1024) + (cnt * CODEC_L_DEVICE_MEM_SIZE);
-		elem[index].occupied = false;
-		list_add_tail(&elem[index].entry, &maru_brill_codec->avail_l_memblk);
-	}
-
-	maru_brill_codec->elem = elem;
 }
 
 static void maru_brill_codec_bh_func(struct work_struct *work)
@@ -291,247 +253,103 @@ static void maru_brill_codec_bh(struct maru_brill_codec_device *dev)
 	queue_work(maru_brill_codec_bh_workqueue, &maru_brill_codec_bh_work);
 }
 
-#if 0
-static int lock_buffer(void)
-{
-	int ret;
-	ret = down_interruptible(&maru_brill_codec_buffer_mutex);
 
-	return ret;
-}
-
-static void unlock_buffer(void)
-{
-	up(&maru_brill_codec_buffer_mutex);
-}
-#endif
-
-static int secure_s_device_memory(uint32_t blk_id)
+static int secure_device_memory(uint32_t blk_id, uint32_t buf_size, int non_blocking)
 {
 	int ret = -1;
-	struct device_mem *elem = NULL;
+	struct device_mem *unit = NULL;
+	enum block_size index = SMALL;
+	struct memory_block* block = NULL;
 
-	// decrease s_buffer_semaphore
-	DEBUG("before down s_buffer_sema: %d\n", s_buffer_sema.count);
-	ret = down_interruptible(&s_buffer_sema);
-	DEBUG("after down s_buffer_sema: %d\n", s_buffer_sema.count);
-	if (ret < 0) {
-		DEBUG("no available memory block\n");
-		return ret;
-	}
-
-	mutex_lock(&s_block_mutex);
-
-	if (!list_empty(&maru_brill_codec->avail_s_memblk)) {
-		elem =
-			list_first_entry(&maru_brill_codec->avail_s_memblk,
-							struct device_mem, entry);
-		if (!elem) {
-			ret = -1;
-			up(&s_buffer_sema);
-			DEBUG("failed to get first entry from avail_s_memblk.\n");
-		} else {
-			elem->blk_id = blk_id;
-			elem->occupied = true;
-
-			list_move_tail(&elem->entry, &maru_brill_codec->used_s_memblk);
-			ret = elem->mem_offset;
-			DEBUG("get available memory region: 0x%x\n", ret);
-		}
+	if (buf_size < CODEC_S_DEVICE_MEM_SIZE)
+	{
+		index = SMALL;
+	} else if (buf_size < CODEC_M_DEVICE_MEM_SIZE) {
+		index = MEDIUM;
+	} else if (buf_size < CODEC_L_DEVICE_MEM_SIZE) {
+		index = LARGE;
 	} else {
-		DEBUG("the number of buffer mutex: %d\n",  s_buffer_sema.count);
-		DEBUG("no available memory block\n");
-		ret = -1;
-		up(&s_buffer_sema);
+		// error
 	}
 
-	mutex_unlock(&s_block_mutex);
+	block = &maru_brill_codec->memory_blocks[index];
+
+	// decrease buffer_semaphore
+	DEBUG("before down buffer_sema: %d\n", block->semaphore.count);
+
+	if (non_blocking)
+	{
+		ret = down_trylock(&block->semaphore);
+	} else {
+		ret = down_interruptible(&block->semaphore);
+	}
+
+	if (ret)
+	{
+		ERROR("no available memory block\n");
+		return -1;
+	}
+
+	DEBUG("after down buffer_sema: %d\n", block->semaphore.count);
+
+	mutex_lock(&block->access_mutex);
+	unit = list_first_entry(&block->available, struct device_mem, entry);
+	if (!unit) {
+		// available unit counts are protected under semaphore.
+		// so can not enter here...
+		ret = -1;
+		up(&block->semaphore);
+		ERROR("failed to get memory block.\n");
+	} else {
+		unit->blk_id = blk_id;
+		list_move_tail(&unit->entry, &block->occupied);
+		ret = unit->mem_offset;
+		DEBUG("get available memory region: 0x%x\n", ret);
+	}
+	mutex_unlock(&block->access_mutex);
 
 	return ret;
-}
-
-static void release_s_device_memory(uint32_t mem_offset)
-{
-	struct device_mem *elem = NULL;
-	struct list_head *pos, *temp;
-
-	mutex_lock(&s_block_mutex);
-	if (!list_empty(&maru_brill_codec->used_s_memblk)) {
-		list_for_each_safe(pos, temp, &maru_brill_codec->used_s_memblk) {
-			elem = list_entry(pos, struct device_mem, entry);
-			if (elem->mem_offset == (uint32_t)mem_offset) {
-
-				elem->blk_id = 0;
-				elem->occupied = false;
-				list_move_tail(&elem->entry, &maru_brill_codec->avail_s_memblk);
-
-				up(&s_buffer_sema);
-				DEBUG("unlock s_buffer_sema: %d\n", s_buffer_sema.count);
-
-				break;
-			}
-		}
-	} else {
-		DEBUG("there is no used memory block.\n");
-	}
-	mutex_unlock(&s_block_mutex);
-}
-
-static int secure_m_device_memory(uint32_t blk_id)
-{
-	int ret = -1;
-	struct device_mem *elem = NULL;
-
-	// decrease m_buffer_semaphore
-	ret = down_interruptible(&m_buffer_sema);
-	if (ret < 0) {
-		DEBUG("m_buffer_sema: %d\n", m_buffer_sema.count);
-		DEBUG("no available memory block\n");
-		return ret;
-	}
-
-	mutex_lock(&m_block_mutex);
-
-	if (!list_empty(&maru_brill_codec->avail_m_memblk)) {
-		elem =
-			list_first_entry(&maru_brill_codec->avail_m_memblk,
-							struct device_mem, entry);
-		if (!elem) {
-			ret = -1;
-			up(&m_buffer_sema);
-			DEBUG("failed to get first entry from avail_m_memblk. %d\n", m_buffer_sema.count);
-		} else {
-			elem->blk_id = blk_id;
-			elem->occupied = true;
-
-			list_move_tail(&elem->entry, &maru_brill_codec->used_m_memblk);
-			ret = elem->mem_offset;
-			DEBUG("get available memory region: 0x%x\n", ret);
-		}
-	} else {
-		DEBUG("no available memory block\n");
-		ret = -1;
-		up(&m_buffer_sema);
-		DEBUG("the number of buffer mutex: %d\n",  m_buffer_sema.count);
-	}
-
-	mutex_unlock(&m_block_mutex);
-
-	return ret;
-}
-
-static void release_m_device_memory(uint32_t mem_offset)
-{
-	struct device_mem *elem = NULL;
-	struct list_head *pos, *temp;
-
-	mutex_lock(&m_block_mutex);
-	if (!list_empty(&maru_brill_codec->used_m_memblk)) {
-		list_for_each_safe(pos, temp, &maru_brill_codec->used_m_memblk) {
-			elem = list_entry(pos, struct device_mem, entry);
-			if (elem->mem_offset == (uint32_t)mem_offset) {
-
-				elem->blk_id = 0;
-				elem->occupied = false;
-				list_move_tail(&elem->entry, &maru_brill_codec->avail_m_memblk);
-
-				up(&m_buffer_sema);
-				DEBUG("unlock m_buffer_sema: %d\n", m_buffer_sema.count);
-
-				break;
-			}
-		}
-	} else {
-		DEBUG("there is no used memory block.\n");
-	}
-	mutex_unlock(&m_block_mutex);
-}
-
-
-static int32_t secure_l_device_memory(uint32_t blk_id)
-{
-	int ret = -1;
-	struct device_mem *elem = NULL;
-
-	// decrease m_buffer_semaphore
-	DEBUG("before down l_buffer_semaphore: %d\n", l_buffer_sema.count);
-	ret = down_interruptible(&l_buffer_sema);
-	DEBUG("after down l_buffer_semaphore: %d\n", l_buffer_sema.count);
-	if (ret < 0) {
-		DEBUG("l_buffer_semaphore: %d\n", l_buffer_sema.count);
-		DEBUG("no available memory block\n");
-		return ret;
-	}
-
-	mutex_lock(&l_block_mutex);
-
-	if (!list_empty(&maru_brill_codec->avail_l_memblk)) {
-		elem =
-			list_first_entry(&maru_brill_codec->avail_l_memblk,
-							struct device_mem, entry);
-		if (!elem) {
-			ret = -1;
-			up(&l_buffer_sema);
-			DEBUG("failed to get first entry from avail_l_memblk.\n");
-		} else {
-			elem->blk_id = blk_id;
-			elem->occupied = true;
-
-			list_move_tail(&elem->entry, &maru_brill_codec->used_l_memblk);
-			ret = elem->mem_offset;
-			DEBUG("get available memory region: 0x%x\n", ret);
-		}
-	} else {
-		DEBUG("the number of buffer mutex: %d\n",  l_buffer_sema.count);
-		DEBUG("no available memory block\n");
-		ret = -1;
-		up(&l_buffer_sema);
-	}
-
-	mutex_unlock(&l_block_mutex);
-
-	return ret;
-}
-
-static void release_l_device_memory(uint32_t mem_offset)
-{
-	struct device_mem *elem = NULL;
-	struct list_head *pos, *temp;
-
-	mutex_lock(&l_block_mutex);
-	if (!list_empty(&maru_brill_codec->used_l_memblk)) {
-		list_for_each_safe(pos, temp, &maru_brill_codec->used_l_memblk) {
-			elem = list_entry(pos, struct device_mem, entry);
-			if (elem->mem_offset == (uint32_t)mem_offset) {
-
-				elem->blk_id = 0;
-				elem->occupied = false;
-				list_move_tail(&elem->entry, &maru_brill_codec->avail_l_memblk);
-
-				up(&l_buffer_sema);
-				DEBUG("up l_buffer_semaphore: %d\n", l_buffer_sema.count);
-
-				break;
-			}
-		}
-	} else {
-		DEBUG("there is no used memory block.\n");
-	}
-	mutex_unlock(&l_block_mutex);
 }
 
 static void release_device_memory(uint32_t mem_offset)
 {
-	if (mem_offset < (16 * 1024 * 1024)) {
-		DEBUG("release small size of memory\n");
-		release_s_device_memory(mem_offset);
-	} else if (mem_offset < (24 * 1024 * 1024)) {
-		DEBUG("release medium size of memory\n");
-		release_m_device_memory(mem_offset);
+	struct device_mem *unit = NULL;
+	enum block_size index = SMALL;
+	struct memory_block *block = NULL;
+
+	struct list_head *pos, *temp;
+
+	if (mem_offset < maru_brill_codec->memory_blocks[0].end_offset)
+	{
+		index = SMALL;
+	} else if (mem_offset < maru_brill_codec->memory_blocks[1].end_offset) {
+		index = MEDIUM;
+	} else if (mem_offset < maru_brill_codec->memory_blocks[2].end_offset) {
+		index = LARGE;
 	} else {
-		DEBUG("release large size of memory\n");
-		release_l_device_memory(mem_offset);
+		// error
 	}
+
+	block = &maru_brill_codec->memory_blocks[index];
+
+	mutex_lock(&block->access_mutex);
+	if (!list_empty(&block->occupied)) {
+		list_for_each_safe(pos, temp, &block->occupied) {
+			unit = list_entry(pos, struct device_mem, entry);
+			if (unit->mem_offset == (uint32_t)mem_offset) {
+				unit->blk_id = 0;
+				list_move_tail(&unit->entry, &block->available);
+				up(&block->semaphore);
+				DEBUG("unlock s_buffer_sema: %d\n", block->semaphore.count);
+
+				break;
+			}
+		}
+	} else {
+		// can not enter here...
+		ERROR("there is no used memory block.\n");
+	}
+	mutex_unlock(&block->access_mutex);
 }
 
 static void maru_brill_codec_info_cache(void)
@@ -644,7 +462,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 			break;
 		}
 
-		if (mem_offset == maru_brill_codec->mem_size) {
+		if (mem_offset >= maru_brill_codec->mem_size) {
 			DEBUG("offset of device memory is overflow!! 0x%x\n", mem_offset);
 			ret = -EIO;
 		} else {
@@ -660,11 +478,17 @@ static long maru_brill_codec_ioctl(struct file *file,
 		}
 	}
 		break;
-	case CODEC_CMD_GET_DATA_FROM_SMALL_BUFFER:
-		DEBUG("read small size of data from device memory\n");
+	case CODEC_CMD_GET_DATA_INTO_DEVICE_MEM:
+	{
+		uint32_t buf_size;
+		DEBUG("read data into small buffer\n");
+		if (copy_from_user(&buf_size, (void *)arg, sizeof(uint32_t))) {
+			ERROR("ioctl: failed to copy data from user\n");
+			ret = -EIO;
+			break;
+		}
 
-		value =
-			secure_s_device_memory((uint32_t)file);
+		value = secure_device_memory((uint32_t)file, buf_size, 0);
 		if (value < 0) {
 			DEBUG("failed to get available memory\n");
 			ret = -EINVAL;
@@ -683,59 +507,41 @@ static long maru_brill_codec_ioctl(struct file *file,
 				ret = -EIO;
 			}
 		}
+	}
 		break;
-	case CODEC_CMD_GET_DATA_FROM_MEDIUM_BUFFER:
-		DEBUG("read medium size of data from device memory\n");
+	case CODEC_CMD_SECURE_BUFFER:
+	{
+		uint32_t buf_size;
+		DEBUG("read data into small buffer\n");
+		if (copy_from_user(&buf_size, (void *)arg, sizeof(uint32_t))) {
+			ERROR("ioctl: failed to copy data from user\n");
+			ret = -EIO;
+			break;
+		}
 
-		value =
-			secure_m_device_memory((uint32_t)file);
+		value = secure_device_memory((uint32_t)file, buf_size, 0);
 		if (value < 0) {
 			DEBUG("failed to get available memory\n");
 			ret = -EINVAL;
 		} else {
-			DEBUG("send a request to pop data from device. %p\n", file);
-
-			ENTER_CRITICAL_SECTION;
-			writel((uint32_t)value,
-					maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-			writel((uint32_t)file,
-					maru_brill_codec->ioaddr + CODEC_CMD_GET_DATA_FROM_QUEUE);
-			LEAVE_CRITICAL_SECTION;
-
 			if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
 				ERROR("ioctl: failed to copy data to user.\n");
 				ret = -EIO;
 			}
 		}
+	}
 		break;
-	case CODEC_CMD_GET_DATA_FROM_LARGE_BUFFER:
-		DEBUG("read large size of data from device memory\n");
-
-		value =
-			secure_l_device_memory((uint32_t)file);
-		if (value < 0) {
-			DEBUG("failed to get available memory\n");
-			ret = -EINVAL;
-
-		} else {
-			DEBUG("send a request to pop data from device. %p\n", file);
-
-			ENTER_CRITICAL_SECTION;
-			writel((uint32_t)value,
-					maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-			writel((uint32_t)file,
-					maru_brill_codec->ioaddr + CODEC_CMD_GET_DATA_FROM_QUEUE);
-			LEAVE_CRITICAL_SECTION;
-
-			if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
-				ERROR("ioctl: failed to copy data to user.\n");
-				ret = -EIO;
-			}
+	case CODEC_CMD_TRY_SECURE_BUFFER:
+	{
+		uint32_t buf_size;
+		DEBUG("read data into small buffer\n");
+		if (copy_from_user(&buf_size, (void *)arg, sizeof(uint32_t))) {
+			ERROR("ioctl: failed to copy data from user\n");
+			ret = -EIO;
+			break;
 		}
-		break;
-	case CODEC_CMD_SECURE_SMALL_BUFFER:
-		value =
-			secure_s_device_memory((uint32_t)file);
+
+		value = secure_device_memory((uint32_t)file, buf_size, 0);
 		if (value < 0) {
 			DEBUG("failed to get available memory\n");
 			ret = -EINVAL;
@@ -746,32 +552,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 			}
 		}
 		break;
-	case CODEC_CMD_SECURE_MEDIUM_BUFFER:
-		value =
-			secure_m_device_memory((uint32_t)file);
-		if (value < 0) {
-			DEBUG("failed to get available memory\n");
-			ret = -EINVAL;
-		} else {
-			if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
-				ERROR("ioctl: failed to copy data to user.\n");
-				ret = -EIO;
-			}
-		}
-		break;
-	case CODEC_CMD_SECURE_LARGE_BUFFER:
-		value =
-			secure_l_device_memory((uint32_t)file);
-		if (value < 0) {
-			DEBUG("failed to get available memory\n");
-			ret = -EINVAL;
-		} else {
-			if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
-				ERROR("ioctl: failed to copy data to user.\n");
-				ret = -EIO;
-			}
-		}
-		break;
+	}
 	case CODEC_CMD_RELEASE_BUFFER:
 	{
 		uint32_t mem_offset;
@@ -972,62 +753,30 @@ static int maru_brill_codec_open(struct inode *inode, struct file *file)
 
 static void maru_brill_codec_release_unused_memory(uint32_t blk_id)
 {
-	struct device_mem *elem = NULL;
+	struct device_mem *unit = NULL;
 	struct list_head *pos, *temp;
 
-	mutex_lock(&s_block_mutex);
-	if (!list_empty(&maru_brill_codec->used_s_memblk)) {
-		list_for_each_safe(pos, temp, &maru_brill_codec->used_s_memblk) {
-			elem = list_entry(pos, struct device_mem, entry);
-			if (elem->blk_id == blk_id) {
-				DEBUG("move element(%p) to available memory block.\n", elem);
-				elem->blk_id = 0;
-				elem->occupied = false;
-				list_move_tail(&elem->entry, &maru_brill_codec->avail_s_memblk);
+	int i = 0;
 
-				up(&s_buffer_sema);
+	for (i = 0; i < 3; ++i) {
+		struct memory_block *block = &maru_brill_codec->memory_blocks[i];
+		mutex_lock(&block->access_mutex);
+		if (!list_empty(&block->occupied)) {
+			list_for_each_safe(pos, temp, &block->occupied) {
+				unit = list_entry(pos, struct device_mem, entry);
+				if (unit->blk_id == blk_id) {
+					DEBUG("move element(%p) to available memory block.\n", unit);
+					unit->blk_id = 0;
+					list_move_tail(&unit->entry, &block->available);
+
+					up(&block->semaphore);
+				}
 			}
+		} else {
+			DEBUG("no used memory block.\n");
 		}
-	} else {
-		DEBUG("no used memory block.\n");
+		mutex_unlock(&block->access_mutex);
 	}
-	mutex_unlock(&s_block_mutex);
-
-	mutex_lock(&m_block_mutex);
-	if (!list_empty(&maru_brill_codec->used_m_memblk)) {
-		list_for_each_safe(pos, temp, &maru_brill_codec->used_m_memblk) {
-			elem = list_entry(pos, struct device_mem, entry);
-			if (elem->blk_id == blk_id) {
-				DEBUG("move element(%p) to available memory block.\n", elem);
-				elem->blk_id = 0;
-				elem->occupied = false;
-				list_move_tail(&elem->entry, &maru_brill_codec->avail_m_memblk);
-
-				up(&m_buffer_sema);
-			}
-		}
-	} else {
-		DEBUG("no used memory block.\n");
-	}
-	mutex_unlock(&m_block_mutex);
-
-	mutex_lock(&l_block_mutex);
-	if (!list_empty(&maru_brill_codec->used_l_memblk)) {
-		list_for_each_safe(pos, temp, &maru_brill_codec->used_l_memblk) {
-			elem = list_entry(pos, struct device_mem, entry);
-			if (elem->blk_id == blk_id) {
-				DEBUG("move element(%p) to available memory block.\n", elem);
-				elem->blk_id = 0;
-				elem->occupied = false;
-				list_move_tail(&elem->entry, &maru_brill_codec->avail_l_memblk);
-
-				up(&l_buffer_sema);
-			}
-		}
-	} else {
-		DEBUG("no used memory block.\n");
-	}
-	mutex_unlock(&l_block_mutex);
 }
 
 static int maru_brill_codec_release(struct inode *inode, struct file *file)
@@ -1085,6 +834,7 @@ static int __devinit maru_brill_codec_probe(struct pci_dev *pci_dev,
 	const struct pci_device_id *pci_id)
 {
 	int ret = 0;
+	int index = 0;
 
 	printk(KERN_INFO "%s: driver is probed.\n", DEVICE_NAME);
 
@@ -1097,12 +847,24 @@ static int __devinit maru_brill_codec_probe(struct pci_dev *pci_dev,
 
 	maru_brill_codec->dev = pci_dev;
 
-	INIT_LIST_HEAD(&maru_brill_codec->avail_s_memblk);
-	INIT_LIST_HEAD(&maru_brill_codec->used_s_memblk);
-	INIT_LIST_HEAD(&maru_brill_codec->avail_m_memblk);
-	INIT_LIST_HEAD(&maru_brill_codec->used_m_memblk);
-	INIT_LIST_HEAD(&maru_brill_codec->avail_l_memblk);
-	INIT_LIST_HEAD(&maru_brill_codec->used_l_memblk);
+	// initialize memory block structures
+	maru_brill_codec->memory_blocks[0].unit_size = CODEC_S_DEVICE_MEM_SIZE;
+	maru_brill_codec->memory_blocks[0].n_units = CODEC_S_DEVICE_MEM_COUNT;
+	maru_brill_codec->memory_blocks[1].unit_size = CODEC_M_DEVICE_MEM_SIZE;
+	maru_brill_codec->memory_blocks[1].n_units = CODEC_M_DEVICE_MEM_COUNT;
+	maru_brill_codec->memory_blocks[2].unit_size = CODEC_L_DEVICE_MEM_SIZE;
+	maru_brill_codec->memory_blocks[2].n_units = CODEC_L_DEVICE_MEM_COUNT;
+
+	for (index = 0; index < 3; ++index) {
+		struct memory_block *block = &maru_brill_codec->memory_blocks[index];
+		block->units =
+			kzalloc(sizeof(struct device_mem) * block->n_units, GFP_KERNEL);
+
+		INIT_LIST_HEAD(&block->available);
+		INIT_LIST_HEAD(&block->occupied);
+		sema_init(&block->semaphore, block->n_units);
+		mutex_init(&block->access_mutex);
+	}
 
 	maru_brill_codec_divide_device_memory();
 
@@ -1192,10 +954,13 @@ static void __devinit maru_brill_codec_remove(struct pci_dev *pci_dev)
 			maru_brill_codec->mem_start = 0;
 		}
 
-		if (maru_brill_codec->elem) {
-			kfree(maru_brill_codec->elem);
-			maru_brill_codec->elem = NULL;
+/*
+		if (maru_brill_codec->units) {
+// FIXME
+//			kfree(maru_brill_codec->elem);
+			maru_brill_codec->units= NULL;
 		}
+*/
 
 		if (maru_brill_codec->codec_elem.buf) {
 			kfree(maru_brill_codec->codec_elem.buf);
