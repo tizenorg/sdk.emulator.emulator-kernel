@@ -105,8 +105,7 @@ enum codec_io_cmd {
 	CODEC_CMD_GET_ELEMENT,
 	CODEC_CMD_GET_CONTEXT_INDEX,
 	CODEC_CMD_GET_ELEMENT_DATA,
-	CODEC_CMD_USE_DEVICE_MEM = 40,		// plugin and driver
-	CODEC_CMD_GET_DATA_INTO_DEVICE_MEM,
+	CODEC_CMD_PUT_DATA_INTO_BUFFER = 40, // plugin and driver
 	CODEC_CMD_SECURE_BUFFER,
 	CODEC_CMD_TRY_SECURE_BUFFER,
 	CODEC_CMD_RELEASE_BUFFER,
@@ -186,9 +185,9 @@ struct maru_brill_codec_device {
 #define DEVICE_MEMORY_COUNT	8
 #define CODEC_CONTEXT_SIZE	1024
 
-#define CODEC_S_DEVICE_MEM_COUNT	15	// small		(256K)	8M
-#define CODEC_M_DEVICE_MEM_COUNT	8	// medium		(2M)	8M
-#define CODEC_L_DEVICE_MEM_COUNT	3	// large		(4M)	8M
+#define CODEC_S_DEVICE_MEM_COUNT	15	// small		(256K)	4M
+#define CODEC_M_DEVICE_MEM_COUNT	8	// medium		(2M)	16M
+#define CODEC_L_DEVICE_MEM_COUNT	3	// large		(4M)	12M
 
 #define CODEC_S_DEVICE_MEM_SIZE		0x40000		// small
 #define CODEC_M_DEVICE_MEM_SIZE		0x200000	// medium
@@ -469,33 +468,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 			ret = -EIO;
 		}
 		break;
-	case CODEC_CMD_USE_DEVICE_MEM:
-	{
-		uint32_t mem_offset;
-
-		if (copy_from_user(&mem_offset, (void *)arg, sizeof(uint32_t))) {
-			ERROR("ioctl: failed to copy data from user\n");
-			ret = -EIO;
-			break;
-		}
-
-		if (mem_offset >= maru_brill_codec->mem_size) {
-			DEBUG("offset of device memory is overflow!! 0x%x\n", mem_offset);
-			ret = -EIO;
-		} else {
-			// notify that codec device can copy data to memory region.
-			DEBUG("send a request to pop data from device. %p\n", file);
-
-			ENTER_CRITICAL_SECTION;
-			writel((uint32_t)mem_offset,
-					maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-			writel((uint32_t)file,
-					maru_brill_codec->ioaddr + CODEC_CMD_GET_DATA_FROM_QUEUE);
-			LEAVE_CRITICAL_SECTION;
-		}
-	}
-		break;
-	case CODEC_CMD_GET_DATA_INTO_DEVICE_MEM:
+	case CODEC_CMD_PUT_DATA_INTO_BUFFER:
 	{
 		uint32_t buf_size, offset;
 		DEBUG("read data into small buffer\n");
