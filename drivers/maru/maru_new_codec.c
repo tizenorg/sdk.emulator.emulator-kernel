@@ -149,12 +149,15 @@ struct memory_block {
 	uint32_t start_offset;
 	uint32_t end_offset;
 
+	bool last_buf_secured;
+
 	struct device_mem *units;
 
 	struct list_head available;
 	struct list_head occupied;
 
 	struct semaphore semaphore;
+	struct semaphore last_buf_semaphore;
 	struct mutex access_mutex;
 };
 
@@ -183,9 +186,9 @@ struct maru_brill_codec_device {
 #define DEVICE_MEMORY_COUNT	8
 #define CODEC_CONTEXT_SIZE	1024
 
-#define CODEC_S_DEVICE_MEM_COUNT	63	// small		(256K)	8M
-#define CODEC_M_DEVICE_MEM_COUNT	4	// medium		(2M)	8M
-#define CODEC_L_DEVICE_MEM_COUNT	2	// large		(4M)	8M
+#define CODEC_S_DEVICE_MEM_COUNT	15	// small		(256K)	8M
+#define CODEC_M_DEVICE_MEM_COUNT	8	// medium		(2M)	8M
+#define CODEC_L_DEVICE_MEM_COUNT	3	// large		(4M)	8M
 
 #define CODEC_S_DEVICE_MEM_SIZE		0x40000		// small
 #define CODEC_M_DEVICE_MEM_SIZE		0x200000	// medium
@@ -254,9 +257,10 @@ static void maru_brill_codec_bh(struct maru_brill_codec_device *dev)
 }
 
 
-static int secure_device_memory(uint32_t blk_id, uint32_t buf_size, int non_blocking)
+static int secure_device_memory(uint32_t blk_id, uint32_t buf_size, 
+		int non_blocking, uint32_t* offset)
 {
-	int ret = -1;
+	int ret = 0;
 	struct device_mem *unit = NULL;
 	enum block_size index = SMALL;
 	struct memory_block* block = NULL;
@@ -279,15 +283,19 @@ static int secure_device_memory(uint32_t blk_id, uint32_t buf_size, int non_bloc
 
 	if (non_blocking)
 	{
-		ret = down_trylock(&block->semaphore);
+		if (down_trylock(&block->semaphore)) { // if 1
+			DEBUG("buffer is not available now\n");
+			return -1;
+		}
 	} else {
-		ret = down_interruptible(&block->semaphore);
-	}
-
-	if (ret)
-	{
-		ERROR("no available memory block\n");
-		return -1;
+		if (down_trylock(&block->semaphore)) { // if 1
+			if (down_interruptible(&block->last_buf_semaphore)) { // if -EINTR
+				DEBUG("down_interruptible interrupted\n");
+				return -1;
+			}
+			block->last_buf_secured = 1;
+			ret = 1;
+		}
 	}
 
 	DEBUG("after down buffer_sema: %d\n", block->semaphore.count);
@@ -298,12 +306,16 @@ static int secure_device_memory(uint32_t blk_id, uint32_t buf_size, int non_bloc
 		// available unit counts are protected under semaphore.
 		// so can not enter here...
 		ret = -1;
-		up(&block->semaphore);
+		if (block->last_buf_secured) {
+			up(&block->last_buf_semaphore);
+		} else {
+			up(&block->semaphore);
+		}
 		ERROR("failed to get memory block.\n");
 	} else {
 		unit->blk_id = blk_id;
 		list_move_tail(&unit->entry, &block->occupied);
-		ret = unit->mem_offset;
+		*offset = unit->mem_offset;
 		DEBUG("get available memory region: 0x%x\n", ret);
 	}
 	mutex_unlock(&block->access_mutex);
@@ -339,7 +351,12 @@ static void release_device_memory(uint32_t mem_offset)
 			if (unit->mem_offset == (uint32_t)mem_offset) {
 				unit->blk_id = 0;
 				list_move_tail(&unit->entry, &block->available);
-				up(&block->semaphore);
+				if(block->last_buf_secured) {
+					up(&block->last_buf_semaphore);
+					block->last_buf_secured = 0;
+				} else {
+					up(&block->semaphore);
+				}
 				DEBUG("unlock s_buffer_sema: %d\n", block->semaphore.count);
 
 				break;
@@ -480,7 +497,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 		break;
 	case CODEC_CMD_GET_DATA_INTO_DEVICE_MEM:
 	{
-		uint32_t buf_size;
+		uint32_t buf_size, offset;
 		DEBUG("read data into small buffer\n");
 		if (copy_from_user(&buf_size, (void *)arg, sizeof(uint32_t))) {
 			ERROR("ioctl: failed to copy data from user\n");
@@ -488,7 +505,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 			break;
 		}
 
-		value = secure_device_memory((uint32_t)file, buf_size, 0);
+		value = secure_device_memory((uint32_t)file, buf_size, 0, &offset);
 		if (value < 0) {
 			DEBUG("failed to get available memory\n");
 			ret = -EINVAL;
@@ -496,22 +513,26 @@ static long maru_brill_codec_ioctl(struct file *file,
 			DEBUG("send a request to pop data from device. %p\n", file);
 
 			ENTER_CRITICAL_SECTION;
-			writel((uint32_t)value,
+			writel((uint32_t)offset,
 					maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
 			writel((uint32_t)file,
 					maru_brill_codec->ioaddr + CODEC_CMD_GET_DATA_FROM_QUEUE);
 			LEAVE_CRITICAL_SECTION;
 
-			if (copy_to_user((void *)arg, &value, sizeof(int32_t))) {
+			if (copy_to_user((void *)arg, &offset, sizeof(int32_t))) {
 				ERROR("ioctl: failed to copy data to user.\n");
 				ret = -EIO;
 			}
+		}
+
+		if(value == 1) {
+			ret = 1;
 		}
 	}
 		break;
 	case CODEC_CMD_SECURE_BUFFER:
 	{
-		uint32_t buf_size;
+		uint32_t buf_size, offset;
 		DEBUG("read data into small buffer\n");
 		if (copy_from_user(&buf_size, (void *)arg, sizeof(uint32_t))) {
 			ERROR("ioctl: failed to copy data from user\n");
@@ -519,12 +540,12 @@ static long maru_brill_codec_ioctl(struct file *file,
 			break;
 		}
 
-		value = secure_device_memory((uint32_t)file, buf_size, 0);
+		value = secure_device_memory((uint32_t)file, buf_size, 0, &offset);
 		if (value < 0) {
 			DEBUG("failed to get available memory\n");
 			ret = -EINVAL;
 		} else {
-			if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
+			if (copy_to_user((void *)arg, &offset, sizeof(uint32_t))) {
 				ERROR("ioctl: failed to copy data to user.\n");
 				ret = -EIO;
 			}
@@ -533,7 +554,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 		break;
 	case CODEC_CMD_TRY_SECURE_BUFFER:
 	{
-		uint32_t buf_size;
+		uint32_t buf_size, offset;
 		DEBUG("read data into small buffer\n");
 		if (copy_from_user(&buf_size, (void *)arg, sizeof(uint32_t))) {
 			ERROR("ioctl: failed to copy data from user\n");
@@ -541,12 +562,12 @@ static long maru_brill_codec_ioctl(struct file *file,
 			break;
 		}
 
-		value = secure_device_memory((uint32_t)file, buf_size, 0);
+		value = secure_device_memory((uint32_t)file, buf_size, 1, &offset);
 		if (value < 0) {
 			DEBUG("failed to get available memory\n");
 			ret = -EINVAL;
 		} else {
-			if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
+			if (copy_to_user((void *)arg, &offset, sizeof(uint32_t))) {
 				ERROR("ioctl: failed to copy data to user.\n");
 				ret = -EIO;
 			}
@@ -860,9 +881,12 @@ static int __devinit maru_brill_codec_probe(struct pci_dev *pci_dev,
 		block->units =
 			kzalloc(sizeof(struct device_mem) * block->n_units, GFP_KERNEL);
 
+		block->last_buf_secured = 0;
+
 		INIT_LIST_HEAD(&block->available);
 		INIT_LIST_HEAD(&block->occupied);
-		sema_init(&block->semaphore, block->n_units);
+		sema_init(&block->semaphore, block->n_units - 1);
+		sema_init(&block->last_buf_semaphore, 1);
 		mutex_init(&block->access_mutex);
 	}
 
