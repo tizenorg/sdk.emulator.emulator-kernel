@@ -57,14 +57,19 @@
 /* device protocol */
 #define MAX_BUF_SIZE  255
 
-unsigned char buf[MAX_BUF_SIZE];
+struct msg_info {
+    unsigned char client_id;
+    unsigned char client_type;
+    uint32_t use;
+    char buf[MAX_BUF_SIZE];
+};
 
 static int g_read_count = 0;
 
 /* device protocol */
 
 struct msg_buf {
-    unsigned char msg[MAX_BUF_SIZE];
+    struct msg_info msg;
     struct list_head list;
 };
 
@@ -93,8 +98,8 @@ struct virtio_nfc {
     struct virtqueue* rvq;
     struct virtqueue* svq;
 
-    unsigned char read_msginfo[MAX_BUF_SIZE];
-    unsigned char send_msginfo[MAX_BUF_SIZE];
+    struct msg_info read_msginfo;
+    struct msg_info send_msginfo;
 
     struct list_head read_list;
     struct list_head write_list;
@@ -136,7 +141,7 @@ int make_buf_and_kick(void)
     return 0;
 }
 
-static int add_inbuf(struct virtqueue *vq, unsigned char *msg)
+static int add_inbuf(struct virtqueue *vq, struct msg_info *msg)
 {
     struct scatterlist sg[1];
     int ret;
@@ -243,7 +248,7 @@ static ssize_t nfc_read(struct file *filp, char __user *ubuf, size_t len,
     spin_lock_irqsave(&pnfc_info[NFC_READ]->inbuf_lock, flags);
 
 
-    if (add_inbuf(vnfc->rvq, vnfc->read_msginfo) < 0){
+    if (add_inbuf(vnfc->rvq, &vnfc->read_msginfo) < 0){
         LOG("failed add_buf\n");
     }
 
@@ -276,7 +281,9 @@ static ssize_t nfc_write(struct file *f, const char __user *ubuf, size_t len,
     memset(&vnfc->send_msginfo, 0, sizeof(vnfc->send_msginfo));
     ret = copy_from_user(&vnfc->send_msginfo, ubuf, sizeof(vnfc->send_msginfo));
 
-    LOG("copy_from_user ret = %d, msg = %s\n", ret, vnfc->send_msginfo);
+    LOG("copy_from_user ret = %d, id = %02x, type = %02x, msg = %s use = %d\n",
+            ret, vnfc->send_msginfo.client_id, vnfc->send_msginfo.client_type,
+            vnfc->send_msginfo.buf, vnfc->send_msginfo.use);
 
     if (ret) {
         ret = -EFAULT;
@@ -359,7 +366,7 @@ static void nfc_recv_done(struct virtqueue *rvq) {
         /* insert into queue */
         msgbuf = (struct msg_buf*) __xmalloc(SIZEOF_MSG_BUF);
         memset(msgbuf, 0x00, sizeof(*msgbuf));
-        memcpy(&(msgbuf->msg), msg, sizeof(*msg));
+        memcpy(&(msgbuf->msg), msg, len);
 
         //LOG("copied msg data = %s, %s\n", msgbuf->msg.buf, msg->buf);
 
