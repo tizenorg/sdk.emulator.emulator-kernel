@@ -350,13 +350,6 @@ static void release_device_memory(uint32_t mem_offset)
 			if (unit->mem_offset == (uint32_t)mem_offset) {
 				unit->blk_id = 0;
 				list_move_tail(&unit->entry, &block->available);
-				if(block->last_buf_secured) {
-					up(&block->last_buf_semaphore);
-					block->last_buf_secured = 0;
-				} else {
-					up(&block->semaphore);
-				}
-				DEBUG("unlock s_buffer_sema: %d\n", block->semaphore.count);
 
 				break;
 			}
@@ -366,6 +359,14 @@ static void release_device_memory(uint32_t mem_offset)
 		ERROR("there is no used memory block.\n");
 	}
 	mutex_unlock(&block->access_mutex);
+
+	if(block->last_buf_secured) {
+		block->last_buf_secured = 0;
+		up(&block->last_buf_semaphore);
+	} else {
+		up(&block->semaphore);
+	}
+	DEBUG("unlock s_buffer_sema: %d\n", block->semaphore.count);
 }
 
 static void maru_brill_codec_info_cache(void)
