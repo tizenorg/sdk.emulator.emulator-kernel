@@ -94,7 +94,7 @@ MODULE_LICENSE("GPL2");
 
 /* Define i/o and api values.  */
 enum codec_io_cmd {
-	CODEC_CMD_API_INDEX = 10,			// driver and device
+	CODEC_CMD_API_INDEX = 10,				// driver and device
 	CODEC_CMD_CONTEXT_INDEX,
 	CODEC_CMD_FILE_INDEX,
 	CODEC_CMD_DEVICE_MEM_OFFSET,
@@ -102,14 +102,15 @@ enum codec_io_cmd {
 	CODEC_CMD_GET_CTX_FROM_QUEUE,
 	CODEC_CMD_GET_DATA_FROM_QUEUE,
 	CODEC_CMD_RELEASE_CONTEXT,
-	CODEC_CMD_GET_VERSION = 20,
+	CODEC_CMD_GET_VERSION = 20,				// plugin, driver and device
 	CODEC_CMD_GET_ELEMENT,
 	CODEC_CMD_GET_CONTEXT_INDEX,
 	CODEC_CMD_GET_ELEMENT_DATA,
-	CODEC_CMD_PUT_DATA_INTO_BUFFER = 40, // plugin and driver
+	CODEC_CMD_PUT_DATA_INTO_BUFFER = 40,	// plugin and driver
 	CODEC_CMD_SECURE_BUFFER,
 	CODEC_CMD_TRY_SECURE_BUFFER,
 	CODEC_CMD_RELEASE_BUFFER,
+	CODEC_CMD_INVOKE_API_AND_RELEASE_BUFFER,
 };
 
 enum codec_api_index {
@@ -130,7 +131,7 @@ struct codec_param {
 };
 
 struct codec_element {
-	void *buf;
+	void	*buf;
 	uint32_t buf_size;
 };
 
@@ -234,6 +235,7 @@ static DECLARE_WORK(maru_brill_codec_bh_work, maru_brill_codec_bh_func);
 static void maru_brill_codec_bh(struct maru_brill_codec_device *dev);
 
 static void maru_brill_codec_context_add(uint32_t user_pid, uint32_t ctx_id);
+static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque);
 
 static void maru_brill_codec_divide_device_memory(void)
 {
@@ -353,8 +355,7 @@ static void release_device_memory(uint32_t mem_offset)
 
 	struct list_head *pos, *temp;
 
-	if (mem_offset < maru_brill_codec->memory_blocks[0].end_offset)
-	{
+	if (mem_offset < maru_brill_codec->memory_blocks[0].end_offset)	{
 		index = SMALL;
 	} else if (mem_offset < maru_brill_codec->memory_blocks[1].end_offset) {
 		index = MEDIUM;
@@ -382,7 +383,7 @@ static void release_device_memory(uint32_t mem_offset)
 		ERROR("there is no used memory block.\n");
 	}
 
-	if(block->last_buf_secured) {
+	if (block->last_buf_secured) {
 		block->last_buf_secured = 0;
 		up(&block->last_buf_semaphore);
 		DEBUG("unlock last buffer semaphore.\n");
@@ -538,7 +539,11 @@ static long maru_brill_codec_ioctl(struct file *file,
 			}
 		}
 
-		if(value == 1) {
+		/* 1 means that only an available buffer is left at the moment.
+		 * gst-plugins-emulator will allocate heap buffer to store
+		   output buffer of codec.
+		 */
+		if (value == 1) {
 			ret = 1;
 		}
 	}
@@ -599,6 +604,18 @@ static long maru_brill_codec_ioctl(struct file *file,
 		release_device_memory(mem_offset);
 	}
 		break;
+	case CODEC_CMD_INVOKE_API_AND_RELEASE_BUFFER:
+	{
+		struct codec_param ioparam = { 0 };
+
+		if (copy_from_user(&ioparam, (void *)arg, sizeof(struct codec_param))) {
+			ERROR("failed to get codec parameter info from user\n");
+			return -EIO;
+		}
+
+		ret = maru_brill_codec_invoke_api_and_release_buffer(&ioparam);
+	}
+		break;
 	default:
 		DEBUG("no available command.");
 		ret = -EINVAL;
@@ -608,48 +625,26 @@ static long maru_brill_codec_ioctl(struct file *file,
 	return ret;
 }
 
-
-static ssize_t maru_brill_codec_read(struct file *file, char __user *buf,
-							size_t count, loff_t *fops)
+static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 {
-	DEBUG("do nothing.\n");
-	return 0;
-}
-
-/* Copy data between guest and host using mmap operation. */
-static ssize_t maru_brill_codec_write(struct file *file, const char __user *buf,
-							size_t count, loff_t *fops)
-{
-	struct codec_param ioparam = { 0 };
+	struct codec_param *ioparam = (struct codec_param *)opaque;
 	int api_index, ctx_index;
 	unsigned long flags;
 
-	if (!maru_brill_codec) {
-		ERROR("failed to get codec device info\n");
-		return -EINVAL;
-	}
-
-	if (copy_from_user(&ioparam, buf, sizeof(struct codec_param))) {
-		ERROR("failed to get codec parameter info from user\n");
-		return -EIO;
-	}
-
 	DEBUG("enter %s. %p\n", __func__, file);
 
-	api_index = ioparam.api_index;
-	ctx_index = ioparam.ctx_index;
+	api_index = ioparam->api_index;
+	ctx_index = ioparam->ctx_index;
 
 	switch (api_index) {
 	case CODEC_INIT:
 	{
 		ENTER_CRITICAL_SECTION(flags);
-		writel((uint32_t)file,
-				maru_brill_codec->ioaddr + CODEC_CMD_FILE_INDEX);
-		writel((uint32_t)ioparam.mem_offset,
+		writel((uint32_t)ioparam->mem_offset,
 				maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-		writel((int32_t)ioparam.ctx_index,
+		writel((int32_t)ioparam->ctx_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
-		writel((int32_t)ioparam.api_index,
+		writel((int32_t)ioparam->api_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
 
@@ -657,20 +652,18 @@ static ssize_t maru_brill_codec_write(struct file *file, const char __user *buf,
 		context_flags[ctx_index] = 0;
 	}
 		break;
-	case CODEC_DECODE_VIDEO... CODEC_ENCODE_AUDIO:
+	case CODEC_DECODE_VIDEO ... CODEC_ENCODE_AUDIO:
 	{
 		ENTER_CRITICAL_SECTION(flags);
-		writel((uint32_t)file,
-				maru_brill_codec->ioaddr + CODEC_CMD_FILE_INDEX);
-		writel((uint32_t)ioparam.mem_offset,
+		writel((uint32_t)ioparam->mem_offset,
 				maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-		writel((int32_t)ioparam.ctx_index,
+		writel((int32_t)ioparam->ctx_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
-		writel((int32_t)ioparam.api_index,
+		writel((int32_t)ioparam->api_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
 
-		release_device_memory(ioparam.mem_offset);
+		release_device_memory(ioparam->mem_offset);
 
 		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
 		context_flags[ctx_index] = 0;
@@ -679,13 +672,11 @@ static ssize_t maru_brill_codec_write(struct file *file, const char __user *buf,
 	case CODEC_PICTURE_COPY:
 	{
 		ENTER_CRITICAL_SECTION(flags);
-		writel((uint32_t)file,
-				maru_brill_codec->ioaddr + CODEC_CMD_FILE_INDEX);
-		writel((uint32_t)ioparam.mem_offset,
+		writel((uint32_t)ioparam->mem_offset,
 				maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-		writel((int32_t)ioparam.ctx_index,
+		writel((int32_t)ioparam->ctx_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
-		writel((int32_t)ioparam.api_index,
+		writel((int32_t)ioparam->api_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
 
@@ -693,32 +684,21 @@ static ssize_t maru_brill_codec_write(struct file *file, const char __user *buf,
 		context_flags[ctx_index] = 0;
 	}
 		break;
-	case CODEC_DEINIT:
+	case CODEC_DEINIT ... CODEC_FLUSH_BUFFERS:
 		ENTER_CRITICAL_SECTION(flags);
-		writel((uint32_t)file,
-				maru_brill_codec->ioaddr + CODEC_CMD_FILE_INDEX);
-		writel((int32_t)ioparam.ctx_index,
+		writel((int32_t)ioparam->ctx_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
-		writel((int32_t)ioparam.api_index,
-				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
-		LEAVE_CRITICAL_SECTION(flags);
-		break;
-	case CODEC_FLUSH_BUFFERS:
-		ENTER_CRITICAL_SECTION(flags);
-		writel((uint32_t)file,
-				maru_brill_codec->ioaddr + CODEC_CMD_FILE_INDEX);
-		writel((int32_t)ioparam.ctx_index,
-				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
-		writel((int32_t)ioparam.api_index,
+		writel((int32_t)ioparam->api_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
 		break;
 	default:
-		DEBUG("invalid api command: %d", api_index);
+		DEBUG("invalid API commands: %d", api_index);
 		break;
 	}
 
 	return 0;
+
 }
 
 static int maru_brill_codec_mmap(struct file *file, struct vm_area_struct *vm)
@@ -949,8 +929,6 @@ static int maru_brill_codec_release(struct inode *inode, struct file *file)
 /* define file opertion for CODEC */
 const struct file_operations maru_brill_codec_fops = {
 	.owner			 = THIS_MODULE,
-	.read			 = maru_brill_codec_read,
-	.write			 = maru_brill_codec_write,
 	.unlocked_ioctl	 = maru_brill_codec_ioctl,
 	.open			 = maru_brill_codec_open,
 	.mmap			 = maru_brill_codec_mmap,
