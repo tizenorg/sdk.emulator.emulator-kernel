@@ -79,25 +79,11 @@ MODULE_LICENSE("GPL2");
 #define ERROR(fmt, ...) \
 	printk(KERN_ERR "[%s][%d]: " fmt, DEVICE_NAME, __LINE__, ##__VA_ARGS__)
 
-#ifdef CODEC_TIME_LOG
-#include <linux/time.h>
-#define CODEC_CURRENT_TIME \
-{ \
-	struct timeval now; \
-	do_gettimeofday(&now); \
-	printk(KERN_INFO "[%s][%d] current time: %ld.%06ld\n", \
-		DEVICE_NAME, __LINE__, (long)now.tv_sec, (long)now.tv_usec); \
-}
-#else
-#define CODEC_CURRENT_TIME
-#endif
-
 /* Define i/o and api values.  */
 enum codec_io_cmd {
 	CODEC_CMD_API_INDEX = 10,				// driver and device
 	CODEC_CMD_CONTEXT_INDEX,
-	CODEC_CMD_FILE_INDEX,
-	CODEC_CMD_DEVICE_MEM_OFFSET,
+	CODEC_CMD_DEVICE_MEM_OFFSET = 13,
 	CODEC_CMD_GET_THREAD_STATE,
 	CODEC_CMD_GET_CTX_FROM_QUEUE,
 	CODEC_CMD_GET_DATA_FROM_QUEUE,
@@ -288,8 +274,7 @@ static int secure_device_memory(uint32_t blk_id, uint32_t buf_size,
 	enum block_size index = SMALL;
 	struct memory_block* block = NULL;
 
-	if (buf_size < CODEC_S_DEVICE_MEM_SIZE)
-	{
+	if (buf_size < CODEC_S_DEVICE_MEM_SIZE) {
 		index = SMALL;
 	} else if (buf_size < CODEC_M_DEVICE_MEM_SIZE) {
 		index = MEDIUM;
