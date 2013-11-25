@@ -1,10 +1,13 @@
 /*
  * Virtual device node for event injector of emulator
  *
- * Copyright (c) 2011 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2011 - 2013 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
+ * SooYoung Ha <yoosah.ha@samsung.com>
+ * JinHyung Choi <jinhyung2.choi@samsung.com>
  * Sungmin Ha <sungmin82.ha@samsung.com>
+ * YeongKyoon Lee <yeongkyoon.lee@samsung.com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -32,37 +35,49 @@
 
 int UsbMenuSel = 0;
 
-struct my_data {
+struct usb_mode_data {
 	int no;
-	char test[50];
+	char buffer[50];
 };
 
-static ssize_t show_UsbMenuSel(struct device *dev, 
-		struct device_attribute *attr, char *buf) 
+#define DEVICE_NAME	"usb_mode"
+#define USB_MODE_DEBUG
+
+#ifdef USB_MODE_DEBUG
+#define DLOG(level, fmt, ...) \
+	printk(level "maru_%s: " fmt, DEVICE_NAME, ##__VA_ARGS__)
+#else
+// do nothing
+#define DLOG(level, fmt, ...)
+#endif
+
+static ssize_t show_UsbMenuSel(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
-	printk("[%s] \n", __FUNCTION__);
+	DLOG(KERN_INFO, "get UsbMenuSel: %d\n", UsbMenuSel);
 	return snprintf(buf, PAGE_SIZE, "%d", UsbMenuSel);
 }
 
-static ssize_t store_UsbMenuSel(struct device *dev, 
-		struct device_attribute *attr, const char *buf, size_t count) 
+static ssize_t store_UsbMenuSel(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
 {
-	printk("[%s] \n", __FUNCTION__);
 	sscanf(buf, "%d", &UsbMenuSel);
+	DLOG(KERN_INFO, "set UsbMenuSel: %d\n", UsbMenuSel);
+
 	return strnlen(buf, PAGE_SIZE);
 }
 
 static DEVICE_ATTR(UsbMenuSel, S_IRUGO | S_IWUSR, show_UsbMenuSel, store_UsbMenuSel);
 
-static int sysfs_test_create_file(struct device *dev) 
+static int maru_usb_mode_sysfs_create_file(struct device *dev)
 {
 	int result = 0;
 
-	printk("[%d] [%s] \n", __LINE__, __FUNCTION__);
+	DLOG(KERN_INFO, "sysfs_create_file\n");
 
 	result = device_create_file(dev, &dev_attr_UsbMenuSel);
 	if (result){
-		printk("[%d] [%s] error \n", __LINE__, __FUNCTION__);
+		DLOG(KERN_ERR, "failed to create UsbMenuSel file\n");
 		return result;
 	}
 
@@ -70,28 +85,32 @@ static int sysfs_test_create_file(struct device *dev)
 }
 
 
-static void sysfs_test_remove_file(struct device *dev) 
+static void maru_usb_mode_sysfs_remove_file(struct device *dev)
 {
-	printk("[%s] \n", __FUNCTION__);
+	DLOG(KERN_INFO, "sysfs_remove_file\n");
+
 	device_remove_file(dev, &dev_attr_UsbMenuSel);
 }
 
-static void sysfs_test_dev_release(struct device *dev) {}
+static void maru_usb_mode_sysfs_dev_release(struct device *dev)
+{
+	DLOG(KERN_INFO, "sysfs_dev_release\n");
+}
 
 static struct platform_device the_pdev = {
-	.name = "usb_mode",
+	.name = DEVICE_NAME,
 	.id = -1,
 	.dev = {
-		.release = sysfs_test_dev_release,
+		.release = maru_usb_mode_sysfs_dev_release,
 	}
 };
 
-static int __init sysfs_test_init(void) 
+static int __init maru_usb_mode_sysfs_init(void)
 {
 	int err = 0;
-	struct my_data *data;
+	struct usb_mode_data *data;
 
-	printk("[%s] \n", __FUNCTION__);
+	DLOG(KERN_INFO, "sysfs_init\n");
 
 	err = platform_device_register(&the_pdev);
 	if (err) {
@@ -99,40 +118,40 @@ static int __init sysfs_test_init(void)
 		return err;
 	}
 
-	data = kzalloc(sizeof(struct my_data), GFP_KERNEL);
+	data = kzalloc(sizeof(struct usb_mode_data), GFP_KERNEL);
 	if (!data) {
-		printk("[%s] kzalloc error\n", __FUNCTION__);
-		err = -ENOMEM;
+		DLOG(KERN_ERR, "kzalloc failure\n");
 		platform_device_unregister(&the_pdev);
-        	return err;
+		return -ENOMEM;
 	}
 
 	dev_set_drvdata(&the_pdev.dev, (void*)data);
 
-	err = sysfs_test_create_file(&the_pdev.dev);
+	err = maru_usb_mode_sysfs_create_file(&the_pdev.dev);
 	if (err) {
-		printk("sysfs_create_file error\n");
+		DLOG(KERN_ERR, "sysfs_create_file failure\n");
 		kfree(data);
+		platform_device_unregister(&the_pdev);
+		return err;
 	}
 
 	return 0;
 }
 
-static void __exit sysfs_test_exit(void) 
+static void __exit maru_usb_mode_sysfs_exit(void)
 {
 	void *data = dev_get_drvdata(&the_pdev.dev);
 
-	printk("[%s] \n", __FUNCTION__);
+	DLOG(KERN_INFO, "sysfs_exit\n");
 
-	kfree(data);
-	sysfs_test_remove_file(&the_pdev.dev);
+	if (data) {
+		kfree(data);
+	}
+	maru_usb_mode_sysfs_remove_file(&the_pdev.dev);
 	platform_device_unregister(&the_pdev);
 }
 
-module_init(sysfs_test_init);
-module_exit(sysfs_test_exit);
-
+module_init(maru_usb_mode_sysfs_init);
+module_exit(maru_usb_mode_sysfs_exit);
 
 MODULE_LICENSE("GPL");
-
-
