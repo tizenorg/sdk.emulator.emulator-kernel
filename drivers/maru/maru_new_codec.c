@@ -337,6 +337,7 @@ static void release_device_memory(uint32_t mem_offset)
 	struct device_mem *unit = NULL;
 	enum block_size index = SMALL;
 	struct memory_block *block = NULL;
+	bool found = false;
 
 	struct list_head *pos, *temp;
 
@@ -360,25 +361,30 @@ static void release_device_memory(uint32_t mem_offset)
 				unit->blk_id = 0;
 				list_move_tail(&unit->entry, &block->available);
 
+				if (block->last_buf_secured) {
+					block->last_buf_secured = 0;
+					up(&block->last_buf_semaphore);
+					DEBUG("unlock last buffer semaphore.\n");
+				} else {
+					up(&block->semaphore);
+					DEBUG("unlock semaphore: %d.\n", block->semaphore.count);
+				}
+
+				found = true;
+
 				break;
 			}
+		}
+		if (!found) {
+			// can not enter here...
+			ERROR("there is no used memory block. offset = 0x%x.\n", (uint32_t)mem_offset);
 		}
 	} else {
 		// can not enter here...
 		ERROR("there is no used memory block.\n");
 	}
 
-	if (block->last_buf_secured) {
-		block->last_buf_secured = 0;
-		up(&block->last_buf_semaphore);
-		DEBUG("unlock last buffer semaphore.\n");
-	} else {
-		up(&block->semaphore);
-		DEBUG("unlock semaphore: %d.\n", block->semaphore.count);
-	}
-
 	mutex_unlock(&block->access_mutex);
-
 }
 
 static void maru_brill_codec_info_cache(void)
@@ -953,7 +959,7 @@ static int __devinit maru_brill_codec_probe(struct pci_dev *pci_dev,
 
 	maru_brill_codec->dev = pci_dev;
 
-    INIT_LIST_HEAD(&maru_brill_codec->user_pid_mgr);
+	INIT_LIST_HEAD(&maru_brill_codec->user_pid_mgr);
 
 	// initialize memory block structures
 	maru_brill_codec->memory_blocks[0].unit_size = CODEC_S_DEVICE_MEM_SIZE;
