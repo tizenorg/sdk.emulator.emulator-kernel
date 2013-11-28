@@ -5,6 +5,7 @@
 #include "vigs_protocol.h"
 
 struct vigs_mman;
+struct vigs_fenceman;
 struct vigs_comm;
 struct vigs_fbdev;
 struct vigs_surface;
@@ -34,9 +35,20 @@ struct vigs_device
 
     struct vigs_mman *mman;
 
+    struct ttm_object_device *obj_dev;
+
+    struct vigs_fenceman *fenceman;
+
     struct vigs_comm *comm;
 
     struct vigs_fbdev *fbdev;
+
+    /*
+     * We need this because it's essential to read 'lower' and 'upper'
+     * fence acks atomically in IRQ handler and on SMP systems IRQ handler
+     * can be run on several CPUs concurrently.
+     */
+    spinlock_t irq_lock;
 
     /*
      * A hack we're forced to have in order to tell if we
@@ -63,6 +75,10 @@ int vigs_device_add_surface(struct vigs_device *vigs_dev,
 void vigs_device_remove_surface(struct vigs_device *vigs_dev,
                                 vigsp_surface_id sfc_id);
 
+struct vigs_surface
+    *vigs_device_reference_surface(struct vigs_device *vigs_dev,
+                                   vigsp_surface_id sfc_id);
+
 /*
  * Locks drm_device::struct_mutex.
  * @{
@@ -74,19 +90,6 @@ int vigs_device_add_surface_unlocked(struct vigs_device *vigs_dev,
 
 void vigs_device_remove_surface_unlocked(struct vigs_device *vigs_dev,
                                          vigsp_surface_id sfc_id);
-
-/*
- * @}
- */
-
-/*
- * IOCTLs
- * @{
- */
-
-int vigs_device_exec_ioctl(struct drm_device *drm_dev,
-                           void *data,
-                           struct drm_file *file_priv);
 
 /*
  * @}

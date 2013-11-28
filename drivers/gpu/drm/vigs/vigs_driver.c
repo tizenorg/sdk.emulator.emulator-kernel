@@ -6,6 +6,9 @@
 #include "vigs_surface.h"
 #include "vigs_execbuffer.h"
 #include "vigs_irq.h"
+#include "vigs_fence.h"
+#include "vigs_file.h"
+#include "vigs_mman.h"
 #include "drmP.h"
 #include "drm.h"
 #include <linux/module.h>
@@ -42,16 +45,26 @@ static struct drm_ioctl_desc vigs_drm_ioctls[] =
                                               DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_GEM_MAP, vigs_gem_map_ioctl,
                                     DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_GEM_WAIT, vigs_gem_wait_ioctl,
+                                     DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_SURFACE_INFO, vigs_surface_info_ioctl,
                                          DRM_UNLOCKED | DRM_AUTH),
-    DRM_IOCTL_DEF_DRV(VIGS_EXEC, vigs_device_exec_ioctl,
+    DRM_IOCTL_DEF_DRV(VIGS_EXEC, vigs_execbuffer_exec_ioctl,
                                  DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_SURFACE_SET_GPU_DIRTY, vigs_surface_set_gpu_dirty_ioctl,
                                                   DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_SURFACE_START_ACCESS, vigs_surface_start_access_ioctl,
                                                  DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_SURFACE_END_ACCESS, vigs_surface_end_access_ioctl,
-                                               DRM_UNLOCKED | DRM_AUTH)
+                                               DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_CREATE_FENCE, vigs_fence_create_ioctl,
+                                         DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_FENCE_WAIT, vigs_fence_wait_ioctl,
+                                       DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_FENCE_SIGNALED, vigs_fence_signaled_ioctl,
+                                           DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_FENCE_UNREF, vigs_fence_unref_ioctl,
+                                        DRM_UNLOCKED | DRM_AUTH)
 };
 
 static const struct file_operations vigs_drm_driver_fops =
@@ -110,6 +123,29 @@ static int vigs_drm_unload(struct drm_device *dev)
     return 0;
 }
 
+static int vigs_drm_open(struct drm_device *dev, struct drm_file *file_priv)
+{
+    int ret = 0;
+    struct vigs_device *vigs_dev = dev->dev_private;
+    struct vigs_file *vigs_file;
+
+    DRM_DEBUG_DRIVER("enter\n");
+
+    ret = vigs_file_create(vigs_dev, &vigs_file);
+
+    if (ret != 0) {
+        return ret;
+    }
+
+    file_priv->driver_priv = vigs_file;
+
+    if (unlikely(vigs_dev->mman->bo_dev.dev_mapping == NULL)) {
+        vigs_dev->mman->bo_dev.dev_mapping =
+            file_priv->filp->f_path.dentry->d_inode->i_mapping;
+    }
+
+    return 0;
+}
 
 static void vigs_drm_preclose(struct drm_device *dev,
                               struct drm_file *file_priv)
@@ -137,7 +173,13 @@ static void vigs_drm_preclose(struct drm_device *dev,
 static void vigs_drm_postclose(struct drm_device *dev,
                                struct drm_file *file_priv)
 {
+    struct vigs_file *vigs_file = file_priv->driver_priv;
+
     DRM_DEBUG_DRIVER("enter\n");
+
+    vigs_file_destroy(vigs_file);
+
+    file_priv->driver_priv = NULL;
 }
 
 static void vigs_drm_lastclose(struct drm_device *dev)
@@ -159,6 +201,7 @@ static struct drm_driver vigs_drm_driver =
                        DRIVER_HAVE_IRQ | DRIVER_IRQ_SHARED,
     .load = vigs_drm_load,
     .unload = vigs_drm_unload,
+    .open = vigs_drm_open,
     .preclose = vigs_drm_preclose,
     .postclose = vigs_drm_postclose,
     .lastclose = vigs_drm_lastclose,

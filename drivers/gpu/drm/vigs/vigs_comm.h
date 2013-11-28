@@ -9,6 +9,7 @@ struct drm_device;
 struct drm_file;
 struct vigs_device;
 struct vigs_execbuffer;
+struct vigs_fence;
 
 struct vigs_comm
 {
@@ -62,6 +63,8 @@ int vigs_comm_update_gpu(struct vigs_comm *comm,
                          u32 width,
                          u32 height,
                          vigsp_offset offset);
+
+int vigs_comm_fence(struct vigs_comm *comm, struct vigs_fence *fence);
 
 /*
  * IOCTLs

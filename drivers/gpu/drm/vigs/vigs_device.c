@@ -1,5 +1,6 @@
 #include "vigs_device.h"
 #include "vigs_mman.h"
+#include "vigs_fenceman.h"
 #include "vigs_crtc.h"
 #include "vigs_output.h"
 #include "vigs_framebuffer.h"
@@ -87,210 +88,6 @@ static struct vigs_mman_ops mman_ops =
     .cleanup_vma = &vigs_device_mman_cleanup_vma
 };
 
-static struct vigs_surface
-    *vigs_device_reference_surface_unlocked(struct vigs_device *vigs_dev,
-                                            vigsp_surface_id sfc_id)
-{
-    struct vigs_surface *sfc;
-
-    mutex_lock(&vigs_dev->drm_dev->struct_mutex);
-
-    mutex_lock(&vigs_dev->surface_idr_mutex);
-
-    sfc = idr_find(&vigs_dev->surface_idr, sfc_id);
-
-    if (sfc) {
-        if (vigs_gem_freed(&sfc->gem)) {
-            sfc = NULL;
-        } else {
-            drm_gem_object_reference(&sfc->gem.base);
-        }
-    }
-
-    mutex_unlock(&vigs_dev->surface_idr_mutex);
-
-    mutex_unlock(&vigs_dev->drm_dev->struct_mutex);
-
-    return sfc;
-}
-
-static bool vigs_gem_is_reserved(struct list_head *gem_list,
-                                 struct vigs_gem_object *gem)
-{
-    struct vigs_gem_object *tmp;
-
-    list_for_each_entry(tmp, gem_list, list) {
-        if (tmp == gem) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-static struct vigs_surface
-    *vigs_surface_reserve(struct vigs_device *vigs_dev,
-                          struct list_head *gem_list,
-                          vigsp_surface_id sfc_id)
-{
-    struct vigs_surface *sfc =
-        vigs_device_reference_surface_unlocked(vigs_dev, sfc_id);
-
-    if (!sfc) {
-        DRM_ERROR("Surface %u not found\n", sfc_id);
-        return NULL;
-    }
-
-    if (vigs_gem_is_reserved(gem_list, &sfc->gem)) {
-        drm_gem_object_unreference_unlocked(&sfc->gem.base);
-    } else {
-        vigs_gem_reserve(&sfc->gem);
-        list_add_tail(&sfc->gem.list, gem_list);
-    }
-
-    return sfc;
-}
-
-/*
- * 'gem_list' will hold a list of GEMs that should be
- * unreserved and unreferenced after execution.
- */
-static int vigs_device_patch_commands(struct vigs_device *vigs_dev,
-                                      void *data,
-                                      u32 data_size,
-                                      struct list_head* gem_list)
-{
-    struct vigsp_cmd_batch_header *batch_header = data;
-    struct vigsp_cmd_request_header *request_header =
-        (struct vigsp_cmd_request_header*)(batch_header + 1);
-    union
-    {
-        struct vigsp_cmd_update_vram_request *update_vram;
-        struct vigsp_cmd_update_gpu_request *update_gpu;
-        struct vigsp_cmd_copy_request *copy;
-        struct vigsp_cmd_solid_fill_request *solid_fill;
-        void *data;
-    } request;
-    vigsp_u32 i;
-    struct vigs_surface *sfc;
-    int ret = 0;
-
-    /*
-     * GEM is always at least PAGE_SIZE long, so don't check
-     * if batch header is out of bounds.
-     */
-
-    for (i = 0; i < batch_header->num_requests; ++i) {
-        if (((void*)(request_header) + sizeof(*request_header)) >
-            (data + data_size)) {
-            DRM_ERROR("request header outside of GEM\n");
-            ret = -EINVAL;
-            break;
-        }
-
-        if (((void*)(request_header + 1) + request_header->size) >
-            (data + data_size)) {
-            DRM_ERROR("request data outside of GEM\n");
-            ret = -EINVAL;
-            break;
-        }
-
-        request.data = (request_header + 1);
-
-        switch (request_header->cmd) {
-        case vigsp_cmd_update_vram:
-            sfc = vigs_surface_reserve(vigs_dev,
-                                       gem_list,
-                                       request.update_vram->sfc_id);
-            if (!sfc) {
-                ret = -EINVAL;
-                break;
-            }
-            if (vigs_gem_in_vram(&sfc->gem)) {
-                if (vigs_surface_need_vram_update(sfc)) {
-                    request.update_vram->offset = vigs_gem_offset(&sfc->gem);
-                    sfc->is_gpu_dirty = false;
-                } else {
-                    DRM_DEBUG_DRIVER("Surface %u doesn't need to be updated, ignoring update_vram\n",
-                                     request.update_vram->sfc_id);
-                    request.update_vram->sfc_id = 0;
-                }
-            } else {
-                DRM_DEBUG_DRIVER("Surface %u not in VRAM, ignoring update_vram\n",
-                                 request.update_vram->sfc_id);
-                request.update_vram->sfc_id = 0;
-            }
-            break;
-        case vigsp_cmd_update_gpu:
-            sfc = vigs_surface_reserve(vigs_dev,
-                                       gem_list,
-                                       request.update_gpu->sfc_id);
-            if (!sfc) {
-                ret = -EINVAL;
-                break;
-            }
-            if (vigs_gem_in_vram(&sfc->gem)) {
-                if (vigs_surface_need_gpu_update(sfc)) {
-                    request.update_gpu->offset = vigs_gem_offset(&sfc->gem);
-                    sfc->is_gpu_dirty = false;
-                } else {
-                    DRM_DEBUG_DRIVER("Surface %u doesn't need to be updated, ignoring update_gpu\n",
-                                     request.update_gpu->sfc_id);
-                    request.update_gpu->sfc_id = 0;
-                }
-            } else {
-                DRM_DEBUG_DRIVER("Surface %u not in VRAM, ignoring update_gpu\n",
-                                 request.update_gpu->sfc_id);
-                request.update_gpu->sfc_id = 0;
-            }
-            break;
-        case vigsp_cmd_copy:
-            sfc = vigs_surface_reserve(vigs_dev,
-                                       gem_list,
-                                       request.copy->dst_id);
-            if (!sfc) {
-                ret = -EINVAL;
-                break;
-            }
-            if (vigs_gem_in_vram(&sfc->gem)) {
-                sfc->is_gpu_dirty = true;
-            }
-            break;
-        case vigsp_cmd_solid_fill:
-            sfc = vigs_surface_reserve(vigs_dev,
-                                       gem_list,
-                                       request.solid_fill->sfc_id);
-            if (!sfc) {
-                ret = -EINVAL;
-                break;
-            }
-            if (vigs_gem_in_vram(&sfc->gem)) {
-                sfc->is_gpu_dirty = true;
-            }
-            break;
-        default:
-            break;
-        }
-
-        request_header =
-            (struct vigsp_cmd_request_header*)(request.data +
-                                               request_header->size);
-    }
-
-    return 0;
-}
-
-static void vigs_device_finish_patch_commands(struct list_head* gem_list)
-{
-    struct vigs_gem_object *gem, *gem_tmp;
-
-    list_for_each_entry_safe(gem, gem_tmp, gem_list, list) {
-        list_del(&gem->list);
-        vigs_gem_unreserve(gem);
-        drm_gem_object_unreference_unlocked(&gem->base);
-    }
-}
-
 int vigs_device_init(struct vigs_device *vigs_dev,
                      struct drm_device *drm_dev,
                      struct pci_dev *pci_dev,
@@ -352,11 +149,28 @@ int vigs_device_init(struct vigs_device *vigs_dev,
         goto fail2;
     }
 
+    vigs_dev->obj_dev = ttm_object_device_init(vigs_dev->mman->mem_global_ref.object,
+                                               12);
+
+    if (!vigs_dev->obj_dev) {
+        DRM_ERROR("Unable to initialize obj_dev\n");
+        ret = -ENOMEM;
+        goto fail3;
+    }
+
+    ret = vigs_fenceman_create(&vigs_dev->fenceman);
+
+    if (ret != 0) {
+        goto fail4;
+    }
+
     ret = vigs_comm_create(vigs_dev, &vigs_dev->comm);
 
     if (ret != 0) {
-        goto fail3;
+        goto fail5;
     }
+
+    spin_lock_init(&vigs_dev->irq_lock);
 
     drm_mode_config_init(vigs_dev->drm_dev);
 
@@ -365,19 +179,19 @@ int vigs_device_init(struct vigs_device *vigs_dev,
     ret = vigs_crtc_init(vigs_dev);
 
     if (ret != 0) {
-        goto fail4;
+        goto fail6;
     }
 
     ret = vigs_output_init(vigs_dev);
 
     if (ret != 0) {
-        goto fail4;
+        goto fail6;
     }
 
     ret = drm_vblank_init(drm_dev, 1);
 
     if (ret != 0) {
-        goto fail4;
+        goto fail6;
     }
 
     /*
@@ -389,24 +203,28 @@ int vigs_device_init(struct vigs_device *vigs_dev,
     ret = drm_irq_install(drm_dev);
 
     if (ret != 0) {
-        goto fail5;
+        goto fail7;
     }
 
     ret = vigs_fbdev_create(vigs_dev, &vigs_dev->fbdev);
 
     if (ret != 0) {
-        goto fail6;
+        goto fail8;
     }
 
     return 0;
 
-fail6:
+fail8:
     drm_irq_uninstall(drm_dev);
-fail5:
+fail7:
     drm_vblank_cleanup(drm_dev);
-fail4:
+fail6:
     drm_mode_config_cleanup(vigs_dev->drm_dev);
     vigs_comm_destroy(vigs_dev->comm);
+fail5:
+    vigs_fenceman_destroy(vigs_dev->fenceman);
+fail4:
+    ttm_object_device_release(&vigs_dev->obj_dev);
 fail3:
     vigs_mman_destroy(vigs_dev->mman);
 fail2:
@@ -427,6 +245,8 @@ void vigs_device_cleanup(struct vigs_device *vigs_dev)
     drm_vblank_cleanup(vigs_dev->drm_dev);
     drm_mode_config_cleanup(vigs_dev->drm_dev);
     vigs_comm_destroy(vigs_dev->comm);
+    vigs_fenceman_destroy(vigs_dev->fenceman);
+    ttm_object_device_release(&vigs_dev->obj_dev);
     vigs_mman_destroy(vigs_dev->mman);
     drm_rmmap(vigs_dev->drm_dev, vigs_dev->io_map);
     idr_destroy(&vigs_dev->surface_idr);
@@ -481,6 +301,29 @@ void vigs_device_remove_surface(struct vigs_device *vigs_dev,
     mutex_unlock(&vigs_dev->surface_idr_mutex);
 }
 
+struct vigs_surface
+    *vigs_device_reference_surface(struct vigs_device *vigs_dev,
+                                   vigsp_surface_id sfc_id)
+{
+    struct vigs_surface *sfc;
+
+    mutex_lock(&vigs_dev->surface_idr_mutex);
+
+    sfc = idr_find(&vigs_dev->surface_idr, sfc_id);
+
+    if (sfc) {
+        if (vigs_gem_freed(&sfc->gem)) {
+            sfc = NULL;
+        } else {
+            drm_gem_object_reference(&sfc->gem.base);
+        }
+    }
+
+    mutex_unlock(&vigs_dev->surface_idr_mutex);
+
+    return sfc;
+}
+
 int vigs_device_add_surface_unlocked(struct vigs_device *vigs_dev,
                                      struct vigs_surface *sfc,
                                      vigsp_surface_id* id)
@@ -500,68 +343,4 @@ void vigs_device_remove_surface_unlocked(struct vigs_device *vigs_dev,
     mutex_lock(&vigs_dev->drm_dev->struct_mutex);
     vigs_device_remove_surface(vigs_dev, sfc_id);
     mutex_unlock(&vigs_dev->drm_dev->struct_mutex);
-}
-
-int vigs_device_exec_ioctl(struct drm_device *drm_dev,
-                           void *data,
-                           struct drm_file *file_priv)
-{
-    struct vigs_device *vigs_dev = drm_dev->dev_private;
-    struct drm_vigs_exec *args = data;
-    struct drm_gem_object *gem;
-    struct vigs_gem_object *vigs_gem;
-    struct vigs_execbuffer *execbuffer;
-    struct list_head gem_list;
-    int ret;
-
-    INIT_LIST_HEAD(&gem_list);
-
-    gem = drm_gem_object_lookup(drm_dev, file_priv, args->handle);
-
-    if (gem == NULL) {
-        return -ENOENT;
-    }
-
-    vigs_gem = gem_to_vigs_gem(gem);
-
-    if (vigs_gem->type != VIGS_GEM_TYPE_EXECBUFFER) {
-        drm_gem_object_unreference_unlocked(gem);
-        return -ENOENT;
-    }
-
-    execbuffer = vigs_gem_to_vigs_execbuffer(vigs_gem);
-
-    vigs_gem_reserve(vigs_gem);
-
-    /*
-     * Never unmap for optimization, but we got to be careful,
-     * worst case scenario is when whole RAM BAR is mapped into kernel.
-     */
-    ret = vigs_gem_kmap(vigs_gem);
-
-    if (ret != 0) {
-        vigs_gem_unreserve(vigs_gem);
-        drm_gem_object_unreference_unlocked(gem);
-        return ret;
-    }
-
-    vigs_gem_unreserve(vigs_gem);
-
-    ret = vigs_device_patch_commands(vigs_dev,
-                                     execbuffer->gem.kptr,
-                                     vigs_gem_size(&execbuffer->gem),
-                                     &gem_list);
-
-    if (ret != 0) {
-        vigs_device_finish_patch_commands(&gem_list);
-        drm_gem_object_unreference_unlocked(gem);
-        return ret;
-    }
-
-    vigs_comm_exec(vigs_dev->comm, execbuffer);
-
-    vigs_device_finish_patch_commands(&gem_list);
-    drm_gem_object_unreference_unlocked(gem);
-
-    return 0;
 }

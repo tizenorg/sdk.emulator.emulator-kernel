@@ -1,6 +1,7 @@
 #include "vigs_irq.h"
 #include "vigs_device.h"
 #include "vigs_regs.h"
+#include "vigs_fenceman.h"
 
 static void vigs_finish_pageflips(struct vigs_device *vigs_dev)
 {
@@ -87,30 +88,46 @@ irqreturn_t vigs_irq_handler(DRM_IRQ_ARGS)
 {
     struct drm_device *drm_dev = (struct drm_device*)arg;
     struct vigs_device *vigs_dev = drm_dev->dev_private;
-    u32 value;
+    u32 int_value;
+    irqreturn_t ret = IRQ_NONE;
 
-    value = readl(vigs_dev->io_map->handle + VIGS_REG_INT);
+    int_value = readl(vigs_dev->io_map->handle + VIGS_REG_INT);
 
-    if ((value & VIGS_REG_INT_VBLANK_PENDING) == 0) {
-        return IRQ_NONE;
+    if ((int_value & (VIGS_REG_INT_VBLANK_PENDING | VIGS_REG_INT_FENCE_ACK_PENDING)) != 0) {
+        /*
+         * Clear the interrupt first in order
+         * not to stall the hardware.
+         */
+
+        writel(int_value, vigs_dev->io_map->handle + VIGS_REG_INT);
+
+        ret = IRQ_HANDLED;
     }
 
-    /*
-     * Clear the interrupt first in order
-     * not to stall the hardware.
-     */
+    if ((int_value & VIGS_REG_INT_FENCE_ACK_PENDING) != 0) {
+        u32 lower, upper;
 
-    value &= ~VIGS_REG_INT_VBLANK_PENDING;
+        while (1) {
+            spin_lock(&vigs_dev->irq_lock);
 
-    writel(value, vigs_dev->io_map->handle + VIGS_REG_INT);
+            lower = readl(vigs_dev->io_map->handle + VIGS_REG_FENCE_LOWER);
+            upper = readl(vigs_dev->io_map->handle + VIGS_REG_FENCE_UPPER);
 
-    /*
-     * Handle VBLANK.
-     */
+            spin_unlock(&vigs_dev->irq_lock);
 
-    drm_handle_vblank(drm_dev, 0);
+            if (lower) {
+                vigs_fenceman_ack(vigs_dev->fenceman, lower, upper);
+            } else {
+                break;
+            }
+        }
+    }
 
-    vigs_finish_pageflips(vigs_dev);
+    if ((int_value & VIGS_REG_INT_VBLANK_PENDING) != 0) {
+        drm_handle_vblank(drm_dev, 0);
 
-    return IRQ_HANDLED;
+        vigs_finish_pageflips(vigs_dev);
+    }
+
+    return ret;
 }

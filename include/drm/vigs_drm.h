@@ -8,7 +8,7 @@
 /*
  * Bump this whenever driver interface changes.
  */
-#define DRM_VIGS_DRIVER_VERSION 9
+#define DRM_VIGS_DRIVER_VERSION 10
 
 /*
  * Surface access flags.
@@ -46,6 +46,11 @@ struct drm_vigs_gem_map
     unsigned long address;
 };
 
+struct drm_vigs_gem_wait
+{
+    uint32_t handle;
+};
+
 struct drm_vigs_surface_info
 {
     uint32_t handle;
@@ -79,15 +84,43 @@ struct drm_vigs_surface_end_access
     int sync;
 };
 
+struct drm_vigs_create_fence
+{
+    int send;
+    uint32_t handle;
+    uint32_t seq;
+};
+
+struct drm_vigs_fence_wait
+{
+    uint32_t handle;
+};
+
+struct drm_vigs_fence_signaled
+{
+    uint32_t handle;
+    int signaled;
+};
+
+struct drm_vigs_fence_unref
+{
+    uint32_t handle;
+};
+
 #define DRM_VIGS_GET_PROTOCOL_VERSION 0x00
 #define DRM_VIGS_CREATE_SURFACE 0x01
 #define DRM_VIGS_CREATE_EXECBUFFER 0x02
 #define DRM_VIGS_GEM_MAP 0x03
-#define DRM_VIGS_SURFACE_INFO 0x04
-#define DRM_VIGS_EXEC 0x05
-#define DRM_VIGS_SURFACE_SET_GPU_DIRTY 0x06
-#define DRM_VIGS_SURFACE_START_ACCESS 0x07
-#define DRM_VIGS_SURFACE_END_ACCESS 0x08
+#define DRM_VIGS_GEM_WAIT 0x04
+#define DRM_VIGS_SURFACE_INFO 0x05
+#define DRM_VIGS_EXEC 0x06
+#define DRM_VIGS_SURFACE_SET_GPU_DIRTY 0x07
+#define DRM_VIGS_SURFACE_START_ACCESS 0x08
+#define DRM_VIGS_SURFACE_END_ACCESS 0x09
+#define DRM_VIGS_CREATE_FENCE 0x0A
+#define DRM_VIGS_FENCE_WAIT 0x0B
+#define DRM_VIGS_FENCE_SIGNALED 0x0C
+#define DRM_VIGS_FENCE_UNREF 0x0D
 
 #define DRM_IOCTL_VIGS_GET_PROTOCOL_VERSION DRM_IOR(DRM_COMMAND_BASE + \
             DRM_VIGS_GET_PROTOCOL_VERSION, struct drm_vigs_get_protocol_version)
@@ -97,6 +130,8 @@ struct drm_vigs_surface_end_access
             DRM_VIGS_CREATE_EXECBUFFER, struct drm_vigs_create_execbuffer)
 #define DRM_IOCTL_VIGS_GEM_MAP DRM_IOWR(DRM_COMMAND_BASE + \
             DRM_VIGS_GEM_MAP, struct drm_vigs_gem_map)
+#define DRM_IOCTL_VIGS_GEM_WAIT DRM_IOW(DRM_COMMAND_BASE + \
+            DRM_VIGS_GEM_WAIT, struct drm_vigs_gem_wait)
 #define DRM_IOCTL_VIGS_SURFACE_INFO DRM_IOWR(DRM_COMMAND_BASE + \
             DRM_VIGS_SURFACE_INFO, struct drm_vigs_surface_info)
 #define DRM_IOCTL_VIGS_EXEC DRM_IOW(DRM_COMMAND_BASE + \
@@ -107,5 +142,13 @@ struct drm_vigs_surface_end_access
             DRM_VIGS_SURFACE_START_ACCESS, struct drm_vigs_surface_start_access)
 #define DRM_IOCTL_VIGS_SURFACE_END_ACCESS DRM_IOW(DRM_COMMAND_BASE + \
             DRM_VIGS_SURFACE_END_ACCESS, struct drm_vigs_surface_end_access)
+#define DRM_IOCTL_VIGS_CREATE_FENCE DRM_IOWR(DRM_COMMAND_BASE + \
+            DRM_VIGS_CREATE_FENCE, struct drm_vigs_create_fence)
+#define DRM_IOCTL_VIGS_FENCE_WAIT DRM_IOW(DRM_COMMAND_BASE + \
+            DRM_VIGS_FENCE_WAIT, struct drm_vigs_fence_wait)
+#define DRM_IOCTL_VIGS_FENCE_SIGNALED DRM_IOWR(DRM_COMMAND_BASE + \
+            DRM_VIGS_FENCE_SIGNALED, struct drm_vigs_fence_signaled)
+#define DRM_IOCTL_VIGS_FENCE_UNREF DRM_IOW(DRM_COMMAND_BASE + \
+            DRM_VIGS_FENCE_UNREF, struct drm_vigs_fence_unref)
 
 #endif
