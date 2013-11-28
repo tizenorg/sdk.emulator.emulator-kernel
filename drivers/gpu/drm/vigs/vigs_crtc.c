@@ -64,6 +64,7 @@ retry:
 
     if (ret != 0) {
         vigs_framebuffer_unpin(vigs_fb);
+
         return ret;
     }
 

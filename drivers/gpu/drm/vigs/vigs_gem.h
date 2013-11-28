@@ -24,12 +24,6 @@ struct vigs_gem_object
      */
     bool freed;
 
-    /*
-     * Use it only when this GEM is reserved. This makes it easier
-     * to reserve a set of GEMs and then unreserve them later.
-     */
-    struct list_head list;
-
     enum ttm_object_type type;
 
     /*
@@ -160,6 +154,8 @@ void vigs_gem_kunmap(struct vigs_gem_object *vigs_gem);
  */
 int vigs_gem_in_vram(struct vigs_gem_object *vigs_gem);
 
+int vigs_gem_wait(struct vigs_gem_object *vigs_gem);
+
 /*
  * @}
  */
@@ -191,6 +187,10 @@ void vigs_gem_close_object(struct drm_gem_object *gem,
 int vigs_gem_map_ioctl(struct drm_device *drm_dev,
                        void *data,
                        struct drm_file *file_priv);
+
+int vigs_gem_wait_ioctl(struct drm_device *drm_dev,
+                        void *data,
+                        struct drm_file *file_priv);
 
 /*
  * @}
