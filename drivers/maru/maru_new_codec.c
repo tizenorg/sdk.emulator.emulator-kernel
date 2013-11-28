@@ -141,7 +141,7 @@ struct user_process_id {
 
 /* manage device memory block */
 struct device_mem {
-	uint32_t blk_id;
+	uint32_t ctx_id;
 	uint32_t mem_offset;
 
 	struct list_head entry;
@@ -190,7 +190,6 @@ struct maru_brill_codec_device {
 };
 
 /* device memory */
-#define DEVICE_MEMORY_COUNT	8
 #define CODEC_CONTEXT_SIZE	1024
 
 #define CODEC_S_DEVICE_MEM_COUNT	15	// small		(256K)	4M
@@ -266,7 +265,7 @@ static void maru_brill_codec_bh(struct maru_brill_codec_device *dev)
 }
 
 
-static int secure_device_memory(uint32_t blk_id, uint32_t buf_size, 
+static int secure_device_memory(uint32_t ctx_id, uint32_t buf_size,
 		int non_blocking, uint32_t* offset)
 {
 	int ret = 0;
@@ -281,7 +280,7 @@ static int secure_device_memory(uint32_t blk_id, uint32_t buf_size,
 	} else if (buf_size < CODEC_L_DEVICE_MEM_SIZE) {
 		index = LARGE;
 	} else {
-		// error
+		ERROR("invalid buffer size: %x\n", buf_size);
 	}
 
 	block = &maru_brill_codec->memory_blocks[index];
@@ -289,8 +288,7 @@ static int secure_device_memory(uint32_t blk_id, uint32_t buf_size,
 	// decrease buffer_semaphore
 	DEBUG("before down buffer_sema: %d\n", block->semaphore.count);
 
-	if (non_blocking)
-	{
+	if (non_blocking) {
 		if (down_trylock(&block->semaphore)) { // if 1
 			DEBUG("buffer is not available now\n");
 			return -1;
@@ -322,7 +320,7 @@ static int secure_device_memory(uint32_t blk_id, uint32_t buf_size,
 		}
 		ERROR("failed to get memory block.\n");
 	} else {
-		unit->blk_id = blk_id;
+		unit->ctx_id = ctx_id;
 		list_move_tail(&unit->entry, &block->occupied);
 		*offset = unit->mem_offset;
 		DEBUG("get available memory region: 0x%x\n", ret);
@@ -358,7 +356,7 @@ static void release_device_memory(uint32_t mem_offset)
 		list_for_each_safe(pos, temp, &block->occupied) {
 			unit = list_entry(pos, struct device_mem, entry);
 			if (unit->mem_offset == (uint32_t)mem_offset) {
-				unit->blk_id = 0;
+				unit->ctx_id = 0;
 				list_move_tail(&unit->entry, &block->available);
 
 				if (block->last_buf_secured) {
@@ -387,6 +385,32 @@ static void release_device_memory(uint32_t mem_offset)
 	mutex_unlock(&block->access_mutex);
 }
 
+static void dispose_device_memory(uint32_t context_id)
+{
+	struct device_mem *unit = NULL;
+	int index = 0;
+	struct memory_block *block = NULL;
+
+	struct list_head *pos, *temp;
+
+	for (index = SMALL; index <= LARGE; index++) {
+		block = &maru_brill_codec->memory_blocks[index];
+
+		mutex_lock(&block->access_mutex);
+		if (!list_empty(&block->occupied)) {
+			list_for_each_safe(pos, temp, &block->occupied) {
+				unit = list_entry(pos, struct device_mem, entry);
+				if (unit->ctx_id == context_id) {
+					unit->ctx_id = 0;
+					list_move_tail(&unit->entry, &block->available);
+					INFO("dispose memory block: %x", unit->mem_offset);
+				}
+			}
+		}
+		mutex_unlock(&block->access_mutex);
+	}
+}
+
 static void maru_brill_codec_info_cache(void)
 {
 	void __iomem *memaddr = NULL;
@@ -401,7 +425,6 @@ static void maru_brill_codec_info_cache(void)
 	}
 
 	codec_info_len = *(uint32_t *)memaddr;
-	printk(KERN_INFO "[%s][%d]: codec_info length: %d\n", DEVICE_NAME, __LINE__, codec_info_len);
 
 	codec_info =
 		kzalloc(codec_info_len, GFP_KERNEL);
@@ -509,12 +532,12 @@ static long maru_brill_codec_ioctl(struct file *file,
 			break;
 		}
 
-		value = secure_device_memory((uint32_t)file, opaque.buffer_size, 0, &offset);
+		value = secure_device_memory(opaque.buffer_index, opaque.buffer_size, 0, &offset);
 		if (value < 0) {
 			DEBUG("failed to get available memory\n");
 			ret = -EINVAL;
 		} else {
-			DEBUG("send a request to pop data from device. %p\n", opaque.buffer_index);
+			DEBUG("send a request to pop data from device. %d\n", opaque.buffer_index);
 
 			ENTER_CRITICAL_SECTION(flags);
 			writel((uint32_t)offset,
@@ -541,20 +564,23 @@ static long maru_brill_codec_ioctl(struct file *file,
 		break;
 	case CODEC_CMD_SECURE_BUFFER:
 	{
-		uint32_t buf_size, offset;
+		uint32_t offset = 0;
+		struct codec_buffer_id opaque;
+
 		DEBUG("read data into small buffer\n");
-		if (copy_from_user(&buf_size, (void *)arg, sizeof(uint32_t))) {
+		if (copy_from_user(&opaque, (void *)arg, sizeof(struct codec_buffer_id))) {
 			ERROR("ioctl: failed to copy data from user\n");
 			ret = -EIO;
 			break;
 		}
 
-		value = secure_device_memory((uint32_t)file, buf_size, 0, &offset);
+		value = secure_device_memory(opaque.buffer_index, opaque.buffer_size, 0, &offset);
 		if (value < 0) {
 			DEBUG("failed to get available memory\n");
 			ret = -EINVAL;
 		} else {
-			if (copy_to_user((void *)arg, &offset, sizeof(uint32_t))) {
+			opaque.buffer_size = offset;
+			if (copy_to_user((void *)arg, &opaque, sizeof(struct codec_buffer_id))) {
 				ERROR("ioctl: failed to copy data to user.\n");
 				ret = -EIO;
 			}
@@ -563,20 +589,23 @@ static long maru_brill_codec_ioctl(struct file *file,
 		break;
 	case CODEC_CMD_TRY_SECURE_BUFFER:
 	{
-		uint32_t buf_size, offset;
+		uint32_t offset = 0;
+		struct codec_buffer_id opaque;
+
 		DEBUG("read data into small buffer\n");
-		if (copy_from_user(&buf_size, (void *)arg, sizeof(uint32_t))) {
+		if (copy_from_user(&opaque, (void *)arg, sizeof(struct codec_buffer_id))) {
 			ERROR("ioctl: failed to copy data from user\n");
 			ret = -EIO;
 			break;
 		}
 
-		value = secure_device_memory((uint32_t)file, buf_size, 1, &offset);
+		value = secure_device_memory(opaque.buffer_index, opaque.buffer_size, 1, &offset);
 		if (value < 0) {
 			DEBUG("failed to get available memory\n");
 			ret = -EINVAL;
 		} else {
-			if (copy_to_user((void *)arg, &offset, sizeof(uint32_t))) {
+			opaque.buffer_size = offset;
+			if (copy_to_user((void *)arg, &opaque, sizeof(struct codec_buffer_id))) {
 				ERROR("ioctl: failed to copy data to user.\n");
 				ret = -EIO;
 			}
@@ -622,7 +651,7 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 	int api_index, ctx_index;
 	unsigned long flags;
 
-	DEBUG("enter %s. %p\n", __func__, file);
+	DEBUG("enter %s\n", __func__);
 
 	api_index = ioparam->api_index;
 	ctx_index = ioparam->ctx_index;
@@ -675,7 +704,17 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 		context_flags[ctx_index] = 0;
 	}
 		break;
-	case CODEC_DEINIT ... CODEC_FLUSH_BUFFERS:
+	case CODEC_DEINIT:
+		ENTER_CRITICAL_SECTION(flags);
+		writel((int32_t)ioparam->ctx_index,
+				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
+		writel((int32_t)ioparam->api_index,
+				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
+		LEAVE_CRITICAL_SECTION(flags);
+
+		dispose_device_memory(ioparam->ctx_index);
+		break;
+	case CODEC_FLUSH_BUFFERS:
 		ENTER_CRITICAL_SECTION(flags);
 		writel((int32_t)ioparam->ctx_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
@@ -688,8 +727,9 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 		break;
 	}
 
-	return 0;
+	DEBUG("leave %s\n", __func__);
 
+	return 0;
 }
 
 static int maru_brill_codec_mmap(struct file *file, struct vm_area_struct *vm)
@@ -802,7 +842,9 @@ static void maru_brill_codec_context_remove(struct user_process_id *pid_elem)
 					DEBUG("remove context. ctx_id: %d\n", cid_elem->id);
 					writel(cid_elem->id,
 							maru_brill_codec->ioaddr + CODEC_CMD_RELEASE_CONTEXT);
+					dispose_device_memory(cid_elem->id);
 				}
+
 				DEBUG("delete node from ctx_id_mgr. %p\n", &cid_elem->node);
 				__list_del_entry(&cid_elem->node);
 				DEBUG("release cid_elem. %p\n", cid_elem);
@@ -882,7 +924,7 @@ static void maru_brill_codec_task_remove(uint32_t user_pid)
 
 static int maru_brill_codec_open(struct inode *inode, struct file *file)
 {
-	INFO("open! struct file: %p\n", file);
+	DEBUG("open! struct file: %p\n", file);
 
 	/* register interrupt handler */
 	if (request_irq(maru_brill_codec->dev->irq, maru_brill_codec_irq_handler,
