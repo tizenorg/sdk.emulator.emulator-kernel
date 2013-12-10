@@ -191,14 +191,9 @@ int vigs_framebuffer_pin(struct vigs_framebuffer *vigs_fb)
 
     ret = vigs_gem_pin(&vigs_fb->fb_sfc->gem);
 
-    if (ret != 0) {
-        vigs_gem_unreserve(&vigs_fb->fb_sfc->gem);
-        return ret;
-    }
-
     vigs_gem_unreserve(&vigs_fb->fb_sfc->gem);
 
-    return 0;
+    return ret;
 }
 
 void vigs_framebuffer_unpin(struct vigs_framebuffer *vigs_fb)

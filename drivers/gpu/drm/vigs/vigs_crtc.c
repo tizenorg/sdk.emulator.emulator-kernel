@@ -197,6 +197,7 @@ static int vigs_crtc_page_flip(struct drm_crtc *crtc,
                                struct drm_framebuffer *fb,
                                struct drm_pending_vblank_event *event)
 {
+    unsigned long flags;
     struct vigs_device *vigs_dev = crtc->dev->dev_private;
     struct drm_framebuffer *old_fb = crtc->fb;
     int ret = -EINVAL;
@@ -210,19 +211,27 @@ static int vigs_crtc_page_flip(struct drm_crtc *crtc,
 
         if (ret != 0) {
             DRM_ERROR("failed to acquire vblank counter\n");
-            list_del(&event->base.link);
             goto out;
         }
 
+        spin_lock_irqsave(&vigs_dev->drm_dev->event_lock, flags);
         list_add_tail(&event->base.link,
                       &vigs_dev->pageflip_event_list);
+        spin_unlock_irqrestore(&vigs_dev->drm_dev->event_lock, flags);
 
         crtc->fb = fb;
         ret = vigs_crtc_update(crtc, old_fb);
         if (ret != 0) {
             crtc->fb = old_fb;
-            drm_vblank_put(vigs_dev->drm_dev, 0);
-            list_del(&event->base.link);
+            spin_lock_irqsave(&vigs_dev->drm_dev->event_lock, flags);
+            if (atomic_read(&vigs_dev->drm_dev->vblank_refcount[0]) > 0) {
+                /*
+                 * Only do this if event wasn't already processed.
+                 */
+                drm_vblank_put(vigs_dev->drm_dev, 0);
+                list_del(&event->base.link);
+            }
+            spin_unlock_irqrestore(&vigs_dev->drm_dev->event_lock, flags);
             goto out;
         }
     }
