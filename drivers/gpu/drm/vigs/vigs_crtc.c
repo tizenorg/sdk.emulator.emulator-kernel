@@ -26,10 +26,32 @@ static int vigs_crtc_update(struct drm_crtc *crtc,
 
     vigs_fb = fb_to_vigs_fb(crtc->fb);
 
+retry:
     ret = vigs_framebuffer_pin(vigs_fb);
 
     if (ret != 0) {
-        return ret;
+        /*
+         * In condition of very intense GEM operations
+         * and with small amount of VRAM memory it's possible that
+         * GEM pin will be failing for some time, thus, framebuffer pin
+         * will be failing. This is unavoidable with current TTM design,
+         * even though ttm_bo_validate has 'no_wait_reserve' parameter it's
+         * always assumed that it's true, thus, if someone is intensively
+         * reserves/unreserves GEMs then ttm_bo_validate can fail even if there
+         * is free space in a placement. Even worse, ttm_bo_validate fails with
+         * ENOMEM so it's not possible to tell if it's a temporary failure due
+         * to reserve/unreserve pressure or constant one due to memory shortage.
+         * We assume here that it's temporary and retry framebuffer pin. This
+         * is relatively safe since we only pin GEMs on pageflip and user
+         * should have started the VM with VRAM size equal to at least 3 frames,
+         * thus, 2 frame will always be free and we can always pin 1 frame.
+         *
+         * Also, 'no_wait_reserve' parameter is completely removed in future
+         * kernels with this commit:
+         * https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=97a875cbdf89a4638eea57c2b456c7cc4e3e8b21
+         */
+        cpu_relax();
+        goto retry;
     }
 
     vigs_gem_reserve(&vigs_fb->fb_sfc->gem);
