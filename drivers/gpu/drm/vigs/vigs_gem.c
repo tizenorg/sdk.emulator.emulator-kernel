@@ -128,7 +128,7 @@ int vigs_gem_pin(struct vigs_gem_object *vigs_gem)
     placement.num_placement = 1;
     placement.num_busy_placement = 1;
 
-    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, false, false);
+    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, true, false);
 
     if (ret != 0) {
         DRM_ERROR("GEM pin failed (type = %u, off = 0x%llX, sz = %lu)\n",
@@ -178,7 +178,7 @@ void vigs_gem_unpin(struct vigs_gem_object *vigs_gem)
     placement.num_placement = 2;
     placement.num_busy_placement = 2;
 
-    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, false, false);
+    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, true, false);
 
     if (ret != 0) {
         DRM_ERROR("GEM unpin failed (type = %u, off = 0x%llX, sz = %lu)\n",
