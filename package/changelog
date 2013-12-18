@@ -1,3 +1,6 @@
+* 1.4.30
+- enable configs to support spice
+== Sungmin Ha <sungmin82.ha@samsung.com> 2013-12-18
 * 1.4.29
 - support multi session on nfc
 == Munkyu Im <munkyu.im@samsung.com> 2013-11-12
