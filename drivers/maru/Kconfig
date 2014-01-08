@@ -1,3 +1,8 @@
 menuconfig MARU
 	tristate "MARU virtual device drivers for emulator"
 	default n
+
+config MARU_VIRTIO_TOUCHSCREEN
+	tristate "MARU Virtio Touchscreen Driver"
+	depends on MARU != n
+
