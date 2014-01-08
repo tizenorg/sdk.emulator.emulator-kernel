@@ -152,3 +152,7 @@ obj-$(CONFIG_IIO)		+= iio/
 obj-$(CONFIG_VME_BUS)		+= vme/
 obj-$(CONFIG_IPACK_BUS)		+= ipack/
 obj-$(CONFIG_NTB)		+= ntb/
+
+# For maru board
+obj-$(CONFIG_MARU)		+= maru/
+
