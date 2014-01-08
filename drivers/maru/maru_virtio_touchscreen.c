@@ -335,7 +335,7 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     vt->idev->absbit[BIT_WORD(ABS_MISC)] |= BIT_MASK(ABS_MISC);
     vt->idev->keybit[BIT_WORD(BTN_TOUCH)] |= BIT_MASK(BTN_TOUCH);
 
-    input_mt_init_slots(vt->idev, MAX_TRKID);
+    input_mt_init_slots(vt->idev, MAX_TRKID, 0);
 
     input_set_abs_params(vt->idev, ABS_X, 0,
         /*TOUCHSCREEN_RESOLUTION_X*/0, 0, 0); //TODO:
@@ -387,7 +387,7 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     return 0;
 }
 
-static void __devexit virtio_touchscreen_remove(struct virtio_device *vdev)
+static void virtio_touchscreen_remove(struct virtio_device *vdev)
 {
     virtio_touchscreen *vts = NULL;
 
@@ -413,7 +413,7 @@ static struct virtio_driver virtio_touchscreen_driver = {
     .driver.owner = THIS_MODULE,
     .id_table = id_table,
     .probe = virtio_touchscreen_probe,
-    .remove = __devexit_p(virtio_touchscreen_remove),
+    .remove = virtio_touchscreen_remove,
 #if 0
     .feature_table = features,
     .feature_table_size = ARRAY_SIZE(features),
