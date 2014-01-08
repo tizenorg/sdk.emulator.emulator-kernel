@@ -166,4 +166,7 @@ source "drivers/ipack/Kconfig"
 
 source "drivers/reset/Kconfig"
 
+# for maru board
+source "drivers/maru/Kconfig"
+
 endmenu
