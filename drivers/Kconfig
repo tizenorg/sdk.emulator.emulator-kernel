@@ -166,4 +166,7 @@ source "drivers/reset/Kconfig"
 
 source "drivers/fmc/Kconfig"
 
+# for maru board
+source "drivers/maru/Kconfig"
+
 endmenu
