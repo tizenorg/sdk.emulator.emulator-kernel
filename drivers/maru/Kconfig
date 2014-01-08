@@ -1,0 +1,3 @@
+menuconfig MARU
+	tristate "MARU virtual device drivers for emulator"
+	default n
