@@ -6,3 +6,7 @@ config MARU_VIRTIO_TOUCHSCREEN
 	tristate "MARU Virtio Touchscreen Driver"
 	depends on MARU != n
 
+config MARU_VIRTIO_HWKEY
+	tristate "MARU Virtio HW Key Driver"
+	depends on MARU != n
+
