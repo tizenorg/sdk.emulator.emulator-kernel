@@ -747,15 +747,13 @@ static int maru_brill_codec_mmap(struct file *file, struct vm_area_struct *vm)
 	off = vm->vm_pgoff << PAGE_SHIFT;
 	phys_addr = (PAGE_ALIGN(maru_brill_codec->mem_start) + off) >> PAGE_SHIFT;
 
+	/* VM_IO | VM_DONTEXPAND | VM_DONTDUMP are set by remap_pfn_range() */
 	ret = remap_pfn_range(vm, vm->vm_start, phys_addr,
 			size, vm->vm_page_prot);
 	if (ret < 0) {
 		ERROR("failed to remap page range\n");
 		return -EAGAIN;
 	}
-
-	vm->vm_flags |= VM_IO;
-	vm->vm_flags |= VM_RESERVED;
 
 	return 0;
 }
@@ -984,7 +982,7 @@ static void maru_brill_codec_get_device_version(void)
 		DEVICE_NAME, maru_brill_codec->version);
 }
 
-static int __devinit maru_brill_codec_probe(struct pci_dev *pci_dev,
+static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	const struct pci_device_id *pci_id)
 {
 	int ret = 0;
@@ -1093,7 +1091,7 @@ static int __devinit maru_brill_codec_probe(struct pci_dev *pci_dev,
 	return 0;
 }
 
-static void __devinit maru_brill_codec_remove(struct pci_dev *pci_dev)
+static void maru_brill_codec_remove(struct pci_dev *pci_dev)
 {
 	if (maru_brill_codec) {
 		if (maru_brill_codec->ioaddr) {
@@ -1133,7 +1131,7 @@ static void __devinit maru_brill_codec_remove(struct pci_dev *pci_dev)
 	pci_disable_device(pci_dev);
 }
 
-static struct pci_device_id maru_brill_codec_pci_table[] __devinitdata = {
+static struct pci_device_id maru_brill_codec_pci_table[] = {
 	{
 		.vendor		= PCI_VENDOR_ID_TIZEN_EMUL,
 		.device		= PCI_DEVICE_ID_VIRTUAL_BRILL_CODEC,
