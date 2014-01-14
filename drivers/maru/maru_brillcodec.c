@@ -755,7 +755,7 @@ static int maru_brill_codec_mmap(struct file *file, struct vm_area_struct *vm)
 	}
 
 	vm->vm_flags |= VM_IO;
-	vm->vm_flags |= VM_RESERVED;
+//	vm->vm_flags |= VM_RESERVED;
 
 	return 0;
 }
@@ -984,7 +984,7 @@ static void maru_brill_codec_get_device_version(void)
 		DEVICE_NAME, maru_brill_codec->version);
 }
 
-static int __devinit maru_brill_codec_probe(struct pci_dev *pci_dev,
+static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	const struct pci_device_id *pci_id)
 {
 	int ret = 0;
@@ -1093,7 +1093,7 @@ static int __devinit maru_brill_codec_probe(struct pci_dev *pci_dev,
 	return 0;
 }
 
-static void __devinit maru_brill_codec_remove(struct pci_dev *pci_dev)
+static void maru_brill_codec_remove(struct pci_dev *pci_dev)
 {
 	if (maru_brill_codec) {
 		if (maru_brill_codec->ioaddr) {
@@ -1133,7 +1133,7 @@ static void __devinit maru_brill_codec_remove(struct pci_dev *pci_dev)
 	pci_disable_device(pci_dev);
 }
 
-static struct pci_device_id maru_brill_codec_pci_table[] __devinitdata = {
+static struct pci_device_id maru_brill_codec_pci_table[] = {
 	{
 		.vendor		= PCI_VENDOR_ID_TIZEN_EMUL,
 		.device		= PCI_DEVICE_ID_VIRTUAL_BRILL_CODEC,
