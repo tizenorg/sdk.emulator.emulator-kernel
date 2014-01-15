@@ -2,19 +2,13 @@
 #define _VIGS_PROTOCOL_H_
 
 /*
- * VIGS protocol is a multiple request-single response protocol.
- *
- * + Requests come batched.
- * + The response is written after the request batch.
- *
- * Not all commands can be batched, only commands that don't have response
- * data can be batched.
+ * VIGS protocol is a multiple request-no response protocol.
  */
 
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 14
+#define VIGS_PROTOCOL_VERSION 15
 
 typedef signed char vigsp_s8;
 typedef signed short vigsp_s16;
@@ -29,30 +23,36 @@ typedef vigsp_u32 vigsp_bool;
 typedef vigsp_u32 vigsp_surface_id;
 typedef vigsp_u32 vigsp_offset;
 typedef vigsp_u32 vigsp_color;
-
-typedef enum
-{
-    vigsp_cmd_init = 0x0,
-    vigsp_cmd_reset = 0x1,
-    vigsp_cmd_exit = 0x2,
-    vigsp_cmd_create_surface = 0x3,
-    vigsp_cmd_destroy_surface = 0x4,
-    vigsp_cmd_set_root_surface = 0x5,
-    vigsp_cmd_update_vram = 0x6,
-    vigsp_cmd_update_gpu = 0x7,
-    vigsp_cmd_copy = 0x8,
-    vigsp_cmd_solid_fill = 0x9,
-} vigsp_cmd;
+typedef vigsp_u32 vigsp_fence_seq;
 
 typedef enum
 {
     /*
-     * Start from 0x1 to detect host failures on target.
+     * These command are guaranteed to sync on host, i.e.
+     * no fence is required.
+     * @{
      */
-    vigsp_status_success = 0x1,
-    vigsp_status_bad_call = 0x2,
-    vigsp_status_exec_error = 0x3,
-} vigsp_status;
+    vigsp_cmd_init = 0x0,
+    vigsp_cmd_reset = 0x1,
+    vigsp_cmd_exit = 0x2,
+    vigsp_cmd_set_root_surface = 0x3,
+    /*
+     * @}
+     */
+    /*
+     * These commands are executed asynchronously.
+     * @{
+     */
+    vigsp_cmd_create_surface = 0x4,
+    vigsp_cmd_destroy_surface = 0x5,
+    vigsp_cmd_update_vram = 0x6,
+    vigsp_cmd_update_gpu = 0x7,
+    vigsp_cmd_copy = 0x8,
+    vigsp_cmd_solid_fill = 0x9,
+    /*
+     * @}
+     */
+} vigsp_cmd;
 
 typedef enum
 {
@@ -89,7 +89,17 @@ struct vigsp_copy
 
 struct vigsp_cmd_batch_header
 {
-    vigsp_u32 num_requests;
+    /*
+     * Fence sequence requested by this batch.
+     * 0 for none.
+     */
+    vigsp_fence_seq fence_seq;
+
+    /*
+     * Batch size starting from batch header.
+     * Can be 0.
+     */
+    vigsp_u32 size;
 };
 
 struct vigsp_cmd_request_header
@@ -100,11 +110,6 @@ struct vigsp_cmd_request_header
      * Request size starting from request header.
      */
     vigsp_u32 size;
-};
-
-struct vigsp_cmd_response_header
-{
-    vigsp_status status;
 };
 
 /*
@@ -121,10 +126,6 @@ struct vigsp_cmd_response_header
 struct vigsp_cmd_init_request
 {
     vigsp_u32 client_version;
-};
-
-struct vigsp_cmd_init_response
-{
     vigsp_u32 server_version;
 };
 

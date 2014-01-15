@@ -1,10 +1,13 @@
 /*
  * Virtual device node for event injector of emulator
  *
- * Copyright (c) 2011 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2011 - 2013 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
+ * SooYoung Ha <yoosah.ha@samsung.com>
+ * JinHyung Choi <jinhyung2.choi@samsung.com>
  * Sungmin Ha <sungmin82.ha@samsung.com>
+ * YeongKyoon Lee <yeongkyoon.lee@samsung.com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -37,53 +40,74 @@ static char file1[1024];
 u64 file0_mask = 0x0000000000000000;
 u64 file1_mask = 0x0000000000000001;
 
-struct my_data {
+struct usb_storage_data {
 	int no;
-	char test[50];
+	char buffer[50];
 };
 
-static ssize_t show_mode(struct device *dev, 
-		struct device_attribute *attr, char *buf) 
+#define DEVICE_NAME				"usb_mass_storage"
+#define SUB_DEVICE0_NAME		"lun0"
+#define SUB_DEVICE1_NAME		"lun1"
+
+#define USB_STORAGE_DEBUG
+
+#ifdef USB_STORAGE_DEBUG
+#define DLOG(level, fmt, ...) \
+	printk(level "maru_%s: " fmt, DEVICE_NAME, ##__VA_ARGS__)
+#else
+// do nothing
+#define DLOG(level, fmt, ...)
+#endif
+
+static void __exit maru_usb_mass_storage_sysfs_exit(void);
+
+static ssize_t show_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
-	printk("[%s] \n", __FUNCTION__);
+	DLOG(KERN_INFO, "get mode: %s\n", mode);
 	return snprintf(buf, PAGE_SIZE, "%s", mode);
 }
 
-static ssize_t store_mode(struct device *dev, 
-		struct device_attribute *attr, const char *buf, size_t count) 
+static ssize_t store_mode(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
 {
-	printk("[%s] \n", __FUNCTION__);
 	sscanf(buf, "%s", mode);
+	DLOG(KERN_INFO, "set mode: %s\n", mode);
+
 	return strnlen(buf, PAGE_SIZE);
 }
 
-static ssize_t show_file(struct device *dev, 
-		struct device_attribute *attr, char *buf) 
+static ssize_t show_file(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
 	ssize_t ret = 0;
-	printk("[%s] \n", __FUNCTION__);
-	if(*(dev->dma_mask) == file0_mask) {
+
+	if (*(dev->dma_mask) == file0_mask) {
+		DLOG(KERN_INFO, "get file0: %s\n", file0);
 		ret = snprintf(buf, PAGE_SIZE, "%s", file0);
 	} else {
+		DLOG(KERN_INFO, "get file1: %s\n", file1);
 		ret = snprintf(buf, PAGE_SIZE, "%s", file1);
 	}
 
 	return ret;
 }
 
-static ssize_t store_file(struct device *dev, 
-		struct device_attribute *attr, const char *buf, size_t count) 
+static ssize_t store_file(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
 {
 	size_t ret;
-	printk("[%s]\n", __FUNCTION__);
-	if(*(dev->dma_mask) == file0_mask) {
+
+	if (*(dev->dma_mask) == file0_mask) {
 		sscanf(buf, "%s", file0);
+		DLOG(KERN_INFO, "set file0: %s\n", file0);
 	} else {
 		sscanf(buf, "%s", file1);
+		DLOG(KERN_INFO, "set file1: %s\n", file1);
 	}
-	
+
 	ret = strnlen(buf, PAGE_SIZE);
-	if(ret == 0) {
+	if (ret == 0) {
 		return 1;
 	} else {
 		return strnlen(buf, PAGE_SIZE);
@@ -93,79 +117,86 @@ static ssize_t store_file(struct device *dev,
 static DEVICE_ATTR(mode, S_IRUGO | S_IWUSR, show_mode, store_mode);
 static DEVICE_ATTR(file, S_IRUGO | S_IWUSR, show_file, store_file);
 
-static int sysfs_lun0_create_file(struct device *dev) 
+static int sysfs_lun0_create_file(struct device *dev)
 {
 	int result = 0;
 
-	printk("[%d] [%s] \n", __LINE__, __FUNCTION__);
+	DLOG(KERN_INFO, "sysfs_create_lun0_file\n");
 
 	result = device_create_file(dev, &dev_attr_mode);
 	if (result){
-		printk("[%d] [%s] error \n", __LINE__, __FUNCTION__);
+		DLOG(KERN_ERR, "failed to create lun0 mode\n");
 		return result;
 	}
 
 	result = device_create_file(dev, &dev_attr_file);
 	if (result){
-		printk("[%d] [%s] error \n", __LINE__, __FUNCTION__);
+		DLOG(KERN_ERR, "failed to create lun0 file\n");
 		return result;
 	}
 
 	return 0;
 }
 
-static int sysfs_lun1_create_file(struct device *dev) 
+static int sysfs_lun1_create_file(struct device *dev)
 {
 	int result = 0;
 
-	printk("[%d] [%s] \n", __LINE__, __FUNCTION__);
+	DLOG(KERN_INFO, "sysfs_create_lun1_file\n");
 
 	result = device_create_file(dev, &dev_attr_file);
 	if (result){
-		printk("[%d] [%s] error \n", __LINE__, __FUNCTION__);
+		DLOG(KERN_ERR, "failed to create lun1 file\n");
 		return result;
 	}
 
 	return 0;
 }
 
-static void sysfs_test_dev_release(struct device *dev) {}
-static void sysfs_test_dev_release_lun0(struct device *dev) {}
+static void maru_usb_mass_storage_sysfs_dev_release(struct device *dev)
+{
+	DLOG(KERN_INFO, "sysfs_dev_release\n");
+}
+
+static void maru_usb_mass_storage_sysfs_dev_release_lun0(struct device *dev)
+{
+	DLOG(KERN_INFO, "sysfs_dev_release_lun0\n");
+}
 
 static struct platform_device the_pdev = {
-	.name = "usb_mass_storage",
+	.name = DEVICE_NAME,
 	.id = -1,
 	.dev = {
-		.release = sysfs_test_dev_release,
+		.release = maru_usb_mass_storage_sysfs_dev_release,
 	}
 };
 
 static struct platform_device the_pdev_sub1 = {
-	.name = "lun0",
-	.id = -1,	
+	.name = SUB_DEVICE0_NAME,
+	.id = -1,
 	.dev = {
-		.release = sysfs_test_dev_release_lun0,
+		.release = maru_usb_mass_storage_sysfs_dev_release_lun0,
 		.parent = &the_pdev.dev,
 		.dma_mask = &file0_mask,
 	}
 };
 
 static struct platform_device the_pdev_sub2 = {
-	.name = "lun1",
-	.id = -1,	
+	.name = SUB_DEVICE1_NAME,
+	.id = -1,
 	.dev = {
-		.release = sysfs_test_dev_release_lun0,
+		.release = maru_usb_mass_storage_sysfs_dev_release_lun0,
 		.parent = &the_pdev.dev,
 		.dma_mask = &file1_mask,
 	}
 };
 
-static int __init sysfs_test_init(void) 
+static int __init maru_usb_mass_storage_sysfs_init(void)
 {
 	int err = 0;
-	struct my_data *data;
+	struct usb_storage_data *data;
 
-	printk("[%s] \n", __FUNCTION__);
+	DLOG(KERN_INFO, "sysfs_init\n");
 
 	memset(mode, 0, sizeof(mode));
 	memset(file0, 0, sizeof(file0));
@@ -173,28 +204,30 @@ static int __init sysfs_test_init(void)
 
 	err = platform_device_register(&the_pdev);
 	if (err) {
-		printk("platform_device_register error\n");
+		DLOG(KERN_ERR, "platform_device_register failure for device\n");
 		return err;
 	}
 
 	err = platform_device_register(&the_pdev_sub1);
 	if (err) {
-		printk("platform_device_register error\n");
+		DLOG(KERN_ERR, "platform_device_register failure for sub_device0\n");
+		platform_device_unregister(&the_pdev);
 		return err;
 	}
 
 	err = platform_device_register(&the_pdev_sub2);
 	if (err) {
-		printk("platform_device_register error\n");
+		DLOG(KERN_ERR, "platform_device_register failure for sub_device1\n");
+		platform_device_unregister(&the_pdev_sub1);
+		platform_device_unregister(&the_pdev);
 		return err;
 	}
 
-	data = kzalloc(sizeof(struct my_data), GFP_KERNEL);
+	data = kzalloc(sizeof(struct usb_storage_data), GFP_KERNEL);
 	if (!data) {
-		printk("[%s] kzalloc error\n", __FUNCTION__);
-		err = -ENOMEM;
+		DLOG(KERN_ERR, "kzalloc failure\n");
 		platform_device_unregister(&the_pdev);
-        	return err;
+		return ENOMEM;
 	}
 
 	dev_set_drvdata(&the_pdev.dev, (void*)data);
@@ -203,35 +236,38 @@ static int __init sysfs_test_init(void)
 
 	err = sysfs_lun0_create_file(&the_pdev_sub1.dev);
 	if (err) {
-		printk("sysfs_create_file error\n");
+		DLOG(KERN_ERR, "sysfs_create_lun0_file failure\n");
+		platform_device_unregister(&the_pdev_sub1);
+		platform_device_unregister(&the_pdev);
 		kfree(data);
+		return err;
 	}
-	
+
 	err = sysfs_lun1_create_file(&the_pdev_sub2.dev);
 	if (err) {
-		printk("sysfs_create_file error\n");
-		kfree(data);
+		DLOG(KERN_ERR, "sysfs_create_lun1_file failure\n");
+		maru_usb_mass_storage_sysfs_exit();
+		return err;
 	}
-	
+
 	return 0;
 }
 
-static void __exit sysfs_test_exit(void) 
+static void __exit maru_usb_mass_storage_sysfs_exit(void)
 {
 	void *data = dev_get_drvdata(&the_pdev.dev);
 
-	printk("[%s] \n", __FUNCTION__);
+	DLOG(KERN_INFO, "sysfs_exit\n");
 
-	kfree(data);
+	if (data) {
+		kfree(data);
+	}
 	platform_device_unregister(&the_pdev_sub2);
 	platform_device_unregister(&the_pdev_sub1);
 	platform_device_unregister(&the_pdev);
 }
 
-module_init(sysfs_test_init);
-module_exit(sysfs_test_exit);
-
+module_init(maru_usb_mass_storage_sysfs_init);
+module_exit(maru_usb_mass_storage_sysfs_exit);
 
 MODULE_LICENSE("GPL");
-
-

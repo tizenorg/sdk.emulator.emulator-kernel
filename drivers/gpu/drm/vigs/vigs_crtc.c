@@ -26,10 +26,32 @@ static int vigs_crtc_update(struct drm_crtc *crtc,
 
     vigs_fb = fb_to_vigs_fb(crtc->fb);
 
+retry:
     ret = vigs_framebuffer_pin(vigs_fb);
 
     if (ret != 0) {
-        return ret;
+        /*
+         * In condition of very intense GEM operations
+         * and with small amount of VRAM memory it's possible that
+         * GEM pin will be failing for some time, thus, framebuffer pin
+         * will be failing. This is unavoidable with current TTM design,
+         * even though ttm_bo_validate has 'no_wait_reserve' parameter it's
+         * always assumed that it's true, thus, if someone is intensively
+         * reserves/unreserves GEMs then ttm_bo_validate can fail even if there
+         * is free space in a placement. Even worse, ttm_bo_validate fails with
+         * ENOMEM so it's not possible to tell if it's a temporary failure due
+         * to reserve/unreserve pressure or constant one due to memory shortage.
+         * We assume here that it's temporary and retry framebuffer pin. This
+         * is relatively safe since we only pin GEMs on pageflip and user
+         * should have started the VM with VRAM size equal to at least 3 frames,
+         * thus, 2 frame will always be free and we can always pin 1 frame.
+         *
+         * Also, 'no_wait_reserve' parameter is completely removed in future
+         * kernels with this commit:
+         * https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=97a875cbdf89a4638eea57c2b456c7cc4e3e8b21
+         */
+        cpu_relax();
+        goto retry;
     }
 
     vigs_gem_reserve(&vigs_fb->fb_sfc->gem);
@@ -42,6 +64,7 @@ static int vigs_crtc_update(struct drm_crtc *crtc,
 
     if (ret != 0) {
         vigs_framebuffer_unpin(vigs_fb);
+
         return ret;
     }
 
@@ -197,6 +220,7 @@ static int vigs_crtc_page_flip(struct drm_crtc *crtc,
                                struct drm_framebuffer *fb,
                                struct drm_pending_vblank_event *event)
 {
+    unsigned long flags;
     struct vigs_device *vigs_dev = crtc->dev->dev_private;
     struct drm_framebuffer *old_fb = crtc->fb;
     int ret = -EINVAL;
@@ -210,19 +234,27 @@ static int vigs_crtc_page_flip(struct drm_crtc *crtc,
 
         if (ret != 0) {
             DRM_ERROR("failed to acquire vblank counter\n");
-            list_del(&event->base.link);
             goto out;
         }
 
+        spin_lock_irqsave(&vigs_dev->drm_dev->event_lock, flags);
         list_add_tail(&event->base.link,
                       &vigs_dev->pageflip_event_list);
+        spin_unlock_irqrestore(&vigs_dev->drm_dev->event_lock, flags);
 
         crtc->fb = fb;
         ret = vigs_crtc_update(crtc, old_fb);
         if (ret != 0) {
             crtc->fb = old_fb;
-            drm_vblank_put(vigs_dev->drm_dev, 0);
-            list_del(&event->base.link);
+            spin_lock_irqsave(&vigs_dev->drm_dev->event_lock, flags);
+            if (atomic_read(&vigs_dev->drm_dev->vblank_refcount[0]) > 0) {
+                /*
+                 * Only do this if event wasn't already processed.
+                 */
+                drm_vblank_put(vigs_dev->drm_dev, 0);
+                list_del(&event->base.link);
+            }
+            spin_unlock_irqrestore(&vigs_dev->drm_dev->event_lock, flags);
             goto out;
         }
     }

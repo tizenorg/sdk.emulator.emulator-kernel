@@ -47,8 +47,6 @@ int vigs_gem_init(struct vigs_gem_object *vigs_gem,
         return -EINVAL;
     }
 
-    INIT_LIST_HEAD(&vigs_gem->list);
-
     memset(&placement, 0, sizeof(placement));
 
     placement.placement = placements;
@@ -128,7 +126,7 @@ int vigs_gem_pin(struct vigs_gem_object *vigs_gem)
     placement.num_placement = 1;
     placement.num_busy_placement = 1;
 
-    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, false, false);
+    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, true, false);
 
     if (ret != 0) {
         DRM_ERROR("GEM pin failed (type = %u, off = 0x%llX, sz = %lu)\n",
@@ -178,7 +176,7 @@ void vigs_gem_unpin(struct vigs_gem_object *vigs_gem)
     placement.num_placement = 2;
     placement.num_busy_placement = 2;
 
-    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, false, false);
+    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, true, false);
 
     if (ret != 0) {
         DRM_ERROR("GEM unpin failed (type = %u, off = 0x%llX, sz = %lu)\n",
@@ -244,6 +242,19 @@ void vigs_gem_kunmap(struct vigs_gem_object *vigs_gem)
 int vigs_gem_in_vram(struct vigs_gem_object *vigs_gem)
 {
     return vigs_gem->bo.mem.mem_type == TTM_PL_VRAM;
+}
+
+int vigs_gem_wait(struct vigs_gem_object *vigs_gem)
+{
+    int ret;
+
+    spin_lock(&vigs_gem->bo.bdev->fence_lock);
+
+    ret = ttm_bo_wait(&vigs_gem->bo, true, false, false);
+
+    spin_unlock(&vigs_gem->bo.bdev->fence_lock);
+
+    return ret;
 }
 
 void vigs_gem_free_object(struct drm_gem_object *gem)
@@ -331,6 +342,34 @@ int vigs_gem_map_ioctl(struct drm_device *drm_dev,
     args->address = address;
 
     return 0;
+}
+
+int vigs_gem_wait_ioctl(struct drm_device *drm_dev,
+                        void *data,
+                        struct drm_file *file_priv)
+{
+    struct drm_vigs_gem_wait *args = data;
+    struct drm_gem_object *gem;
+    struct vigs_gem_object *vigs_gem;
+    int ret;
+
+    gem = drm_gem_object_lookup(drm_dev, file_priv, args->handle);
+
+    if (gem == NULL) {
+        return -ENOENT;
+    }
+
+    vigs_gem = gem_to_vigs_gem(gem);
+
+    vigs_gem_reserve(vigs_gem);
+
+    ret = vigs_gem_wait(vigs_gem);
+
+    vigs_gem_unreserve(vigs_gem);
+
+    drm_gem_object_unreference_unlocked(gem);
+
+    return ret;
 }
 
 int vigs_gem_dumb_create(struct drm_file *file_priv,
