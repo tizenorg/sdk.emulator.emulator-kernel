@@ -14,6 +14,10 @@ config MARU_VIRTIO_NFC
 	tristate "MARU VirtIO Virtual NFC Device Driver"
 	depends on MARU != n
 
+config MARU_VIRTIO_SENSOR
+	tristate "MARU VirtIO Emulator Sensor Device Driver"
+	depends on MARU != n
+
 config MARU_VIRTIO_HWKEY
 	tristate "MARU Virtio HW Key Driver"
 	depends on MARU != n
