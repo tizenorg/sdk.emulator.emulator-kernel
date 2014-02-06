@@ -1,7 +1,7 @@
 /*
  * Virtual Codec Device Driver
  *
- * Copyright (c) 2013 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2013 - 2014 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
  *	Kitae Kim <kt920.kim@samsung.com>
@@ -192,7 +192,7 @@ struct maru_brill_codec_device {
 /* device memory */
 #define CODEC_CONTEXT_SIZE	1024
 
-#define CODEC_S_DEVICE_MEM_COUNT	15	// small		(256K)	4M
+#define CODEC_S_DEVICE_MEM_COUNT	16	// small		(256K)	4M
 #define CODEC_M_DEVICE_MEM_COUNT	8	// medium		(2M)	16M
 #define CODEC_L_DEVICE_MEM_COUNT	3	// large		(4M)	12M
 
@@ -225,8 +225,8 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque);
 static void maru_brill_codec_divide_device_memory(void)
 {
 	int i = 0, cnt = 0;
-	// First small memory block reserved for meta data
-	int offset = CODEC_S_DEVICE_MEM_SIZE;
+	int offset = 0;
+
 	for (i = 0; i < 3; ++i) {
 		struct memory_block *block = &maru_brill_codec->memory_blocks[i];
 		block->start_offset = offset;
@@ -390,7 +390,6 @@ static void dispose_device_memory(uint32_t context_id)
 	struct device_mem *unit = NULL;
 	int index = 0;
 	struct memory_block *block = NULL;
-
 	struct list_head *pos, *temp;
 
 	for (index = SMALL; index <= LARGE; index++) {
@@ -668,12 +667,13 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
 
+		release_device_memory(ioparam->mem_offset);
+
 		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
 		context_flags[ctx_index] = 0;
 	}
 		break;
 	case CODEC_DECODE_VIDEO ... CODEC_ENCODE_AUDIO:
-	{
 		ENTER_CRITICAL_SECTION(flags);
 		writel((uint32_t)ioparam->mem_offset,
 				maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
@@ -687,10 +687,8 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 
 		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
 		context_flags[ctx_index] = 0;
-	}
 		break;
 	case CODEC_PICTURE_COPY:
-	{
 		ENTER_CRITICAL_SECTION(flags);
 		writel((uint32_t)ioparam->mem_offset,
 				maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
@@ -702,7 +700,6 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 
 		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
 		context_flags[ctx_index] = 0;
-	}
 		break;
 	case CODEC_DEINIT:
 		ENTER_CRITICAL_SECTION(flags);
@@ -711,6 +708,9 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 		writel((int32_t)ioparam->api_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
+
+		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
+		context_flags[ctx_index] = 0;
 
 		dispose_device_memory(ioparam->ctx_index);
 		break;
@@ -721,6 +721,9 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 		writel((int32_t)ioparam->api_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
+
+		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
+		context_flags[ctx_index] = 0;
 		break;
 	default:
 		DEBUG("invalid API commands: %d", api_index);
