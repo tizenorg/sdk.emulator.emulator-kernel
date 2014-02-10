@@ -9,6 +9,8 @@ struct vigs_device;
 struct vigs_fbdev
 {
     struct drm_fb_helper base;
+
+    void __iomem *kptr;
 };
 
 static inline struct vigs_fbdev *fbdev_to_vigs_fbdev(struct drm_fb_helper *fbdev)

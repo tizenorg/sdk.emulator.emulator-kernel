@@ -172,6 +172,7 @@ int vigs_surface_create(struct vigs_device *vigs_dev,
                         u32 height,
                         u32 stride,
                         vigsp_surface_format format,
+                        bool scanout,
                         struct vigs_surface **sfc)
 {
     int ret = 0;
@@ -187,6 +188,7 @@ int vigs_surface_create(struct vigs_device *vigs_dev,
     (*sfc)->height = height;
     (*sfc)->stride = stride;
     (*sfc)->format = format;
+    (*sfc)->scanout = scanout;
 
     ret = vigs_gem_init(&(*sfc)->gem,
                         vigs_dev,
@@ -266,6 +268,7 @@ int vigs_surface_create_ioctl(struct drm_device *drm_dev,
                               args->height,
                               args->stride,
                               args->format,
+                              args->scanout,
                               &sfc);
 
     if (ret != 0) {
@@ -315,6 +318,7 @@ int vigs_surface_info_ioctl(struct drm_device *drm_dev,
     args->height = sfc->height;
     args->stride = sfc->stride;
     args->format = sfc->format;
+    args->scanout = sfc->scanout;
     args->size = vigs_gem_size(vigs_gem);
     args->id = sfc->id;
 
