@@ -16,6 +16,7 @@ struct vigs_surface
     u32 height;
     u32 stride;
     vigsp_surface_format format;
+    bool scanout;
     vigsp_surface_id id;
 
     /*
@@ -78,6 +79,7 @@ int vigs_surface_create(struct vigs_device *vigs_dev,
                         u32 height,
                         u32 stride,
                         vigsp_surface_format format,
+                        bool scanout,
                         struct vigs_surface **sfc);
 
 /*
