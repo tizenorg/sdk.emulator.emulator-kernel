@@ -230,6 +230,7 @@ static struct fb_ops vigs_fbdev_ops =
 static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
                                  struct drm_fb_helper_surface_size *sizes)
 {
+    struct vigs_fbdev *vigs_fbdev = fbdev_to_vigs_fbdev(helper);
     struct vigs_device *vigs_dev = helper->dev->dev_private;
     struct vigs_surface *fb_sfc;
     struct vigs_framebuffer *vigs_fb;
@@ -278,6 +279,7 @@ static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
                               mode_cmd.height,
                               mode_cmd.pitches[0],
                               format,
+                              true,
                               &fb_sfc);
 
     if (ret != 0) {
@@ -309,23 +311,22 @@ static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
         goto fail3;
     }
 
-    ret = vigs_framebuffer_pin(vigs_fb);
+    /*
+     * This is a hack to make fbdev work without calling
+     * 'vigs_framebuffer_pin'. VRAM is precious resource and we
+     * don't want to give it away to fbdev just to show
+     * that "kernel loading" thing. Here we assume that
+     * GEM zero is always located at offset 0 in VRAM and just map
+     * it and give it to fbdev. If later, when X starts for example,
+     * one will attempt to write to /dev/fb0 then he'll probably
+     * write to some GEM's memory, but we don't care.
+     */
+    vigs_fbdev->kptr = ioremap(vigs_dev->vram_base,
+                               vigs_gem_size(&fb_sfc->gem));
 
-    if (ret != 0) {
+    if (!vigs_fbdev->kptr) {
         goto fail4;
     }
-
-    vigs_gem_reserve(&fb_sfc->gem);
-
-    ret = vigs_gem_kmap(&fb_sfc->gem);
-
-    if (ret != 0) {
-        vigs_gem_unreserve(&fb_sfc->gem);
-        DRM_ERROR("unable to kmap framebuffer GEM\n");
-        goto fail4;
-    }
-
-    vigs_gem_unreserve(&fb_sfc->gem);
 
     strcpy(fbi->fix.id, "VIGS");
 
@@ -365,9 +366,9 @@ static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
      * TODO: "vram_base + ..." - not nice, make a function for this.
      */
     fbi->fix.smem_start = vigs_dev->vram_base +
-                          vigs_gem_offset(&fb_sfc->gem) +
+                          0 +
                           offset;
-    fbi->screen_base = fb_sfc->gem.kptr + offset;
+    fbi->screen_base = vigs_fbdev->kptr + offset;
     fbi->screen_size = fbi->fix.smem_len = vigs_fb->base.width *
                                            vigs_fb->base.height *
                                            (vigs_fb->base.bits_per_pixel >> 3);
@@ -465,6 +466,10 @@ void vigs_fbdev_destroy(struct vigs_fbdev *vigs_fbdev)
     }
 
     drm_fb_helper_fini(&vigs_fbdev->base);
+
+    if (vigs_fbdev->kptr) {
+        iounmap(vigs_fbdev->kptr);
+    }
 
     kfree(vigs_fbdev);
 }

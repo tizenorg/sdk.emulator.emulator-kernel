@@ -52,6 +52,7 @@ int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id);
 
 int vigs_comm_set_root_surface(struct vigs_comm *comm,
                                vigsp_surface_id id,
+                               bool scanout,
                                vigsp_offset offset);
 
 int vigs_comm_update_vram(struct vigs_comm *comm,
@@ -63,6 +64,19 @@ int vigs_comm_update_gpu(struct vigs_comm *comm,
                          u32 width,
                          u32 height,
                          vigsp_offset offset);
+
+int vigs_comm_set_plane(struct vigs_comm *comm,
+                        u32 plane,
+                        vigsp_surface_id sfc_id,
+                        unsigned int src_x,
+                        unsigned int src_y,
+                        unsigned int src_w,
+                        unsigned int src_h,
+                        int dst_x,
+                        int dst_y,
+                        unsigned int dst_w,
+                        unsigned int dst_h,
+                        int z_pos);
 
 int vigs_comm_fence(struct vigs_comm *comm, struct vigs_fence *fence);
 

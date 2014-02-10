@@ -3,6 +3,7 @@
 #include "vigs_fenceman.h"
 #include "vigs_crtc.h"
 #include "vigs_output.h"
+#include "vigs_plane.h"
 #include "vigs_framebuffer.h"
 #include "vigs_comm.h"
 #include "vigs_fbdev.h"
@@ -94,6 +95,7 @@ int vigs_device_init(struct vigs_device *vigs_dev,
                      unsigned long flags)
 {
     int ret;
+    u32 i;
 
     DRM_DEBUG_DRIVER("enter\n");
 
@@ -186,6 +188,14 @@ int vigs_device_init(struct vigs_device *vigs_dev,
 
     if (ret != 0) {
         goto fail6;
+    }
+
+    for (i = 0; i < VIGS_MAX_PLANES; ++i) {
+        ret = vigs_plane_init(vigs_dev, i);
+
+        if (ret != 0) {
+            goto fail6;
+        }
     }
 
     ret = drm_vblank_init(drm_dev, 1);

@@ -8,7 +8,9 @@
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 15
+#define VIGS_PROTOCOL_VERSION 16
+
+#define VIGS_MAX_PLANES 2
 
 typedef signed char vigsp_s8;
 typedef signed short vigsp_s16;
@@ -49,6 +51,7 @@ typedef enum
     vigsp_cmd_update_gpu = 0x7,
     vigsp_cmd_copy = 0x8,
     vigsp_cmd_solid_fill = 0x9,
+    vigsp_cmd_set_plane = 0xA,
     /*
      * @}
      */
@@ -199,8 +202,8 @@ struct vigsp_cmd_destroy_surface_request
  * cmd_set_root_surface
  *
  * Sets surface identified by 'id' as new root surface. Root surface is the
- * one that's displayed on screen. Root surface must reside in VRAM
- * all the time, pass 'offset' in VRAM here.
+ * one that's displayed on screen. Root surface resides in VRAM
+ * all the time if 'scanout' is true.
  *
  * Pass 0 as id in order to reset the root surface.
  *
@@ -210,6 +213,7 @@ struct vigsp_cmd_destroy_surface_request
 struct vigsp_cmd_set_root_surface_request
 {
     vigsp_surface_id id;
+    vigsp_bool scanout;
     vigsp_offset offset;
 };
 
@@ -290,6 +294,31 @@ struct vigsp_cmd_solid_fill_request
     vigsp_color color;
     vigsp_u32 num_entries;
     struct vigsp_rect entries[0];
+};
+
+/*
+ * @}
+ */
+
+/*
+ * cmd_set_plane
+ *
+ * Assigns surface 'sfc_id' to plane identified by 'plane'.
+ *
+ * Pass 0 as sfc_id in order to disable the plane.
+ *
+ * @{
+ */
+
+struct vigsp_cmd_set_plane_request
+{
+    vigsp_u32 plane;
+    vigsp_surface_id sfc_id;
+    struct vigsp_rect src_rect;
+    vigsp_s32 dst_x;
+    vigsp_s32 dst_y;
+    struct vigsp_size dst_size;
+    vigsp_s32 z_pos;
 };
 
 /*
