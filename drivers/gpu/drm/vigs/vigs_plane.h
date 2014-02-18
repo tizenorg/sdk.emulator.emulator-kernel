@@ -33,4 +33,17 @@ static inline struct vigs_plane *plane_to_vigs_plane(struct drm_plane *plane)
 
 int vigs_plane_init(struct vigs_device *vigs_dev, u32 index);
 
+/*
+ * IOCTLs
+ * @{
+ */
+
+int vigs_plane_set_zpos_ioctl(struct drm_device *drm_dev,
+                              void *data,
+                              struct drm_file *file_priv);
+
+/*
+ * @}
+ */
+
 #endif

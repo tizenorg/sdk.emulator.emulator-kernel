@@ -3,6 +3,7 @@
 #include "vigs_framebuffer.h"
 #include "vigs_surface.h"
 #include "vigs_comm.h"
+#include <drm/vigs_drm.h>
 
 static const uint32_t formats[] =
 {
@@ -164,4 +165,37 @@ int vigs_plane_init(struct vigs_device *vigs_dev, u32 index)
     }
 
     return 0;
+}
+
+int vigs_plane_set_zpos_ioctl(struct drm_device *drm_dev,
+                              void *data,
+                              struct drm_file *file_priv)
+{
+    struct drm_vigs_plane_set_zpos *args = data;
+    struct drm_mode_object *obj;
+    struct drm_plane *plane;
+    struct vigs_plane *vigs_plane;
+    int ret;
+
+    mutex_lock(&drm_dev->mode_config.mutex);
+
+    obj = drm_mode_object_find(drm_dev,
+                               args->plane_id,
+                               DRM_MODE_OBJECT_PLANE);
+    if (!obj) {
+        ret = -EINVAL;
+        goto out;
+    }
+
+    plane = obj_to_plane(obj);
+    vigs_plane = plane_to_vigs_plane(plane);
+
+    vigs_plane->z_pos = args->zpos;
+
+    ret = 0;
+
+out:
+    mutex_unlock(&drm_dev->mode_config.mutex);
+
+    return ret;
 }
