@@ -55,13 +55,9 @@ int vigs_enable_vblank(struct drm_device *drm_dev, int crtc)
         return -EINVAL;
     }
 
-    value = readl(vigs_dev->io_map->handle + VIGS_REG_INT);
+    value = VIGS_REG_CON_VBLANK_ENABLE;
 
-    BUG_ON(value & VIGS_REG_INT_VBLANK_PENDING);
-
-    value |= VIGS_REG_INT_VBLANK_ENABLE;
-
-    writel(value, vigs_dev->io_map->handle + VIGS_REG_INT);
+    writel(value, vigs_dev->io_map->handle + VIGS_REG_CON);
 
     return 0;
 }
@@ -77,11 +73,9 @@ void vigs_disable_vblank(struct drm_device *drm_dev, int crtc)
         DRM_ERROR("bad crtc = %d", crtc);
     }
 
-    value = readl(vigs_dev->io_map->handle + VIGS_REG_INT);
+    value = 0;
 
-    value &= ~VIGS_REG_INT_VBLANK_ENABLE;
-
-    writel(value, vigs_dev->io_map->handle + VIGS_REG_INT);
+    writel(value, vigs_dev->io_map->handle + VIGS_REG_CON);
 }
 
 irqreturn_t vigs_irq_handler(DRM_IRQ_ARGS)
