@@ -1,3 +1,6 @@
+* 1.4.31
+- Implemented multicore rendering and fences
+== GiWoong Kim <giwoong.kim@samsung.com> 2014-01-17
 * 1.4.30
 - enable configs to support spice
 == Sungmin Ha <sungmin82.ha@samsung.com> 2013-12-18
