@@ -1,7 +1,7 @@
 /*
  * MARU Virtual Backlight Driver
  *
- * Copyright (c) 2011 - 2013 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2011 - 2014 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
  *  Jinhyung Jo <jinhyung.jo@samsung.com>
@@ -61,6 +61,7 @@ MODULE_DEVICE_TABLE(pci, marubl_pci_table);
 struct marubl {
 	struct backlight_device		*bl_dev;
 	struct lcd_device		*lcd_dev;
+	unsigned int			prev_brightness;
 	unsigned int			brightness;
 	resource_size_t			reg_start, reg_size;
 	/* memory mapped registers */
@@ -97,6 +98,10 @@ static int marubl_send_intensity(struct backlight_device *bd)
 	if (bd->props.state & BL_CORE_SUSPENDED) {
 		intensity = 0;
 		off = 1;
+	}
+	if (marubl_device->hbm_on && !off && intensity != MAX_BRIGHTNESS) {
+		marubl_device->hbm_on = 0;
+		printk(KERN_INFO "HBM is turned off because brightness reduced.\n");
 	}
 
 	writel(intensity, marubl_device->marubl_mmreg);
@@ -155,16 +160,30 @@ static ssize_t hbm_store_status(struct device *dev,
 		return -EINVAL;
 	}
 
+	/* If the same as the previous state, ignore it */
+	if (ret == marubl_device->hbm_on)
+		return count;
+
 	if (ret) {
+		/* Save previous level, set to MAX level */
 		mutex_lock(&marubl_device->bl_dev->ops_lock);
+		marubl_device->prev_brightness =
+				marubl_device->bl_dev->props.brightness;
 		marubl_device->bl_dev->props.brightness = MAX_BRIGHTNESS;
+		marubl_send_intensity(marubl_device->bl_dev);
+		mutex_unlock(&marubl_device->bl_dev->ops_lock);
+	} else {
+		/* Restore previous level */
+		mutex_lock(&marubl_device->bl_dev->ops_lock);
+		marubl_device->bl_dev->props.brightness =
+						marubl_device->prev_brightness;
 		marubl_send_intensity(marubl_device->bl_dev);
 		mutex_unlock(&marubl_device->bl_dev->ops_lock);
 	}
 	marubl_device->hbm_on = ret;
 	printk(KERN_INFO "[%s] hbm = %d\n", __func__, ret);
 
-	return ret;
+	return count;
 }
 
 static struct device_attribute hbm_device_attr =
