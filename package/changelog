@@ -1,3 +1,6 @@
+* 1.4.33
+- Implemented the HBM(High Brightness Mode) for the maru brightness.
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2014-03-07
 * 1.4.32
 - Data is moved into qemu for jacks, battery, and sensors
 == Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-03-06
