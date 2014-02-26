@@ -66,6 +66,7 @@ struct marubl {
 	/* memory mapped registers */
 	unsigned char __iomem		*marubl_mmreg;
 	int				power_off;
+	int				hbm_on;
 };
 
 /* ========================================================================== */
@@ -128,6 +129,45 @@ static struct lcd_ops maru_lcd_ops = {
 	.get_power = maru_lcd_get_power,
 };
 
+static ssize_t hbm_show_status(struct device *dev,
+								struct device_attribute *attr,
+								char *buf)
+{
+	int rc;
+
+	rc = sprintf(buf, "%s\n", marubl_device->hbm_on ? "on" : "off");
+	printk(KERN_INFO "[%s] get: %d\n", __func__, marubl_device->hbm_on);
+
+	return rc;
+}
+
+static ssize_t hbm_store_status(struct device *dev,
+								struct device_attribute *attr,
+								const char *buf, size_t count)
+{
+	int ret = -1;
+
+	if (strcmp(buf, "on") == 0) {
+		ret = 1;
+	} else if (strcmp(buf, "off") == 0) {
+		ret = 0;
+	} else {
+		return -EINVAL;
+	}
+
+	if (ret) {
+		marubl_device->brightness = MAX_BRIGHTNESS;
+		writel(marubl_device->brightness, marubl_device->marubl_mmreg);
+	}
+	marubl_device->hbm_on = ret;
+	printk(KERN_INFO "[%s] hbm = %d\n", __func__, ret);
+
+	return ret;
+}
+
+static struct device_attribute hbm_device_attr =
+						__ATTR(hbm, 0644, hbm_show_status, hbm_store_status);
+
 /* pci probe function
 */
 static int __devinit marubl_probe(struct pci_dev *pci_dev,
@@ -182,6 +222,20 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 
 	pci_write_config_byte(pci_dev, PCI_LATENCY_TIMER, 64);
 	pci_set_master(pci_dev);
+
+	/*
+	 * register High Brightness Mode
+	 */
+	ret = device_create_file(&pci_dev->dev, &hbm_device_attr);
+	if (ret < 0) {
+		iounmap(marubl_device->marubl_mmreg);
+		release_mem_region(marubl_device->reg_start,
+				   marubl_device->reg_size);
+		pci_disable_device(pci_dev);
+		kfree(marubl_device);
+		marubl_device = NULL;
+		return ret;
+	}
 
 	/*
 	 * register backlight device
@@ -243,6 +297,7 @@ static void __devexit marubl_exit(struct pci_dev *pcidev)
 
 	lcd_device_unregister(ld);
 	backlight_device_unregister(bd);
+	device_remove_file(&pcidev->dev, &hbm_device_attr);
 
 	/*
 	 * Unregister pci device & delete device
