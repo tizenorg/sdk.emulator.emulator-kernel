@@ -156,8 +156,10 @@ static ssize_t hbm_store_status(struct device *dev,
 	}
 
 	if (ret) {
-		marubl_device->brightness = MAX_BRIGHTNESS;
-		writel(marubl_device->brightness, marubl_device->marubl_mmreg);
+		mutex_lock(&marubl_device->bl_dev->ops_lock);
+		marubl_device->bl_dev->props.brightness = MAX_BRIGHTNESS;
+		marubl_send_intensity(marubl_device->bl_dev);
+		mutex_unlock(&marubl_device->bl_dev->ops_lock);
 	}
 	marubl_device->hbm_on = ret;
 	printk(KERN_INFO "[%s] hbm = %d\n", __func__, ret);
