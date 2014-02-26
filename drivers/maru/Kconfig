@@ -2,10 +2,6 @@ menuconfig MARU
 	tristate "MARU virtual device drivers for emulator"
 	default n
 
-config MARU_LCD
-	tristate "MARU LCD driver"
-	depends on MARU != n
-
 config MARU_CODEC
 	tristate "MARU codec driver"
 	depends on MARU != n
