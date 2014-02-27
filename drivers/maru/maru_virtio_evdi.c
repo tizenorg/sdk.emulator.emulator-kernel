@@ -142,8 +142,8 @@ int _make_buf_and_kick(void)
 {
 	int ret;
 	memset(&vevdi->read_msginfo, 0x00, sizeof(vevdi->read_msginfo));
-	ret = virtqueue_add_buf(vevdi->rvq, vevdi->sg_read, 0, 1, &vevdi->read_msginfo,
-			GFP_ATOMIC );
+	ret = virtqueue_add_inbuf(vevdi->rvq, vevdi->sg_read,
+	    1, &vevdi->read_msginfo, GFP_ATOMIC);
 	if (ret < 0) {
 		LOG("failed to add buffer to virtqueue.(%d)\n", ret);
 		return ret;
@@ -161,7 +161,7 @@ static int add_inbuf(struct virtqueue *vq, struct msg_info *msg)
 
 	sg_init_one(sg, msg, sizeof(struct msg_info));
 
-	ret = virtqueue_add_buf(vq, sg, 0, 1, msg, GFP_ATOMIC);
+	ret = virtqueue_add_inbuf(vq, sg, 1, msg, GFP_ATOMIC);
 	virtqueue_kick(vq);
 	return ret;
 }
@@ -311,7 +311,7 @@ static ssize_t evdi_write(struct file *f, const char __user *ubuf, size_t len,
 	}
 
 
-	err = virtqueue_add_buf(vevdi->svq, vevdi->sg_send, 1, 0,
+	err = virtqueue_add_outbuf(vevdi->svq, vevdi->sg_send, 1,
 			&vevdi->send_msginfo, GFP_ATOMIC);
 
 	/*
