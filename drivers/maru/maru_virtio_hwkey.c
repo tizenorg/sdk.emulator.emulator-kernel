@@ -190,7 +190,7 @@ static int virtio_hwkey_probe(struct virtio_device *vdev)
         }
     }
 
-    err = virtqueue_add_buf(vh->vq, vh->sg, 0,
+    err = virtqueue_add_inbuf(vh->vq, vh->sg,
             MAX_BUF_COUNT, (void *)MAX_BUF_COUNT, GFP_ATOMIC);
 
     /* register for input device */

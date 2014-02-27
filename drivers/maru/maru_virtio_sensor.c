@@ -396,7 +396,7 @@ static int _make_buf_and_kick(void)
 {
 	int ret;
 	memset(&vs->read_msginfo, 0x00, sizeof(vs->read_msginfo));
-	ret = virtqueue_add_buf(vs->rvq, vs->sg_read, 0, 1, &vs->read_msginfo, GFP_ATOMIC );
+	ret = virtqueue_add_inbuf(vs->rvq, vs->sg_read, 1, &vs->read_msginfo, GFP_ATOMIC );
 	if (ret < 0) {
 		LOG(KERN_ERR, "failed to add buffer to virtqueue.(%d)\n", ret);
 		return ret;
@@ -448,7 +448,7 @@ static void get_sensor_value(int type)
 	LOG(KERN_INFO, "vs->send_msginfo type: %d, req: %d, buf: %s",
 			vs->send_msginfo.type, vs->send_msginfo.req, vs->send_msginfo.buf);
 
-	err = virtqueue_add_buf(vs->svq, vs->sg_send, 1, 0,	&vs->send_msginfo, GFP_ATOMIC);
+	err = virtqueue_add_outbuf(vs->svq, vs->sg_send, 1, &vs->send_msginfo, GFP_ATOMIC);
 	if (err < 0) {
 		LOG(KERN_ERR, "failed to add buffer to virtqueue (err = %d)", err);
 		return;

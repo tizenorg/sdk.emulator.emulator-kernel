@@ -129,8 +129,8 @@ int make_buf_and_kick(void)
 {
     int ret;
     memset(&vnfc->read_msginfo, 0x00, sizeof(vnfc->read_msginfo));
-    ret = virtqueue_add_buf(vnfc->rvq, vnfc->sg_read, 0, 1, &vnfc->read_msginfo,
-            GFP_ATOMIC );
+    ret = virtqueue_add_inbuf(vnfc->rvq, vnfc->sg_read,
+        1, &vnfc->read_msginfo, GFP_ATOMIC);
     if (ret < 0) {
         LOG("failed to add buffer to virtqueue.(%d)\n", ret);
         return ret;
@@ -148,7 +148,7 @@ static int add_inbuf(struct virtqueue *vq, struct msg_info *msg)
 
     sg_init_one(sg, msg, MAX_BUF_SIZE);
 
-    ret = virtqueue_add_buf(vq, sg, 0, 1, msg, GFP_ATOMIC);
+    ret = virtqueue_add_inbuf(vq, sg, 1, msg, GFP_ATOMIC);
     virtqueue_kick(vq);
     return ret;
 }
@@ -292,7 +292,7 @@ static ssize_t nfc_write(struct file *f, const char __user *ubuf, size_t len,
 
     sg_init_one(vnfc->sg_send, &vnfc->send_msginfo, sizeof(vnfc->send_msginfo));
 
-    err = virtqueue_add_buf(vnfc->svq, vnfc->sg_send, 1, 0,
+    err = virtqueue_add_outbuf(vnfc->svq, vnfc->sg_send, 1,
             &vnfc->send_msginfo, GFP_ATOMIC);
 
     /*

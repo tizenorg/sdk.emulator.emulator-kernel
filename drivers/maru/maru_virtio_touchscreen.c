@@ -106,7 +106,7 @@ static int run_touchscreen(void *_vtouchscreen)
     for (index = 0; index < MAX_BUF_COUNT; index++) {
         sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
 
-        err = virtqueue_add_buf(vt->vq, sg, 0, index + 1, (void *)index + 1, GFP_ATOMIC);
+        err = virtqueue_add_inbuf(vt->vq, sg, index + 1, (void *)index + 1, GFP_ATOMIC);
         if (err < 0) {
             printk(KERN_ERR "failed to add buf\n");
         }
@@ -148,7 +148,7 @@ static int run_touchscreen(void *_vtouchscreen)
             input_sync(input_dev);
 
             /* expose buffer to other end */
-            err = virtqueue_add_buf(vt->vq, sg, 0, recv_index, (void *)recv_index, GFP_ATOMIC);
+            err = virtqueue_add_inbuf(vt->vq, sg, recv_index, (void *)recv_index, GFP_ATOMIC);
             if (err < 0) {
                 printk(KERN_ERR "failed to add buf\n");
             }
@@ -223,7 +223,7 @@ static void vq_touchscreen_callback(struct virtqueue *vq)
         }
 
         /* expose buffer to other end */
-        err = virtqueue_add_buf(vt->vq, sg, 0,
+        err = virtqueue_add_inbuf(vt->vq, sg,
             recv_index, (void *)recv_index, GFP_ATOMIC);
 
         if (err < 0) {
@@ -301,7 +301,7 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     for (index = 0; index < MAX_BUF_COUNT; index++) {
         sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
 
-        err = virtqueue_add_buf(vt->vq, sg, 0,
+        err = virtqueue_add_inbuf(vt->vq, sg,
             index + 1, (void *)index + 1, GFP_ATOMIC);
 
         if (err < 0) {
