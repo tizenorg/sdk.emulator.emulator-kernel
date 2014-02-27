@@ -99,12 +99,12 @@ struct virtio_sensor *vs;
 
 static struct class* sensor_class;
 
-#define __ATTR_RONLY(_name,_show) { \
+#define ___ATTR_RONLY(_name,_show) { \
 	.attr	= { .name = __stringify(_name), .mode = 0444 },	\
 	.show	= _show,					\
 }
 
-#define __ATTR_RW(_name) { \
+#define ___ATTR_RW(_name) { \
 	.attr = {.name = __stringify(_name), .mode = 0644 },	\
 	.show	= _name##_show,					\
 	.store	= _name##_store,					\
@@ -136,8 +136,8 @@ static ssize_t xyz_store(struct device *dev, struct device_attribute *attr, cons
 
 static struct device_attribute da_accel [] =
 {
-	__ATTR_RONLY(name, accel_name_show),
-	__ATTR_RW(xyz),
+	___ATTR_RONLY(name, accel_name_show),
+	___ATTR_RW(xyz),
 };
 
 /*
@@ -178,9 +178,9 @@ static ssize_t tesla_store(struct device *dev, struct device_attribute *attr, co
 
 static struct device_attribute da_geo [] =
 {
-	__ATTR_RONLY(name, geo_name_show),
-	__ATTR_RW(raw),
-	__ATTR_RW(tesla),
+	___ATTR_RONLY(name, geo_name_show),
+	___ATTR_RW(raw),
+	___ATTR_RW(tesla),
 };
 
 
@@ -235,10 +235,10 @@ static ssize_t gyro_z_raw_store(struct device *dev, struct device_attribute *att
 
 static struct device_attribute da_gyro [] =
 {
-	__ATTR_RONLY(name, gyro_name_show),
-	__ATTR_RW(gyro_x_raw),
-	__ATTR_RW(gyro_y_raw),
-	__ATTR_RW(gyro_z_raw),
+	___ATTR_RONLY(name, gyro_name_show),
+	___ATTR_RW(gyro_x_raw),
+	___ATTR_RW(gyro_y_raw),
+	___ATTR_RW(gyro_z_raw),
 };
 
 /*
@@ -280,9 +280,9 @@ static ssize_t level_store(struct device *dev, struct device_attribute *attr, co
 
 static struct device_attribute da_light [] =
 {
-	__ATTR_RONLY(name, light_name_show),
-	__ATTR_RW(adc),
-	__ATTR_RW(level),
+	___ATTR_RONLY(name, light_name_show),
+	___ATTR_RW(adc),
+	___ATTR_RW(level),
 };
 
 
@@ -325,9 +325,9 @@ static ssize_t vo_store(struct device *dev, struct device_attribute *attr, const
 
 static struct device_attribute da_proxi [] =
 {
-	__ATTR_RONLY(name, proxi_name_show),
-	__ATTR_RW(enable),
-	__ATTR_RW(vo),
+	___ATTR_RONLY(name, proxi_name_show),
+	___ATTR_RW(enable),
+	___ATTR_RW(vo),
 };
 
 /*
