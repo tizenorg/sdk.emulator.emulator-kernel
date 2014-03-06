@@ -8,7 +8,7 @@
 /*
  * Bump this whenever driver interface changes.
  */
-#define DRM_VIGS_DRIVER_VERSION 10
+#define DRM_VIGS_DRIVER_VERSION 12
 
 /*
  * Surface access flags.
@@ -28,6 +28,7 @@ struct drm_vigs_create_surface
     uint32_t height;
     uint32_t stride;
     uint32_t format;
+    int scanout;
     uint32_t handle;
     uint32_t size;
     uint32_t id;
@@ -58,6 +59,7 @@ struct drm_vigs_surface_info
     uint32_t height;
     uint32_t stride;
     uint32_t format;
+    int scanout;
     uint32_t size;
     uint32_t id;
 };
@@ -107,6 +109,12 @@ struct drm_vigs_fence_unref
     uint32_t handle;
 };
 
+struct drm_vigs_plane_set_zpos
+{
+    uint32_t plane_id;
+    int zpos;
+};
+
 #define DRM_VIGS_GET_PROTOCOL_VERSION 0x00
 #define DRM_VIGS_CREATE_SURFACE 0x01
 #define DRM_VIGS_CREATE_EXECBUFFER 0x02
@@ -121,6 +129,7 @@ struct drm_vigs_fence_unref
 #define DRM_VIGS_FENCE_WAIT 0x0B
 #define DRM_VIGS_FENCE_SIGNALED 0x0C
 #define DRM_VIGS_FENCE_UNREF 0x0D
+#define DRM_VIGS_PLANE_SET_ZPOS 0x0E
 
 #define DRM_IOCTL_VIGS_GET_PROTOCOL_VERSION DRM_IOR(DRM_COMMAND_BASE + \
             DRM_VIGS_GET_PROTOCOL_VERSION, struct drm_vigs_get_protocol_version)
@@ -150,5 +159,7 @@ struct drm_vigs_fence_unref
             DRM_VIGS_FENCE_SIGNALED, struct drm_vigs_fence_signaled)
 #define DRM_IOCTL_VIGS_FENCE_UNREF DRM_IOW(DRM_COMMAND_BASE + \
             DRM_VIGS_FENCE_UNREF, struct drm_vigs_fence_unref)
+#define DRM_IOCTL_VIGS_PLANE_SET_ZPOS DRM_IOW(DRM_COMMAND_BASE + \
+            DRM_VIGS_PLANE_SET_ZPOS, struct drm_vigs_plane_set_zpos)
 
 #endif

@@ -272,18 +272,28 @@ int vigs_comm_destroy_surface(struct vigs_comm *comm, vigsp_surface_id id)
 
 int vigs_comm_set_root_surface(struct vigs_comm *comm,
                                vigsp_surface_id id,
+                               bool scanout,
                                vigsp_offset offset)
 {
     int ret;
-    struct vigs_fence *fence;
+    struct vigs_fence *fence = NULL;
     struct vigsp_cmd_set_root_surface_request *request;
 
-    DRM_DEBUG_DRIVER("id = %u, offset = %u\n", id, offset);
+    DRM_DEBUG_DRIVER("id = %u, scanout = %d, offset = %u\n",
+                     id, scanout, offset);
 
-    ret = vigs_fence_create(comm->vigs_dev->fenceman, &fence);
+    if (scanout) {
+        /*
+         * We only need to fence this if surface is
+         * scanout, this is in order not to display garbage
+         * on page flip.
+         */
 
-    if (ret != 0) {
-        return ret;
+        ret = vigs_fence_create(comm->vigs_dev->fenceman, &fence);
+
+        if (ret != 0) {
+            return ret;
+        }
     }
 
     mutex_lock(&comm->mutex);
@@ -295,16 +305,19 @@ int vigs_comm_set_root_surface(struct vigs_comm *comm,
 
     if (ret == 0) {
         request->id = id;
+        request->scanout = scanout;
         request->offset = offset;
 
-        vigs_execbuffer_fence(comm->execbuffer, fence);
+        if (fence) {
+            vigs_execbuffer_fence(comm->execbuffer, fence);
+        }
 
         vigs_comm_exec_internal(comm, comm->execbuffer);
     }
 
     mutex_unlock(&comm->mutex);
 
-    if (ret == 0) {
+    if ((ret == 0) && fence) {
         vigs_fence_wait(fence, false);
     }
 
@@ -402,6 +415,54 @@ int vigs_comm_update_gpu(struct vigs_comm *comm,
     }
 
     vigs_fence_unref(fence);
+
+    return ret;
+}
+
+int vigs_comm_set_plane(struct vigs_comm *comm,
+                        u32 plane,
+                        vigsp_surface_id sfc_id,
+                        unsigned int src_x,
+                        unsigned int src_y,
+                        unsigned int src_w,
+                        unsigned int src_h,
+                        int dst_x,
+                        int dst_y,
+                        unsigned int dst_w,
+                        unsigned int dst_h,
+                        int z_pos)
+{
+    int ret;
+    struct vigsp_cmd_set_plane_request *request;
+
+    DRM_DEBUG_DRIVER("plane = %u, sfc_id = %u, src_x = %u, src_y = %u, src_w = %u, src_h = %u, dst_x = %d, dst_y = %d, dst_w = %u, dst_h = %u, z_pos = %d\n",
+                     plane, sfc_id, src_x, src_y, src_w, src_h,
+                     dst_x, dst_y, dst_w, dst_h, z_pos);
+
+    mutex_lock(&comm->mutex);
+
+    ret = vigs_comm_prepare(comm,
+                            vigsp_cmd_set_plane,
+                            sizeof(*request),
+                            (void**)&request);
+
+    if (ret == 0) {
+        request->plane = plane;
+        request->sfc_id = sfc_id;
+        request->src_rect.pos.x = src_x;
+        request->src_rect.pos.y = src_y;
+        request->src_rect.size.w = src_w;
+        request->src_rect.size.h = src_h;
+        request->dst_x = dst_x;
+        request->dst_y = dst_y;
+        request->dst_size.w = dst_w;
+        request->dst_size.h = dst_h;
+        request->z_pos = z_pos;
+
+        vigs_comm_exec_internal(comm, comm->execbuffer);
+    }
+
+    mutex_unlock(&comm->mutex);
 
     return ret;
 }

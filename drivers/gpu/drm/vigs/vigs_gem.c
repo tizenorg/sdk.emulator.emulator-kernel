@@ -393,6 +393,7 @@ int vigs_gem_dumb_create(struct drm_file *file_priv,
                               args->height,
                               args->pitch,
                               vigsp_surface_bgrx8888,
+                              true,
                               &sfc);
 
     if (ret != 0) {

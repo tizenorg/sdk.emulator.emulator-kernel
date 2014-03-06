@@ -6,7 +6,7 @@
 /*
  * Version number.
  */
-#define YAGL_VERSION 22
+#define YAGL_VERSION 23
 
 /*
  * Device control codes magic.
@@ -25,6 +25,7 @@ struct yagl_user_info
 {
     unsigned int index;
     unsigned int render_type;
+    unsigned int gl_version;
 };
 
 #define YAGL_IOC_GET_USER_INFO _IOR(YAGL_IOC_MAGIC, 1, struct yagl_user_info)
