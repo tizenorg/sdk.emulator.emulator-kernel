@@ -1,3 +1,6 @@
+* 1.4.32
+- Data is moved into qemu for jacks, battery, and sensors
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-03-06
 * 1.4.31
 - Implemented multicore rendering and fences
 == GiWoong Kim <giwoong.kim@samsung.com> 2014-01-17

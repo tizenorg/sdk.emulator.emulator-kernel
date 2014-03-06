@@ -48,7 +48,10 @@
 
 #define DRIVER_NAME "EVDI"
 
-#define LOG(fmt, ...) \
+#define LOGDEBUG(fmt, ...) \
+	printk(KERN_DEBUG "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
+
+#define LOGERR(fmt, ...) \
 	printk(KERN_ERR "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
 
 #define NUM_OF_EVDI	2
@@ -145,7 +148,7 @@ int _make_buf_and_kick(void)
 	ret = virtqueue_add_buf(vevdi->rvq, vevdi->sg_read, 0, 1, &vevdi->read_msginfo,
 			GFP_ATOMIC );
 	if (ret < 0) {
-		LOG("failed to add buffer to virtqueue.(%d)\n", ret);
+		LOGERR("failed to add buffer to virtqueue.(%d)\n", ret);
 		return ret;
 	}
 
@@ -191,11 +194,11 @@ static int evdi_open(struct inode* inode, struct file* filp)
 	struct cdev *cdev = inode->i_cdev;
 
 	evdi_info = NULL;
-	LOG("evdi_open\n");
+	LOGDEBUG("evdi_open\n");
 
 	for (i = 0; i < NUM_OF_EVDI; i++)
 	{
-		LOG("evdi info index = %d, cdev dev = %d, inode dev = %d\n",
+		LOGDEBUG("evdi info index = %d, cdev dev = %d, inode dev = %d\n",
 				i, pevdi_info[i]->cdev.dev, cdev->dev);
 
 		if (pevdi_info[i]->cdev.dev == cdev->dev)
@@ -215,7 +218,7 @@ static int evdi_open(struct inode* inode, struct file* filp)
 		return ret;
 
 
-	LOG("evdi_opened\n");
+	LOGDEBUG("evdi_opened\n");
 	return 0;
 }
 
@@ -225,7 +228,7 @@ static int evdi_close(struct inode* i, struct file* filp) {
 	evdi_info = filp->private_data;
 	evdi_info->guest_connected = false;
 
-	LOG("evdi_closed\n");
+	LOGDEBUG("evdi_closed\n");
 	return 0;
 }
 
@@ -246,7 +249,7 @@ static ssize_t evdi_read(struct file *filp, char __user *ubuf, size_t len,
 	{
 		if (filp->f_flags & O_NONBLOCK)
 		{
-			LOG("list is empty, return EAGAIN\n");
+			LOGERR("list is empty, return EAGAIN\n");
 			return -EAGAIN;
 		}
 		return -EFAULT;
@@ -255,7 +258,7 @@ static ssize_t evdi_read(struct file *filp, char __user *ubuf, size_t len,
 
 	next = list_first_entry(&vevdi->read_list, struct msg_buf, list);
 	if (next == NULL) {
-		LOG("invliad list entry\n");
+		LOGERR("invliad list entry\n");
 		return -EFAULT;
 	}
 
@@ -269,13 +272,10 @@ static ssize_t evdi_read(struct file *filp, char __user *ubuf, size_t len,
 
 	if (add_inbuf(vevdi->rvq, &vevdi->read_msginfo) < 0)
 	{
-		LOG("failed add_buf\n");
+		LOGERR("failed add_buf\n");
 	}
 
 	spin_unlock_irqrestore(&pevdi_info[EVID_READ]->inbuf_lock, flags);
-
-
-	//LOG("evdi_read count = %d!\n", ++g_read_count);
 
 	if (ret < 0)
 		return -EFAULT;
@@ -293,17 +293,17 @@ static ssize_t evdi_write(struct file *f, const char __user *ubuf, size_t len,
 	int err = 0;
 	ssize_t ret = 0;
 
-	//LOG("start of evdi_write len= %d, msglen = %d\n", len, sizeof(vevdi->send_msginfo));
+	LOGDEBUG("start of evdi_write len= %d, msglen = %d\n", len, sizeof(vevdi->send_msginfo));
 
 	if (vevdi == NULL) {
-		LOG("invalid evdi handle\n");
+		LOGERR("invalid evdi handle\n");
 		return 0;
 	}
 
 	memset(&vevdi->send_msginfo, 0, sizeof(vevdi->send_msginfo));
 	ret = copy_from_user(&vevdi->send_msginfo, ubuf, sizeof(vevdi->send_msginfo));
 
-	//LOG("copy_from_user ret = %d, msg = %s", ret, vevdi->send_msginfo.buf);
+	LOGDEBUG("copy_from_user ret = %d, msg = %s", ret, vevdi->send_msginfo.buf);
 
 	if (ret) {
 		ret = -EFAULT;
@@ -319,13 +319,13 @@ static ssize_t evdi_write(struct file *f, const char __user *ubuf, size_t len,
 				&_msg, GFP_ATOMIC);*/
 
 	if (err < 0) {
-		LOG("failed to add buffer to virtqueue (err = %d)\n", err);
+		LOGERR("failed to add buffer to virtqueue (err = %d)\n", err);
 		return 0;
 	}
 
 	virtqueue_kick(vevdi->svq);
 
-	//LOG("send to host\n");
+	LOGDEBUG("send to host\n");
 
 	return len;
 }
@@ -347,7 +347,7 @@ static unsigned int evdi_poll(struct file *filp, poll_table *wait)
 
 	if (has_readdata(evdi))
 	{
-		LOG("POLLIN | POLLRDNORM\n");
+		LOGDEBUG("POLLIN | POLLRDNORM\n");
 		ret |= POLLIN | POLLRDNORM;
 	}
 
@@ -378,25 +378,24 @@ static void evdi_recv_done(struct virtqueue *rvq) {
 
 	_msg = (struct msg_info*) virtqueue_get_buf(vevdi->rvq, &len);
 	if (_msg == NULL ) {
-		LOG("failed to virtqueue_get_buf\n");
+		LOGERR("failed to virtqueue_get_buf\n");
 		return;
 	}
 
 	do {
-		//LOG("msg use = %d\n", _msg->use);
-		//LOG("msg data = %s\n", _msg->buf);
+		LOGDEBUG("msg use = %d\n", _msg->use);
+		LOGDEBUG("msg data = %s\n", _msg->buf);
 
 		/* insert into queue */
 		msgbuf = (struct msg_buf*) __xmalloc(SIZEOF_MSG_BUF);
 		memset(msgbuf, 0x00, sizeof(*msgbuf));
 		memcpy(&(msgbuf->msg), _msg, sizeof(*_msg));
 
-		//LOG("copied msg data = %s, %s\n", msgbuf->msg.buf, _msg->buf);
+		LOGDEBUG("copied msg data = %s, %s\n", msgbuf->msg.buf, _msg->buf);
 
 		spin_lock_irqsave(&pevdi_info[EVID_READ]->inbuf_lock, flags);
 
 		list_add_tail(&msgbuf->list, &vevdi->read_list);
-		//LOG("== wake_up_interruptible = %d!\n", ++g_wake_up_interruptible_count);
 
 		spin_unlock_irqrestore(&pevdi_info[EVID_READ]->inbuf_lock, flags);
 
@@ -449,7 +448,7 @@ int _init_device(void)
 	int i, ret;
 
 	if (alloc_chrdev_region(&evdi_dev_number, 0, NUM_OF_EVDI, DEVICE_NAME) < 0) {
-		LOG("fail to alloc_chrdev_region\n");
+		LOGERR("fail to alloc_chrdev_region\n");
 		return -1;
 	}
 
@@ -464,7 +463,7 @@ int _init_device(void)
 		pevdi_info[i] = kmalloc(sizeof(struct virtevdi_info), GFP_KERNEL);
 
 		if (!pevdi_info[i]) {
-			LOG("Bad malloc\n");
+			LOGERR("Bad malloc\n");
 			return -ENOMEM;
 		}
 
@@ -483,7 +482,7 @@ int _init_device(void)
 		spin_lock_init(&pevdi_info[i]->outvq_lock);
 
 		if (ret == -1) {
-			LOG("Bad cdev\n");
+			LOGERR("Bad cdev\n");
 			return ret;
 		}
 
@@ -508,7 +507,7 @@ static int evdi_probe(struct virtio_device* dev) {
 	ret = _init_device();
 	if (ret)
 	{
-		LOG("failed to _init_device\n");
+		LOGERR("failed to _init_device\n");
 		return ret;
 	}
 	ret = init_vqs(vevdi);
@@ -517,7 +516,7 @@ static int evdi_probe(struct virtio_device* dev) {
 		kfree(vevdi);
 		dev->priv = NULL;
 
-		LOG("failed to init_vqs\n");
+		LOGERR("failed to init_vqs\n");
 		return ret;
 	}
 
@@ -536,9 +535,7 @@ static int evdi_probe(struct virtio_device* dev) {
 	sg_init_one(vevdi->sg_read, &vevdi->read_msginfo, sizeof(vevdi->read_msginfo));
 	sg_init_one(vevdi->sg_send, &vevdi->send_msginfo, sizeof(vevdi->send_msginfo));
 
-
-
-	LOG("EVDI Probe completed");
+	LOGDEBUG("EVDI Probe completed");
 	return 0;
 }
 
@@ -547,7 +544,7 @@ static void __devexit evdi_remove(struct virtio_device* dev)
 	struct virtio_evdi* _evdi = dev->priv;
 	if (!_evdi)
 	{
-		LOG("evdi is NULL\n");
+		LOGERR("evdi is NULL\n");
 		return;
 	}
 
@@ -556,7 +553,7 @@ static void __devexit evdi_remove(struct virtio_device* dev)
 
 	kfree(_evdi);
 
-	LOG("driver is removed.\n");
+	LOGDEBUG("driver is removed.\n");
 }
 
 MODULE_DEVICE_TABLE(virtio, id_table);
@@ -573,7 +570,7 @@ static struct virtio_driver virtio_evdi_driver = {
 
 static int __init evdi_init(void)
 {
-	LOG("EVDI driver initialized.\n");
+	LOGDEBUG("EVDI driver initialized.\n");
 
 	return register_virtio_driver(&virtio_evdi_driver);
 }
@@ -596,7 +593,7 @@ static void __exit evdi_exit(void)
 
 	unregister_virtio_driver(&virtio_evdi_driver);
 
-	LOG("EVDI driver is destroyed.\n");
+	LOGDEBUG("EVDI driver is destroyed.\n");
 }
 
 module_init(evdi_init);

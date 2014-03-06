@@ -37,6 +37,8 @@
 #include <linux/virtio.h>
 #include <linux/virtio_ids.h>
 #include <linux/virtio_config.h>
+#include <linux/wait.h>
+#include <linux/sched.h>
 #include <linux/cdev.h>
 
 
@@ -60,7 +62,12 @@ enum sensor_types {
 	sensor_type_accel = 0,
 	sensor_type_geo,
 	sensor_type_gyro,
+	sensor_type_gyro_x,
+	sensor_type_gyro_y,
+	sensor_type_gyro_z,
 	sensor_type_light,
+	sensor_type_light_adc,
+	sensor_type_light_level,
 	sensor_type_proxi,
 	sensor_type_mag,
 	sensor_type_tilt,
@@ -82,14 +89,14 @@ struct msg_info {
 
 struct virtio_sensor {
 	struct virtio_device* vdev;
-	struct virtqueue* rvq;
-	struct virtqueue* svq;
+	struct virtqueue* vq;
 
-	struct msg_info read_msginfo;
-	struct msg_info send_msginfo;
+	struct msg_info msginfo;
 
-	struct scatterlist sg_read[2];
-	struct scatterlist sg_send[2];
+	struct scatterlist sg_vq[2];
+
+	int flags;
+	struct mutex lock;
 };
 
 static struct virtio_device_id id_table[] = { { VIRTIO_ID_SENSOR,
@@ -98,6 +105,8 @@ static struct virtio_device_id id_table[] = { { VIRTIO_ID_SENSOR,
 struct virtio_sensor *vs;
 
 static struct class* sensor_class;
+
+static DECLARE_WAIT_QUEUE_HEAD(wq);
 
 #define __ATTR_RONLY(_name,_show) { \
 	.attr	= { .name = __stringify(_name), .mode = 0444 },	\
@@ -110,13 +119,111 @@ static struct class* sensor_class;
 	.store	= _name##_store,					\
 }
 
+static char sensor_data [PAGE_SIZE];
+
+static void sensor_vq_done(struct virtqueue *rvq) {
+	unsigned int len;
+	struct msg_info* msg;
+
+	msg = (struct msg_info*) virtqueue_get_buf(vs->vq, &len);
+	if (msg == NULL) {
+		LOG(KERN_ERR, "failed to virtqueue_get_buf");
+		return;
+	}
+
+	if (msg->req != request_answer || msg->buf == NULL) {
+		LOG(KERN_ERR, "message from host is cracked.");
+		return;
+	}
+
+	LOG(KERN_DEBUG, "msg buf: %s, req: %d, type: %d", msg->buf, msg->req, msg->type);
+
+	mutex_lock(&vs->lock);
+	strcpy(sensor_data, msg->buf);
+	vs->flags = 1;
+	mutex_unlock(&vs->lock);
+
+	wake_up_interruptible(&wq);
+}
+
+static void set_sensor_data(int type, const char* buf)
+{
+	int err = 0;
+
+	if (buf == NULL) {
+		LOG(KERN_ERR, "set_sensor buf is NULL.");
+		return;
+	}
+
+	if (vs == NULL) {
+		LOG(KERN_ERR, "Invalid sensor handle");
+		return;
+	}
+
+	mutex_lock(&vs->lock);
+	memset(sensor_data, 0, PAGE_SIZE);
+	memset(&vs->msginfo, 0, sizeof(vs->msginfo));
+
+	strcpy(sensor_data, buf);
+
+	vs->msginfo.req = request_set;
+	vs->msginfo.type = type;
+	strcpy(vs->msginfo.buf, buf);
+	mutex_unlock(&vs->lock);
+
+	LOG(KERN_DEBUG, "set_sensor_data type: %d, req: %d, buf: %s",
+			vs->msginfo.type, vs->msginfo.req, vs->msginfo.buf);
+
+	err = virtqueue_add_buf(vs->vq, vs->sg_vq, 1, 0, &vs->msginfo, GFP_ATOMIC);
+	if (err < 0) {
+		LOG(KERN_ERR, "failed to add buffer to virtqueue (err = %d)", err);
+		return;
+	}
+
+	virtqueue_kick(vs->vq);
+}
+
+static void get_sensor_data(int type)
+{
+	int err = 0;
+
+	if (vs == NULL) {
+		LOG(KERN_ERR, "Invalid sensor handle");
+		return;
+	}
+
+	mutex_lock(&vs->lock);
+	memset(sensor_data, 0, PAGE_SIZE);
+	memset(&vs->msginfo, 0, sizeof(vs->msginfo));
+
+	vs->msginfo.req = request_get;
+	vs->msginfo.type = type;
+
+	mutex_unlock(&vs->lock);
+
+	LOG(KERN_DEBUG, "get_sensor_data type: %d, req: %d",
+			vs->msginfo.type, vs->msginfo.req);
+
+	err = virtqueue_add_buf(vs->vq, vs->sg_vq, 1, 1, &vs->msginfo, GFP_ATOMIC);
+	if (err < 0) {
+		LOG(KERN_ERR, "failed to add buffer to virtqueue (err = %d)", err);
+		return;
+	}
+
+	virtqueue_kick(vs->vq);
+
+	wait_event_interruptible(wq, vs->flags != 0);
+
+	mutex_lock(&vs->lock);
+	vs->flags = 0;
+	mutex_unlock(&vs->lock);
+}
+
 /*
  * Accelerometer
  */
 #define ACCEL_NAME_STR		"accel_sim"
 #define ACCEL_FILE_NUM		2
-
-static char accel_xyz [__MAX_BUF_SENSOR] = {'0',',','9','8','0','6','6','5',',','0'};
 
 static ssize_t accel_name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -125,12 +232,13 @@ static ssize_t accel_name_show(struct device *dev, struct device_attribute *attr
 
 static ssize_t xyz_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%s", accel_xyz);
+	get_sensor_data(sensor_type_accel);
+	return snprintf(buf, PAGE_SIZE, "%s", sensor_data);
 }
 
 static ssize_t xyz_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	strcpy(accel_xyz, buf);
+	set_sensor_data(sensor_type_accel, buf);
 	return strnlen(buf, PAGE_SIZE);
 }
 
@@ -146,9 +254,6 @@ static struct device_attribute da_accel [] =
 #define GEO_NAME_STR		"geo_sim"
 #define GEO_FILE_NUM		3
 
-static char geo_raw [__MAX_BUF_SENSOR] = {'0',' ','-','9','0',' ','0',' ','3'};
-static char geo_tesla [__MAX_BUF_SENSOR] = {'1',' ','0',' ','-','1','0'};
-
 static ssize_t geo_name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, GEO_NAME_STR);
@@ -156,23 +261,25 @@ static ssize_t geo_name_show(struct device *dev, struct device_attribute *attr, 
 
 static ssize_t raw_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%s", geo_raw);
+	get_sensor_data(sensor_type_tilt);
+	return snprintf(buf, PAGE_SIZE, "%s", sensor_data);
 }
 
 static ssize_t raw_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	strcpy(geo_raw, buf);
+	set_sensor_data(sensor_type_tilt, buf);
 	return strnlen(buf, PAGE_SIZE);
 }
 
 static ssize_t tesla_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%s", geo_tesla);
+	get_sensor_data(sensor_type_mag);
+	return snprintf(buf, PAGE_SIZE, "%s", sensor_data);
 }
 
 static ssize_t tesla_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	strcpy(geo_tesla, buf);
+	set_sensor_data(sensor_type_mag, buf);
 	return strnlen(buf, PAGE_SIZE);
 }
 
@@ -191,10 +298,6 @@ static struct device_attribute da_geo [] =
 #define GYRO_NAME_STR		"gyro_sim"
 #define GYRO_FILE_NUM		4
 
-static int gyro_x_raw = 0;
-static int gyro_y_raw = 0;
-static int gyro_z_raw = 0;
-
 static ssize_t gyro_name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, GYRO_NAME_STR);
@@ -202,34 +305,37 @@ static ssize_t gyro_name_show(struct device *dev, struct device_attribute *attr,
 
 static ssize_t gyro_x_raw_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%d", gyro_x_raw);
+	get_sensor_data(sensor_type_gyro_x);
+	return snprintf(buf, PAGE_SIZE, "%s", sensor_data);
 }
 
 static ssize_t gyro_x_raw_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	sscanf(buf, "%d", &gyro_x_raw);
+	set_sensor_data(sensor_type_gyro_x, buf);
 	return strnlen(buf, PAGE_SIZE);
 }
 
 static ssize_t gyro_y_raw_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%d", gyro_y_raw);
+	get_sensor_data(sensor_type_gyro_y);
+	return snprintf(buf, PAGE_SIZE, "%s", sensor_data);
 }
 
 static ssize_t gyro_y_raw_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	sscanf(buf, "%d", &gyro_y_raw);
+	set_sensor_data(sensor_type_gyro_y, buf);
 	return strnlen(buf, PAGE_SIZE);
 }
 
 static ssize_t gyro_z_raw_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%d", gyro_z_raw);
+	get_sensor_data(sensor_type_gyro_z);
+	return snprintf(buf, PAGE_SIZE, "%s", sensor_data);
 }
 
 static ssize_t gyro_z_raw_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	sscanf(buf, "%d", &gyro_z_raw);
+	set_sensor_data(sensor_type_gyro_z, buf);
 	return strnlen(buf, PAGE_SIZE);
 }
 
@@ -248,9 +354,6 @@ static struct device_attribute da_gyro [] =
 #define LIGHT_NAME_STR		"light_sim"
 #define LIGHT_FILE_NUM		3
 
-static int light_adc = 65535;
-static int light_level = 10;
-
 static ssize_t light_name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, LIGHT_NAME_STR);
@@ -258,23 +361,25 @@ static ssize_t light_name_show(struct device *dev, struct device_attribute *attr
 
 static ssize_t adc_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%d", light_adc);
+	get_sensor_data(sensor_type_light_adc);
+	return snprintf(buf, PAGE_SIZE, "%s", sensor_data);
 }
 
 static ssize_t adc_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	sscanf(buf, "%d", &light_adc);
+	set_sensor_data(sensor_type_light_adc, buf);
 	return strnlen(buf, PAGE_SIZE);
 }
 
 static ssize_t level_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%d", light_level);
+	get_sensor_data(sensor_type_light_level);
+	return snprintf(buf, PAGE_SIZE, "%s", sensor_data);
 }
 
 static ssize_t level_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	sscanf(buf, "%d", &light_level);
+	set_sensor_data(sensor_type_light_level, buf);
 	return strnlen(buf, PAGE_SIZE);
 }
 
@@ -294,7 +399,6 @@ static struct device_attribute da_light [] =
 #define PROXI_FILE_NUM		3
 
 static int proxi_enable = 1;
-static int proxi_vo = 8;
 
 static ssize_t proxi_name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -314,12 +418,13 @@ static ssize_t enable_store(struct device *dev, struct device_attribute *attr, c
 
 static ssize_t vo_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%d", proxi_vo);
+	get_sensor_data(sensor_type_proxi);
+	return snprintf(buf, PAGE_SIZE, "%s", sensor_data);
 }
 
 static ssize_t vo_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	sscanf(buf, "%d", &proxi_vo);
+	set_sensor_data(sensor_type_proxi, buf);
 	return strnlen(buf, PAGE_SIZE);
 }
 
@@ -392,155 +497,6 @@ device_err:
 	return -1;
 }
 
-static int _make_buf_and_kick(void)
-{
-	int ret;
-	memset(&vs->read_msginfo, 0x00, sizeof(vs->read_msginfo));
-	ret = virtqueue_add_buf(vs->rvq, vs->sg_read, 0, 1, &vs->read_msginfo, GFP_ATOMIC );
-	if (ret < 0) {
-		LOG(KERN_ERR, "failed to add buffer to virtqueue.(%d)\n", ret);
-		return ret;
-	}
-
-	virtqueue_kick(vs->rvq);
-
-	return 0;
-}
-
-static void get_sensor_value(int type)
-{
-	int err = 0;
-
-	if (vs == NULL) {
-		LOG(KERN_ERR, "Invalid sensor handle");
-		return;
-	}
-
-	memset(&vs->send_msginfo, 0, sizeof(vs->send_msginfo));
-
-	vs->send_msginfo.req = request_answer;
-
-	switch (type) {
-		case sensor_type_accel:
-			vs->send_msginfo.type = sensor_type_accel;
-			strcpy(vs->send_msginfo.buf, accel_xyz);
-			break;
-		case sensor_type_mag:
-			vs->send_msginfo.type = sensor_type_mag;
-			strcpy(vs->send_msginfo.buf, geo_tesla);
-			break;
-		case sensor_type_gyro:
-			vs->send_msginfo.type = sensor_type_gyro;
-			sprintf(vs->send_msginfo.buf, "%d, %d, %d", gyro_x_raw, gyro_y_raw, gyro_z_raw);
-			break;
-		case sensor_type_light:
-			vs->send_msginfo.type = sensor_type_light;
-			sprintf(vs->send_msginfo.buf, "%d", light_adc);
-			break;
-		case sensor_type_proxi:
-			vs->send_msginfo.type = sensor_type_proxi;
-			sprintf(vs->send_msginfo.buf, "%d", proxi_vo);
-			break;
-		default:
-			return;
-	}
-
-	LOG(KERN_INFO, "vs->send_msginfo type: %d, req: %d, buf: %s",
-			vs->send_msginfo.type, vs->send_msginfo.req, vs->send_msginfo.buf);
-
-	err = virtqueue_add_buf(vs->svq, vs->sg_send, 1, 0,	&vs->send_msginfo, GFP_ATOMIC);
-	if (err < 0) {
-		LOG(KERN_ERR, "failed to add buffer to virtqueue (err = %d)", err);
-		return;
-	}
-
-	virtqueue_kick(vs->svq);
-}
-
-static void set_sensor_value(char* buf, int type)
-{
-
-	LOG(KERN_INFO, "set_sensor_value- type: %d, buf: %s", type, buf);
-
-	switch (type) {
-		case sensor_type_accel:
-			strcpy(accel_xyz, buf);
-			break;
-		case sensor_type_gyro:
-			sscanf(buf, "%d %d %d", &gyro_x_raw, &gyro_y_raw, &gyro_z_raw);
-			break;
-		case sensor_type_light:
-			sscanf(buf, "%d", &light_adc);
-			light_level = (light_adc / 6554) % 10 + 1;
-			break;
-		case sensor_type_proxi:
-			sscanf(buf, "%d", &proxi_vo);
-			break;
-		case sensor_type_mag:
-			strcpy(geo_tesla, buf);
-			break;
-		case sensor_type_tilt:
-			strcpy(geo_raw, buf);
-			break;
-		default:
-			return;
-	}
-
-}
-
-static void message_handler(char* buf, int req, int type)
-{
-	if (req == request_get) {
-		get_sensor_value(type);
-	} else if (req == request_set) {
-		set_sensor_value(buf, type);
-	} else {
-		LOG(KERN_INFO, "wrong message request");
-	}
-}
-
-static void sensor_recv_done(struct virtqueue *rvq) {
-	unsigned int len;
-	struct msg_info* msg;
-
-	msg = (struct msg_info*) virtqueue_get_buf(vs->rvq, &len);
-	if (msg == NULL ) {
-		LOG(KERN_ERR, "failed to virtqueue_get_buf");
-		return;
-	}
-
-	LOG(KERN_INFO, "msg buf: %s, req: %d, type: %d", msg->buf, msg->req, msg->type);
-
-	message_handler(msg->buf, msg->req, msg->type);
-
-	_make_buf_and_kick();
-}
-
-static void sensor_send_done(struct virtqueue *svq) {
-	unsigned int len = 0;
-
-	virtqueue_get_buf(svq, &len);
-}
-
-static int init_vqs(struct virtio_sensor *vsensor) {
-	struct virtqueue *vqs[2];
-	vq_callback_t *vq_callbacks[] = { sensor_recv_done, sensor_send_done };
-	const char *vq_names[] = { "sensor_input", "sensor_output" };
-	int err;
-
-	err = vs->vdev->config->find_vqs(vs->vdev, 2, vqs, vq_callbacks, vq_names);
-	if (err < 0)
-		return err;
-
-	vs->rvq = vqs[0];
-	vs->svq = vqs[1];
-
-	virtqueue_enable_cb(vs->rvq);
-	virtqueue_enable_cb(vs->svq);
-
-	return 0;
-}
-
 static void cleanup(struct virtio_device* dev) {
 	dev->config->del_vqs(dev);
 
@@ -556,6 +512,7 @@ static int sensor_probe(struct virtio_device* dev)
 {
 	int err = 0;
 	int ret = 0;
+	int index = 0;
 
 	LOG(KERN_INFO, "Sensor probe starts");
 
@@ -576,37 +533,30 @@ static int sensor_probe(struct virtio_device* dev)
 		return ret;
 	}
 
-	ret = init_vqs(vs);
-	if (ret) {
+	vs->vq = virtio_find_single_vq(dev, sensor_vq_done, "sensor");
+	if (IS_ERR(vs->vq)) {
 		cleanup(dev);
-		LOG(KERN_ERR, "failed to init vqs");
+		LOG(KERN_ERR, "failed to init virt queue");
 		return ret;
 	}
 
-	memset(&vs->read_msginfo, 0x00, sizeof(vs->read_msginfo));
-	sg_set_buf(vs->sg_read, &vs->read_msginfo, sizeof(struct msg_info));
+	virtqueue_enable_cb(vs->vq);
 
-	memset(&vs->send_msginfo, 0x00, sizeof(vs->send_msginfo));
-	sg_set_buf(vs->sg_send, &vs->send_msginfo, sizeof(struct msg_info));
+	memset(&vs->msginfo, 0x00, sizeof(vs->msginfo));
 
-	sg_init_one(vs->sg_read, &vs->read_msginfo, sizeof(vs->read_msginfo));
-	sg_init_one(vs->sg_send, &vs->send_msginfo, sizeof(vs->send_msginfo));
-
-	ret = _make_buf_and_kick();
-	if (ret) {
-		cleanup(dev);
-		LOG(KERN_ERR, "failed to send buf");
-		return ret;
+	sg_init_table(vs->sg_vq, 2);
+	for (; index < 2; index++) {
+		sg_set_buf(&vs->sg_vq[index], &vs->msginfo, sizeof(vs->msginfo));
 	}
+
+	mutex_init(&vs->lock);
 
 	LOG(KERN_INFO, "Sensor probe completes");
 
 	return err;
 }
 
-
-
-static void __devexit sensor_remove(struct virtio_device* dev)
+static void sensor_remove(struct virtio_device* dev)
 {
 	struct virtio_sensor* vs = dev->priv;
 	if (!vs)

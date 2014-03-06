@@ -48,6 +48,8 @@
 #define VIRTIO_ID_GL			36 /* virtio glmem */
 #define VIRTIO_ID_SENSOR		37 /* virtio sensor */
 #define VIRTIO_ID_NFC			38 /* virtio nfc */
+#define VIRTIO_ID_JACK			39 /* virtio jack */
+#define VIRTIO_ID_POWER			40 /* virtio power supply */
 #endif
 
 #endif /* _LINUX_VIRTIO_IDS_H */
