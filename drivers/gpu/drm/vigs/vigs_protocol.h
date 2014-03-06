@@ -8,7 +8,7 @@
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 16
+#define VIGS_PROTOCOL_VERSION 17
 
 #define VIGS_MAX_PLANES 2
 
