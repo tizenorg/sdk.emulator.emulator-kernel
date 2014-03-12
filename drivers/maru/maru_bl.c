@@ -1,7 +1,7 @@
 /*
  * MARU Virtual Backlight Driver
  *
- * Copyright (c) 2011 - 2013 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2011 - 2014 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
  *  Jinhyung Jo <jinhyung.jo@samsung.com>
@@ -37,6 +37,7 @@
 #include <linux/err.h>
 #include <linux/fb.h>
 #include <linux/backlight.h>
+#include <linux/lcd.h>
 
 #include <linux/uaccess.h>
 
@@ -59,10 +60,14 @@ MODULE_DEVICE_TABLE(pci, marubl_pci_table);
 /* MARU virtual brightness(backlight) device structure */
 struct marubl {
 	struct backlight_device		*bl_dev;
+	struct lcd_device		*lcd_dev;
+	unsigned int			prev_brightness;
 	unsigned int			brightness;
 	resource_size_t			reg_start, reg_size;
 	/* memory mapped registers */
 	unsigned char __iomem		*marubl_mmreg;
+	int				power_off;
+	int				hbm_on;
 };
 
 /* ========================================================================== */
@@ -94,10 +99,15 @@ static int marubl_send_intensity(struct backlight_device *bd)
 		intensity = 0;
 		off = 1;
 	}
+	if (marubl_device->hbm_on && !off && intensity != MAX_BRIGHTNESS) {
+		marubl_device->hbm_on = 0;
+		printk(KERN_INFO "HBM is turned off because brightness reduced.\n");
+	}
 
 	writel(intensity, marubl_device->marubl_mmreg);
 	writel(off, marubl_device->marubl_mmreg + 0x04);
 	marubl_device->brightness = intensity;
+	marubl_device->power_off = off ? 1 : 0;
 
 	return 0;
 }
@@ -108,6 +118,77 @@ static const struct backlight_ops marubl_ops = {
 	.update_status	= marubl_send_intensity,
 };
 
+int maru_lcd_get_power(struct lcd_device *ld)
+{
+	int ret = 0;
+
+	if (marubl_device->power_off) {
+		ret = FB_BLANK_POWERDOWN;
+	} else {
+		ret = FB_BLANK_UNBLANK;
+	}
+	return ret;
+}
+
+static struct lcd_ops maru_lcd_ops = {
+	.get_power = maru_lcd_get_power,
+};
+
+static ssize_t hbm_show_status(struct device *dev,
+								struct device_attribute *attr,
+								char *buf)
+{
+	int rc;
+
+	rc = sprintf(buf, "%s\n", marubl_device->hbm_on ? "on" : "off");
+	printk(KERN_INFO "[%s] get: %d\n", __func__, marubl_device->hbm_on);
+
+	return rc;
+}
+
+static ssize_t hbm_store_status(struct device *dev,
+								struct device_attribute *attr,
+								const char *buf, size_t count)
+{
+	int ret = -1;
+
+	if (strcmp(buf, "on") == 0) {
+		ret = 1;
+	} else if (strcmp(buf, "off") == 0) {
+		ret = 0;
+	} else {
+		return -EINVAL;
+	}
+
+	/* If the same as the previous state, ignore it */
+	if (ret == marubl_device->hbm_on)
+		return count;
+
+	if (ret) {
+		/* Save previous level, set to MAX level */
+		mutex_lock(&marubl_device->bl_dev->ops_lock);
+		marubl_device->prev_brightness =
+				marubl_device->bl_dev->props.brightness;
+		marubl_device->bl_dev->props.brightness = MAX_BRIGHTNESS;
+		marubl_send_intensity(marubl_device->bl_dev);
+		mutex_unlock(&marubl_device->bl_dev->ops_lock);
+	} else {
+		/* Restore previous level */
+		mutex_lock(&marubl_device->bl_dev->ops_lock);
+		marubl_device->bl_dev->props.brightness =
+						marubl_device->prev_brightness;
+		marubl_send_intensity(marubl_device->bl_dev);
+		mutex_unlock(&marubl_device->bl_dev->ops_lock);
+	}
+	marubl_device->hbm_on = ret;
+	printk(KERN_INFO "[%s] hbm = %d\n", __func__, ret);
+
+	return count;
+}
+
+static struct device_attribute hbm_device_attr =
+						__ATTR(hbm, 0644, hbm_show_status, hbm_store_status);
+
 /* pci probe function
 */
 static int __devinit marubl_probe(struct pci_dev *pci_dev,
@@ -115,6 +196,7 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 {
 	int ret;
 	struct backlight_device *bd;
+	struct lcd_device *ld;
 	struct backlight_properties props;
 
 	marubl_device = kmalloc(sizeof(struct marubl), GFP_KERNEL);
@@ -163,6 +245,20 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 	pci_set_master(pci_dev);
 
 	/*
+	 * register High Brightness Mode
+	 */
+	ret = device_create_file(&pci_dev->dev, &hbm_device_attr);
+	if (ret < 0) {
+		iounmap(marubl_device->marubl_mmreg);
+		release_mem_region(marubl_device->reg_start,
+				   marubl_device->reg_size);
+		pci_disable_device(pci_dev);
+		kfree(marubl_device);
+		marubl_device = NULL;
+		return ret;
+	}
+
+	/*
 	 * register backlight device
 	 */
 	memset(&props, 0, sizeof(struct backlight_properties));
@@ -185,11 +281,24 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 		return ret;
 	}
 
+	ld = lcd_device_register("emulator", &pci_dev->dev, NULL, &maru_lcd_ops);
+	if (IS_ERR(ld)) {
+		ret = PTR_ERR(ld);
+		iounmap(marubl_device->marubl_mmreg);
+		release_mem_region(marubl_device->reg_start,
+				   marubl_device->reg_size);
+		pci_disable_device(pci_dev);
+		kfree(marubl_device);
+		marubl_device = NULL;
+		return ret;
+	}
+
 	bd->props.brightness = (unsigned int)readl(marubl_device->marubl_mmreg);
 	bd->props.power = FB_BLANK_UNBLANK;
 	backlight_update_status(bd);
 
 	marubl_device->bl_dev = bd;
+	marubl_device->lcd_dev = ld;
 
 	printk(KERN_INFO "marubl: MARU Virtual Backlight driver is loaded.\n");
 	return 0;
@@ -201,12 +310,15 @@ static void __devexit marubl_exit(struct pci_dev *pcidev)
 	 * Unregister backlight device
 	 */
 	struct backlight_device *bd = marubl_device->bl_dev;
+	struct lcd_device *ld = marubl_device->lcd_dev;
 
 	bd->props.power = 0;
 	bd->props.brightness = 0;
 	backlight_update_status(bd);
 
+	lcd_device_unregister(ld);
 	backlight_device_unregister(bd);
+	device_remove_file(&pcidev->dev, &hbm_device_attr);
 
 	/*
 	 * Unregister pci device & delete device
