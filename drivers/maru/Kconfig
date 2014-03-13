@@ -13,6 +13,10 @@ config MARU_BACKLIGHT
 	help
 		Say Y to enable the backlight driver of MARU.
 
+config MARU_OVERLAY
+	tristate "MARU overlay Driver"
+	depends on MARU != n && VIDEO_DEV && VIDEO_V4L2 && !SPARC32 && !SPARC64
+
 config MARU_VIRTIO_EVDI
 	tristate "MARU VirtIO Emulator Virtual Device Interface Driver"
 	depends on MARU != n
