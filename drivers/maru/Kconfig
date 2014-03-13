@@ -6,6 +6,13 @@ config MARU_VIRTIO_TOUCHSCREEN
 	tristate "MARU Virtio Touchscreen Driver"
 	depends on MARU != n
 
+config MARU_BACKLIGHT
+	tristate "MARU Backlight Driver"
+	depends on MARU && BACKLIGHT_CLASS_DEVICE
+	default y
+	help
+		Say Y to enable the backlight driver of MARU.
+
 config MARU_VIRTIO_EVDI
 	tristate "MARU VirtIO Emulator Virtual Device Interface Driver"
 	depends on MARU != n

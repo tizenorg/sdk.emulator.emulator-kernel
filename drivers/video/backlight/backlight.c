@@ -161,7 +161,8 @@ static ssize_t brightness_store(struct device *dev,
 
 	mutex_lock(&bd->ops_lock);
 	if (bd->ops) {
-		if (brightness > bd->props.max_brightness)
+		if (brightness > bd->props.max_brightness ||
+			brightness < bd->props.min_brightness)
 			rc = -EINVAL;
 		else {
 			pr_debug("set brightness to %lu\n", brightness);
@@ -186,6 +187,15 @@ static ssize_t type_show(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%s\n", backlight_types[bd->props.type]);
 }
 static DEVICE_ATTR_RO(type);
+
+static ssize_t min_brightness_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct backlight_device *bd = to_backlight_device(dev);
+
+	return sprintf(buf, "%d\n", bd->props.min_brightness);
+}
+static DEVICE_ATTR_RO(min_brightness);
 
 static ssize_t max_brightness_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -256,6 +266,7 @@ static struct attribute *bl_device_attrs[] = {
 	&dev_attr_bl_power.attr,
 	&dev_attr_brightness.attr,
 	&dev_attr_actual_brightness.attr,
+	&dev_attr_min_brightness.attr,
 	&dev_attr_max_brightness.attr,
 	&dev_attr_type.attr,
 	NULL,
