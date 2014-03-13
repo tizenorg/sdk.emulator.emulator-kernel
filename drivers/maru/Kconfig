@@ -6,6 +6,11 @@ config MARU_VIRTIO_TOUCHSCREEN
 	tristate "MARU Virtio Touchscreen Driver"
 	depends on MARU != n
 
+config MARU_CAMERA
+	tristate "MARU Camera Driver"
+	depends on MARU != n && VIDEO_DEV && VIDEO_V4L2
+	select VIDEOBUF_VMALLOC
+
 config MARU_BACKLIGHT
 	tristate "MARU Backlight Driver"
 	depends on MARU && BACKLIGHT_CLASS_DEVICE
