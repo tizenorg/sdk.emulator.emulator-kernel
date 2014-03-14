@@ -28,7 +28,7 @@
 #define PCI_VENDOR_ID_YAGL 0x19B1
 #define PCI_DEVICE_ID_YAGL 0x1010
 
-static struct pci_device_id yagl_pci_table[] __devinitdata =
+static struct pci_device_id yagl_pci_table[] =
 {
     {
         .vendor     = PCI_VENDOR_ID_YAGL,
@@ -332,7 +332,6 @@ static int yagl_misc_mmap_regs(struct yagl_file *yfile,
         goto out;
     }
 
-    vma->vm_flags |= VM_IO | VM_RESERVED | VM_DONTEXPAND;
     vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 
     ret = remap_pfn_range(vma,
@@ -448,7 +447,7 @@ static int yagl_misc_mmap_buffer(struct yagl_file *yfile,
 
     yfile->num_pages = num_pages;
 
-    vma->vm_flags |= VM_RESERVED | VM_DONTEXPAND;
+    vma->vm_flags |= VM_DONTDUMP | VM_DONTEXPAND;
 
     addr = vma->vm_start;
 
@@ -706,8 +705,8 @@ static struct file_operations yagl_misc_fops =
     .unlocked_ioctl = yagl_misc_ioctl,
 };
 
-static int __devinit yagl_driver_probe(struct pci_dev *pci_dev,
-                                       const struct pci_device_id *pci_id)
+static int yagl_driver_probe(struct pci_dev *pci_dev,
+                             const struct pci_device_id *pci_id)
 {
     int ret = 0;
     struct yagl_device *device = NULL;
@@ -802,7 +801,7 @@ fail:
     return ret;
 }
 
-static void __devinit yagl_driver_remove(struct pci_dev *pci_dev)
+static void yagl_driver_remove(struct pci_dev *pci_dev)
 {
     struct yagl_device* device;
 
@@ -827,7 +826,7 @@ static struct pci_driver yagl_driver =
     .name       = YAGL_NAME,
     .id_table   = yagl_pci_table,
     .probe      = yagl_driver_probe,
-    .remove     = __devexit_p(yagl_driver_remove),
+    .remove     = yagl_driver_remove,
 };
 
 int yagl_driver_register(void)
