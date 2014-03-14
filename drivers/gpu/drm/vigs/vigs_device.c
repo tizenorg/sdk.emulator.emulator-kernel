@@ -20,14 +20,16 @@ static void vigs_device_mman_vram_to_gpu(void *user_data,
     bool need_gpu_update = vigs_surface_need_gpu_update(vigs_sfc);
 
     if (!vigs_sfc->is_gpu_dirty && need_gpu_update) {
-        DRM_INFO("vram_to_gpu: 0x%llX\n", bo->addr_space_offset);
+        DRM_INFO("vram_to_gpu: 0x%llX\n",
+                 drm_vma_node_offset_addr(&bo->vma_node));
         vigs_comm_update_gpu(vigs_dev->comm,
                              vigs_sfc->id,
                              vigs_sfc->width,
                              vigs_sfc->height,
                              vigs_gem_offset(vigs_gem));
     } else {
-        DRM_INFO("vram_to_gpu: 0x%llX (no-op)\n", bo->addr_space_offset);
+        DRM_INFO("vram_to_gpu: 0x%llX (no-op)\n",
+                 drm_vma_node_offset_addr(&bo->vma_node));
     }
 
     vigs_sfc->is_gpu_dirty = false;
@@ -42,12 +44,14 @@ static void vigs_device_mman_gpu_to_vram(void *user_data,
     struct vigs_surface *vigs_sfc = vigs_gem_to_vigs_surface(vigs_gem);
 
     if (vigs_surface_need_vram_update(vigs_sfc)) {
-        DRM_DEBUG_DRIVER("0x%llX\n", bo->addr_space_offset);
+        DRM_DEBUG_DRIVER("0x%llX\n",
+                         drm_vma_node_offset_addr(&bo->vma_node));
         vigs_comm_update_vram(vigs_dev->comm,
                               vigs_sfc->id,
                               new_offset);
     } else {
-        DRM_DEBUG_DRIVER("0x%llX (no-op)\n", bo->addr_space_offset);
+        DRM_DEBUG_DRIVER("0x%llX (no-op)\n",
+                         drm_vma_node_offset_addr(&bo->vma_node));
     }
 }
 
@@ -283,24 +287,21 @@ int vigs_device_add_surface(struct vigs_device *vigs_dev,
                             struct vigs_surface *sfc,
                             vigsp_surface_id* id)
 {
-    int ret, tmp_id = 0;
+    int ret;
 
     mutex_lock(&vigs_dev->surface_idr_mutex);
 
-    do {
-        if (unlikely(idr_pre_get(&vigs_dev->surface_idr, GFP_KERNEL) == 0)) {
-            mutex_unlock(&vigs_dev->surface_idr_mutex);
-            return -ENOMEM;
-        }
-
-        ret = idr_get_new_above(&vigs_dev->surface_idr, sfc, 1, &tmp_id);
-    } while (ret == -EAGAIN);
-
-    *id = tmp_id;
+    ret = idr_alloc(&vigs_dev->surface_idr, sfc, 1, 0, GFP_KERNEL);
 
     mutex_unlock(&vigs_dev->surface_idr_mutex);
 
-    return ret;
+    if (ret < 0) {
+        return ret;
+    }
+
+    *id = ret;
+
+    return 0;
 }
 
 void vigs_device_remove_surface(struct vigs_device *vigs_dev,

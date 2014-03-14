@@ -119,6 +119,7 @@ static void vigs_ttm_backend_destroy(struct ttm_tt *tt)
 {
     struct ttm_dma_tt *dma_tt = (void*)tt;
 
+    ttm_dma_tt_fini(dma_tt);
     kfree(dma_tt);
 }
 
@@ -134,6 +135,7 @@ static struct ttm_tt *vigs_ttm_tt_create(struct ttm_bo_device *bo_dev,
                                          struct page *dummy_read_page)
 {
     struct ttm_dma_tt *dma_tt;
+    int ret;
 
     dma_tt = kzalloc(sizeof(struct ttm_dma_tt), GFP_KERNEL);
 
@@ -143,6 +145,15 @@ static struct ttm_tt *vigs_ttm_tt_create(struct ttm_bo_device *bo_dev,
     }
 
     dma_tt->ttm.func = &vigs_ttm_backend_func;
+
+    ret = ttm_dma_tt_init(dma_tt, bo_dev, size, page_flags,
+                          dummy_read_page);
+
+    if (ret != 0) {
+        DRM_ERROR("ttm_dma_tt_init failed: %d\n", ret);
+        kfree(dma_tt);
+        return NULL;
+    }
 
     return &dma_tt->ttm;
 }
@@ -226,7 +237,6 @@ static void vigs_ttm_evict_flags(struct ttm_buffer_object *bo,
 static int vigs_ttm_move(struct ttm_buffer_object *bo,
                          bool evict,
                          bool interruptible,
-                         bool no_wait_reserve,
                          bool no_wait_gpu,
                          struct ttm_mem_reg *new_mem)
 {
@@ -256,7 +266,7 @@ static int vigs_ttm_move(struct ttm_buffer_object *bo,
 
         return 0;
     } else {
-        return ttm_bo_move_memcpy(bo, evict, no_wait_reserve, no_wait_gpu, new_mem);
+        return ttm_bo_move_memcpy(bo, evict, no_wait_gpu, new_mem);
     }
 }
 
@@ -266,21 +276,19 @@ static int vigs_ttm_verify_access(struct ttm_buffer_object *bo,
     return 0;
 }
 
-static bool vigs_ttm_sync_obj_signaled(void *sync_obj, void *sync_arg)
+static bool vigs_ttm_sync_obj_signaled(void *sync_obj)
 {
     return vigs_fence_signaled((struct vigs_fence*)sync_obj);
 }
 
 static int vigs_ttm_sync_obj_wait(void *sync_obj,
-                                  void *sync_arg,
                                   bool lazy,
                                   bool interruptible)
 {
     return vigs_fence_wait((struct vigs_fence*)sync_obj, interruptible);
 }
 
-static int vigs_ttm_sync_obj_flush(void *sync_obj,
-                                   void *sync_arg)
+static int vigs_ttm_sync_obj_flush(void *sync_obj)
 {
     return 0;
 }
@@ -325,10 +333,11 @@ static int vigs_ttm_fault_reserve_notify(struct ttm_buffer_object *bo)
     placement.num_placement = 1;
     placement.num_busy_placement = 1;
 
-    ret = ttm_bo_validate(bo, &placement, false, true, false);
+    ret = ttm_bo_validate(bo, &placement, false, false);
 
     if (ret != 0) {
-        DRM_ERROR("movement failed for 0x%llX\n", bo->addr_space_offset);
+        DRM_ERROR("movement failed for 0x%llX\n",
+                  drm_vma_node_offset_addr(&bo->vma_node));
         return ret;
     }
 

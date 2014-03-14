@@ -177,7 +177,7 @@ int vigs_plane_set_zpos_ioctl(struct drm_device *drm_dev,
     struct vigs_plane *vigs_plane;
     int ret;
 
-    mutex_lock(&drm_dev->mode_config.mutex);
+    drm_modeset_lock_all(drm_dev);
 
     obj = drm_mode_object_find(drm_dev,
                                args->plane_id,
@@ -195,7 +195,7 @@ int vigs_plane_set_zpos_ioctl(struct drm_device *drm_dev,
     ret = 0;
 
 out:
-    mutex_unlock(&drm_dev->mode_config.mutex);
+    drm_modeset_unlock_all(drm_dev);
 
     return ret;
 }

@@ -41,8 +41,7 @@ retry:
              * and with small amount of VRAM memory it's possible that
              * GEM pin will be failing for some time, thus, framebuffer pin
              * will be failing. This is unavoidable with current TTM design,
-             * even though ttm_bo_validate has 'no_wait_reserve' parameter it's
-             * always assumed that it's true, thus, if someone is intensively
+             * thus, if someone is intensively
              * reserves/unreserves GEMs then ttm_bo_validate can fail even if there
              * is free space in a placement. Even worse, ttm_bo_validate fails with
              * ENOMEM so it's not possible to tell if it's a temporary failure due
@@ -51,10 +50,6 @@ retry:
              * is relatively safe since we only pin GEMs on pageflip and user
              * should have started the VM with VRAM size equal to at least 3 frames,
              * thus, 2 frame will always be free and we can always pin 1 frame.
-             *
-             * Also, 'no_wait_reserve' parameter is completely removed in future
-             * kernels with this commit:
-             * https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=97a875cbdf89a4638eea57c2b456c7cc4e3e8b21
              */
             cpu_relax();
             goto retry;
@@ -170,7 +165,7 @@ static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
 }
 
 static bool vigs_crtc_mode_fixup(struct drm_crtc *crtc,
-                                 struct drm_display_mode *mode,
+                                 const struct drm_display_mode *mode,
                                  struct drm_display_mode *adjusted_mode)
 {
     DRM_DEBUG_KMS("enter\n");
@@ -235,7 +230,8 @@ static int vigs_crtc_cursor_move(struct drm_crtc *crtc, int x, int y)
 
 static int vigs_crtc_page_flip(struct drm_crtc *crtc,
                                struct drm_framebuffer *fb,
-                               struct drm_pending_vblank_event *event)
+                               struct drm_pending_vblank_event *event,
+                               uint32_t page_flip_flags)
 {
     unsigned long flags;
     struct vigs_device *vigs_dev = crtc->dev->dev_private;

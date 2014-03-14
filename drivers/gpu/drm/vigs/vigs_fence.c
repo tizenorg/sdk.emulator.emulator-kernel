@@ -20,7 +20,7 @@ static void vigs_user_fence_destroy(struct vigs_fence *fence)
     struct vigs_user_fence *user_fence = vigs_fence_to_vigs_user_fence(fence);
 
     vigs_fence_cleanup(&user_fence->fence);
-    kfree(user_fence);
+    ttm_base_object_kfree(user_fence, base);
 }
 
 static void vigs_fence_release_locked(struct kref *kref)
