@@ -102,7 +102,7 @@ static inline unsigned long vigs_gem_offset(struct vigs_gem_object *vigs_gem)
  */
 static inline u64 vigs_gem_mmap_offset(struct vigs_gem_object *vigs_gem)
 {
-    return vigs_gem->bo.addr_space_offset;
+    return drm_vma_node_offset_addr(&vigs_gem->bo.vma_node);
 }
 
 static inline void vigs_gem_reserve(struct vigs_gem_object *vigs_gem)

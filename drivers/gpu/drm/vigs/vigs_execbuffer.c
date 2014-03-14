@@ -30,7 +30,6 @@ static int vigs_execbuffer_validate_buffer(struct vigs_device *vigs_dev,
         return -EINVAL;
     }
 
-    buffer->base.new_sync_obj_arg = NULL;
     buffer->base.bo = &sfc->gem.bo;
     buffer->cmd = cmd;
     buffer->which = which;
@@ -409,6 +408,7 @@ int vigs_execbuffer_exec_ioctl(struct drm_device *drm_dev,
     struct drm_gem_object *gem;
     struct vigs_gem_object *vigs_gem;
     struct vigs_execbuffer *execbuffer;
+    struct ww_acquire_ctx ticket;
     struct list_head list;
     struct vigs_validate_buffer *buffers;
     int num_buffers = 0;
@@ -462,17 +462,16 @@ int vigs_execbuffer_exec_ioctl(struct drm_device *drm_dev,
     if (list_empty(&list)) {
         vigs_comm_exec(vigs_dev->comm, execbuffer);
     } else {
-        ret = ttm_eu_reserve_buffers(&list);
+        ret = ttm_eu_reserve_buffers(&ticket, &list);
 
         if (ret != 0) {
-            ttm_eu_backoff_reservation(&list);
             goto out3;
         }
 
         ret = vigs_fence_create(vigs_dev->fenceman, &fence);
 
         if (ret != 0) {
-            ttm_eu_backoff_reservation(&list);
+            ttm_eu_backoff_reservation(&ticket, &list);
             goto out3;
         }
 
@@ -482,7 +481,7 @@ int vigs_execbuffer_exec_ioctl(struct drm_device *drm_dev,
 
         vigs_comm_exec(vigs_dev->comm, execbuffer);
 
-        ttm_eu_fence_buffer_objects(&list, fence);
+        ttm_eu_fence_buffer_objects(&ticket, &list, fence);
 
         if (sync) {
             vigs_fence_wait(fence, false);
