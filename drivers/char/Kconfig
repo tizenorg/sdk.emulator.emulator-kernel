@@ -598,5 +598,13 @@ config VDPRAM_DEVICE
         help
           vdpram is telephony simulator works with the event injector.
 
+config VIRTIOGL
+	tristate "Virtio userspace memory transport"
+	depends on VIRTIO_PCI
+	default n
+	---help---
+	  A Driver to facilitate transferring data from userspace to a
+	  hypervisor (eg. qemu)
+
 endmenu
 
