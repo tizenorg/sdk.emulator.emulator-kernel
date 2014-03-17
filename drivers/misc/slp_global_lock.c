@@ -101,12 +101,11 @@ static struct sgl_hash_node *sgl_hash_get_node(struct sgl_hash_head *hash, unsig
 	struct sgl_hash_node *found = NULL;
 
 	struct hlist_head *head = &hash_head->head;
-	struct hlist_node *pos;
 
 	SGL_LOG("key %d", key);
 
 	mutex_lock(&hash_head->mutex);
-	hlist_for_each_entry(hash_node, pos, head, node) {
+	hlist_for_each_entry(hash_node, head, node) {
 		if (hash_node->key == key) {
 			found = hash_node;
 			break;
@@ -152,14 +151,13 @@ static int sgl_hash_remove_node(struct sgl_hash_head *hash, unsigned int key)
 	struct sgl_hash_node *hash_node;
 
 	struct hlist_head *head = &hash_head->head;
-	struct hlist_node *pos;
 
 	int err = -ENOENT;
 
 	SGL_LOG("key %d", key);
 
 	mutex_lock(&hash_head->mutex);
-	hlist_for_each_entry(hash_node, pos, head, node) {
+	hlist_for_each_entry(hash_node, head, node) {
 		if (hash_node->key == key) {
 			hlist_del(&hash_node->node);
 			kfree(hash_node);
@@ -667,14 +665,13 @@ static void sgl_dump_locks(void)
 		struct sgl_hash_head *shead;
 		struct sgl_hash_node *snode;
 		struct hlist_head *hhead;
-		struct hlist_node *pos;
 
 		shead = &((struct sgl_hash_head *)sgl_global.locks)[i];
 		if (!shead)
 			continue;
 		mutex_lock(&shead->mutex);
 		hhead = &shead->head;
-		hlist_for_each_entry(snode, pos, hhead, node) {
+		hlist_for_each_entry(snode, hhead, node) {
 			struct sgl_lock *lock = snode->lock;
 			mutex_lock(&lock->data_mutex);
 			SGL_INFO("lock key: %d, refcnt: %d, owner_pid: %d, owner_tid: %d\n",
