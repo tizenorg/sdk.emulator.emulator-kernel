@@ -65,12 +65,21 @@ struct virtio_jack {
 };
 
 enum jack_types {
-	jack_type_charger = 0,
+    jack_type_list = 0,
+    jack_type_charger,
 	jack_type_earjack,
 	jack_type_earkey,
 	jack_type_hdmi,
 	jack_type_usb,
 	jack_type_max
+};
+
+enum jack_capabilities {
+    jack_cap_charger = 0x01,
+    jack_cap_earjack = 0x02,
+    jack_cap_earkey  = 0x04,
+    jack_cap_hdmi    = 0x08,
+    jack_cap_usb     = 0x10
 };
 
 enum request_cmd {
@@ -87,6 +96,7 @@ struct jack_data {
 struct virtio_jack *v_jack;
 
 static char jack_data [PAGE_SIZE];
+static int jack_capability = 0;
 
 static DECLARE_WAIT_QUEUE_HEAD(wq);
 
@@ -103,6 +113,21 @@ static struct virtio_device_id id_table[] = { { VIRTIO_ID_JACK,
 // do nothing
 #define DLOG(level, fmt, ...)
 #endif
+
+static int jack_atoi(const char *name)
+{
+    int val = 0;
+
+    for (;; name++) {
+        switch (*name) {
+            case '0' ... '9':
+                val = 10*val+(*name-'0');
+                break;
+            default:
+                return val;
+        }
+    }
+}
 
 static void jack_vq_done(struct virtqueue *vq) {
 	unsigned int len;
@@ -285,34 +310,44 @@ static int maru_jack_sysfs_create_file(struct device *dev)
 
 	DLOG(KERN_INFO, "sysfs_create_file\n");
 
-	result = device_create_file(dev, &dev_attr_charger_online);
-	if (result){
-		DLOG(KERN_ERR, "failed to create charger_online file\n");
-		return result;
+	if (jack_capability & jack_cap_charger) {
+		result = device_create_file(dev, &dev_attr_charger_online);
+		if (result){
+			DLOG(KERN_ERR, "failed to create charger_online file\n");
+			return result;
+		}
 	}
 
-	result = device_create_file(dev, &dev_attr_earjack_online);
-	if (result){
-		DLOG(KERN_ERR, "failed to create earjack_online file\n");
-		return result;
+	if (jack_capability & jack_cap_earjack) {
+		result = device_create_file(dev, &dev_attr_earjack_online);
+		if (result){
+			DLOG(KERN_ERR, "failed to create earjack_online file\n");
+			return result;
+		}
 	}
 
-	result = device_create_file(dev, &dev_attr_earkey_online);
-	if (result){
-		DLOG(KERN_ERR, "failed to create earkey_online file\n");
-		return result;
+	if (jack_capability & jack_cap_earkey) {
+		result = device_create_file(dev, &dev_attr_earkey_online);
+		if (result){
+			DLOG(KERN_ERR, "failed to create earkey_online file\n");
+			return result;
+		}
 	}
 
-	result = device_create_file(dev, &dev_attr_hdmi_online);
-	if (result){
-		DLOG(KERN_ERR, "failed to create hdmi_online file\n");
-		return result;
+	if (jack_capability & jack_cap_hdmi) {
+		result = device_create_file(dev, &dev_attr_hdmi_online);
+		if (result){
+			DLOG(KERN_ERR, "failed to create hdmi_online file\n");
+			return result;
+		}
 	}
 
-	result = device_create_file(dev, &dev_attr_usb_online);
-	if (result){
-		DLOG(KERN_ERR, "failed to create usb_online file\n");
-		return result;
+	if (jack_capability & jack_cap_usb) {
+		result = device_create_file(dev, &dev_attr_usb_online);
+		if (result){
+			DLOG(KERN_ERR, "failed to create usb_online file\n");
+			return result;
+		}
 	}
 
 	return 0;
@@ -370,14 +405,6 @@ static int jack_probe(struct virtio_device* dev){
 
 	dev_set_drvdata(&the_pdev.dev, (void*)data);
 
-	err = maru_jack_sysfs_create_file(&the_pdev.dev);
-	if (err) {
-		DLOG(KERN_ERR, "sysfs_create_file failure\n");
-		kfree(data);
-		platform_device_unregister(&the_pdev);
-		return err;
-	}
-
 	v_jack->vq = virtio_find_single_vq(dev, jack_vq_done, "jack");
 	if (IS_ERR(v_jack->vq)) {
 		DLOG(KERN_ERR, "virtio queue is not found.\n");
@@ -396,6 +423,18 @@ static int jack_probe(struct virtio_device* dev){
 	}
 
 	mutex_init(&v_jack->lock);
+
+	get_jack_data(jack_type_list);
+	jack_capability = jack_atoi(jack_data);
+	DLOG(KERN_INFO, "jack capability is %02x", jack_capability);
+
+	err = maru_jack_sysfs_create_file(&the_pdev.dev);
+	if (err) {
+		DLOG(KERN_ERR, "sysfs_create_file failure\n");
+		kfree(data);
+		platform_device_unregister(&the_pdev);
+		return err;
+	}
 
 	return 0;
 }

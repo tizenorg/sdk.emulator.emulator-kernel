@@ -59,7 +59,8 @@
 #define DEVICE_COUNT		5
 
 enum sensor_types {
-	sensor_type_accel = 0,
+    sensor_type_list = 0,
+    sensor_type_accel,
 	sensor_type_geo,
 	sensor_type_gyro,
 	sensor_type_gyro_x,
@@ -72,6 +73,22 @@ enum sensor_types {
 	sensor_type_mag,
 	sensor_type_tilt,
 	sensor_type_max
+};
+
+enum sensor_capabilities {
+	sensor_cap_accel = 0x01,
+	sensor_cap_geo   = 0x02,
+	sensor_cap_gyro  = 0x04,
+	sensor_cap_light = 0x08,
+	sensor_cap_proxi = 0x10
+};
+
+enum sensor_attributes {
+	sensor_attr_accel = 0,
+	sensor_attr_geo,
+	sensor_attr_gyro,
+	sensor_attr_light,
+	sensor_attr_proxi
 };
 
 enum request_cmd {
@@ -120,6 +137,7 @@ static DECLARE_WAIT_QUEUE_HEAD(wq);
 }
 
 static char sensor_data [PAGE_SIZE];
+static int sensor_capability = 0;
 
 static void sensor_vq_done(struct virtqueue *rvq) {
 	unsigned int len;
@@ -144,6 +162,21 @@ static void sensor_vq_done(struct virtqueue *rvq) {
 	mutex_unlock(&vs->lock);
 
 	wake_up_interruptible(&wq);
+}
+
+static int sensor_atoi(const char *name)
+{
+    int val = 0;
+
+    for (;; name++) {
+        switch (*name) {
+            case '0' ... '9':
+                val = 10*val+(*name-'0');
+                break;
+            default:
+                return val;
+        }
+    }
 }
 
 static void set_sensor_data(int type, const char* buf)
@@ -475,7 +508,17 @@ static int init_device(void)
 	int ret = 0;
 
 	for (i = 0; i < DEVICE_COUNT; i++) {
-
+		if (i == sensor_attr_accel && !(sensor_capability & sensor_cap_accel)) {
+			continue;
+		} else if (i == sensor_attr_geo && !(sensor_capability & sensor_cap_geo)) {
+			continue;
+		} else if (i == sensor_attr_gyro && !(sensor_capability & sensor_cap_gyro)) {
+			continue;
+		} else if (i == sensor_attr_light && !(sensor_capability & sensor_cap_light)) {
+			continue;
+		} else if (i == sensor_attr_proxi && !(sensor_capability & sensor_cap_proxi)) {
+			continue;
+		}
 		device_list[i] = device_create(sensor_class, NULL, (dev_t)NULL, NULL, device_name_list[i]);
 		if (device_list[i] < 0) {
 			LOG(KERN_ERR, "%dth sensor device creation is failed.", i);
@@ -527,12 +570,6 @@ static int sensor_probe(struct virtio_device* dev)
 		return -1;
 	}
 
-	ret = init_device();
-	if (ret) {
-		cleanup(dev);
-		return ret;
-	}
-
 	vs->vq = virtio_find_single_vq(dev, sensor_vq_done, "sensor");
 	if (IS_ERR(vs->vq)) {
 		cleanup(dev);
@@ -552,6 +589,17 @@ static int sensor_probe(struct virtio_device* dev)
 	mutex_init(&vs->lock);
 
 	LOG(KERN_INFO, "Sensor probe completes");
+
+	get_sensor_data(sensor_type_list);
+	sensor_capability = sensor_atoi(sensor_data);
+	LOG(KERN_INFO, "sensor capability is %02x", sensor_capability);
+
+	ret = init_device();
+	if (ret) {
+		LOG(KERN_ERR, "failed initialing devices");
+		cleanup(dev);
+		return ret;
+	}
 
 	return err;
 }
