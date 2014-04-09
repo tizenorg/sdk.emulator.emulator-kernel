@@ -26,17 +26,15 @@ config MARU_OVERLAY
 	tristate "MARU overlay Driver"
 	depends on MARU != n && VIDEO_DEV && VIDEO_V4L2 && !SPARC32 && !SPARC64
 
-config MARU_VIRTIO_EVDI
-	tristate "MARU VirtIO Emulator Virtual Device Interface Driver"
+config MARU_JACK
+	tristate "MARU Jack Driver"
 	depends on MARU != n
 
-config MARU_VIRTIO_NFC
-	tristate "MARU VirtIO Virtual NFC Device Driver"
+config MARU_POWER_SUPPLY
+	tristate "MARU Power supply Driver"
 	depends on MARU != n
 
-config MARU_VIRTIO_SENSOR
-	tristate "MARU VirtIO Emulator Sensor Device Driver"
-	depends on MARU != n
+
 
 config MARU_VIRTIO_HWKEY
 	tristate "MARU Virtio HW Key Driver"
@@ -44,6 +42,18 @@ config MARU_VIRTIO_HWKEY
 
 config MARU_VIRTIO_KEYBOARD
 	tristate "MARU Virtio Keyboard Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_EVDI
+	tristate "MARU VirtIO Emulator Virtual Device Interface Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_SENSOR
+	tristate "MARU VirtIO Virtual Sensor Device Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_NFC
+	tristate "MARU VirtIO Virtual NFC Device Driver"
 	depends on MARU != n
 
 config MARU_BRILLCODEC
