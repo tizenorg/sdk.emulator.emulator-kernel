@@ -281,6 +281,7 @@ static int secure_device_memory(uint32_t ctx_id, uint32_t buf_size,
 		index = LARGE;
 	} else {
 		ERROR("invalid buffer size: %x\n", buf_size);
+		return -1;
 	}
 
 	block = &maru_brill_codec->memory_blocks[index];
@@ -347,6 +348,8 @@ static void release_device_memory(uint32_t mem_offset)
 		index = LARGE;
 	} else {
 		// error
+		ERROR("invalid memory offsset. offset = 0x%x.\n", (uint32_t)mem_offset);
+		return;
 	}
 
 	block = &maru_brill_codec->memory_blocks[index];
@@ -369,19 +372,17 @@ static void release_device_memory(uint32_t mem_offset)
 				}
 
 				found = true;
-
 				break;
 			}
 		}
 		if (!found) {
 			// can not enter here...
-			ERROR("there is no used memory block. offset = 0x%x.\n", (uint32_t)mem_offset);
+			ERROR("cannot find this memory block. offset = 0x%x.\n", (uint32_t)mem_offset);
 		}
 	} else {
 		// can not enter here...
-		ERROR("there is no used memory block.\n");
+		DEBUG("there is not any using memory block.\n");
 	}
-
 	mutex_unlock(&block->access_mutex);
 }
 
