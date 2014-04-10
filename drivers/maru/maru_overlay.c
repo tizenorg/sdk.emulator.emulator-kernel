@@ -30,6 +30,7 @@
 #include <linux/init.h>
 #include <linux/pci.h>
 #include <linux/module.h>
+#include <media/v4l2-device.h>
 #include <media/v4l2-common.h>
 #include <media/v4l2-ioctl.h>
 
@@ -51,6 +52,9 @@ MODULE_DEVICE_TABLE(pci, svo_pci_tbl);
 struct svo {
 	/* pci device */
 	struct pci_dev		*pci_dev;
+
+	/* v4l2 device */
+	struct v4l2_device	v4l2_dev;
 
 	/* video device parameters */
 	struct video_device	*video_dev0;
@@ -425,11 +429,19 @@ static int svo_initdev(struct pci_dev *pci_dev,
 		return ret;
 	}
 
-	ret = -ENOMEM;
 	svo.pci_dev = pci_dev;
+
+	ret = v4l2_device_register(&pci_dev->dev, &svo.v4l2_dev);
+	if (ret) {
+		printk(KERN_ERR "svo: v4l2_device_register failed!\n");
+		return ret;
+	}
+
+	ret = -ENOMEM;
 	svo.video_dev0 = video_device_alloc();
 	if (!svo.video_dev0) {
 		printk(KERN_ERR "svo0: video_device_alloc() failed!\n");
+		v4l2_device_unregister(&svo.v4l2_dev);
 		return ret;
 	}
 
@@ -437,13 +449,16 @@ static int svo_initdev(struct pci_dev *pci_dev,
 	if (!svo.video_dev1) {
 		printk(KERN_ERR "svo1: video_device_alloc() failed!\n");
 		video_device_release(svo.video_dev0);
+		v4l2_device_unregister(&svo.v4l2_dev);
 		return ret;
 	}
 
 	memcpy(svo.video_dev0, &svo0_template, sizeof(svo0_template));
 	svo.video_dev0->dev_parent = &svo.pci_dev->dev;
+	svo.video_dev0->v4l2_dev = &svo.v4l2_dev;
 	memcpy(svo.video_dev1, &svo1_template, sizeof(svo1_template));
 	svo.video_dev1->dev_parent = &svo.pci_dev->dev;
+	svo.video_dev1->v4l2_dev = &svo.v4l2_dev;
 
 	ret = -EIO;
 
@@ -452,6 +467,7 @@ static int svo_initdev(struct pci_dev *pci_dev,
 		printk(KERN_ERR "svo: pci_enable_device failed\n");
 		video_device_release(svo.video_dev0);
 		video_device_release(svo.video_dev1);
+		v4l2_device_unregister(&svo.v4l2_dev);
 		return ret;
 	}
 
@@ -462,6 +478,7 @@ static int svo_initdev(struct pci_dev *pci_dev,
 		pci_disable_device(svo.pci_dev);
 		video_device_release(svo.video_dev0);
 		video_device_release(svo.video_dev1);
+		v4l2_device_unregister(&svo.v4l2_dev);
 		return ret;
 	}
 	if (!request_mem_region(svo.mem_start, svo.mem_size, "svo")) {
@@ -469,6 +486,7 @@ static int svo_initdev(struct pci_dev *pci_dev,
 		pci_disable_device(svo.pci_dev);
 		video_device_release(svo.video_dev0);
 		video_device_release(svo.video_dev1);
+		v4l2_device_unregister(&svo.v4l2_dev);
 		return ret;
 	}
 
@@ -480,6 +498,7 @@ static int svo_initdev(struct pci_dev *pci_dev,
 		pci_disable_device(svo.pci_dev);
 		video_device_release(svo.video_dev0);
 		video_device_release(svo.video_dev1);
+		v4l2_device_unregister(&svo.v4l2_dev);
 		return ret;
 	}
 	if (!request_mem_region(svo.reg_start, svo.reg_size, "svo")) {
@@ -488,6 +507,7 @@ static int svo_initdev(struct pci_dev *pci_dev,
 		pci_disable_device(svo.pci_dev);
 		video_device_release(svo.video_dev0);
 		video_device_release(svo.video_dev1);
+		v4l2_device_unregister(&svo.v4l2_dev);
 		return ret;
 	}
 
@@ -499,6 +519,7 @@ static int svo_initdev(struct pci_dev *pci_dev,
 		pci_disable_device(svo.pci_dev);
 		video_device_release(svo.video_dev0);
 		video_device_release(svo.video_dev1);
+		v4l2_device_unregister(&svo.v4l2_dev);
 		return ret;
 	}
 
@@ -519,6 +540,7 @@ static int svo_initdev(struct pci_dev *pci_dev,
 		pci_disable_device(svo.pci_dev);
 		video_device_release(svo.video_dev0);
 		video_device_release(svo.video_dev1);
+		v4l2_device_unregister(&svo.v4l2_dev);
 		return ret;
 	}
 	if (video_register_device(svo.video_dev1, VFL_TYPE_GRABBER,
@@ -531,6 +553,7 @@ static int svo_initdev(struct pci_dev *pci_dev,
 		pci_disable_device(svo.pci_dev);
 		video_device_release(svo.video_dev0);
 		video_device_release(svo.video_dev1);
+		v4l2_device_unregister(&svo.v4l2_dev);
 		return ret;
 	}
 
@@ -540,11 +563,40 @@ static int svo_initdev(struct pci_dev *pci_dev,
 	return 0;
 }
 
+static void svo_removedev(struct pci_dev *pdev)
+{
+	if (svo.svo_mmreg) {
+		iounmap(svo.svo_mmreg);
+		svo.svo_mmreg = 0;
+	}
+
+	if (svo.reg_start) {
+		release_mem_region(svo.reg_start, svo.reg_size);
+		svo.reg_start = 0;
+	}
+	if (svo.mem_start) {
+		release_mem_region(svo.mem_start, svo.mem_size);
+		svo.mem_start = 0;
+	}
+
+	if (svo.video_dev0) {
+		video_device_release(svo.video_dev0);
+		svo.video_dev0 = NULL;
+	}
+	if (svo.video_dev1) {
+		video_device_release(svo.video_dev1);
+		svo.video_dev1 = NULL;
+	}
+
+	pci_disable_device(svo.pci_dev);
+	v4l2_device_unregister(&svo.v4l2_dev);
+}
+
 static struct pci_driver svo_pci_driver = {
 	.name     = "svo",
 	.id_table = svo_pci_tbl,
 	.probe    = svo_initdev,
-/*	.remove   = __devexit_p(cx8800_finidev), */
+	.remove   = svo_removedev,
 #ifdef CONFIG_PM
 /*	.suspend  = cx8800_suspend, */
 /*	.resume   = cx8800_resume, */
