@@ -268,8 +268,17 @@ struct file_operations virtio_touchscreen_fops = {
     .release = virtio_touchscreen_release,
 };
 
+extern char *saved_command_line;
+#define VM_RESOLUTION_KEY "vm_resolution="
+
 static int virtio_touchscreen_probe(struct virtio_device *vdev)
 {
+    unsigned long width = 0;
+    unsigned long height = 0;
+    char *cmdline = NULL;
+    char *value = NULL;
+    char *tmp = NULL;
+    int err = 0;
     int ret = 0;
 
     printk(KERN_INFO "virtio touchscreen driver is probed\n");
@@ -313,6 +322,37 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
         }
     }
 
+    cmdline = kzalloc(strlen(saved_command_line) + 1, GFP_KERNEL);
+    if (cmdline) {
+        /* get VM resolution */
+        strcpy(cmdline, saved_command_line);
+        tmp = strstr(cmdline, VM_RESOLUTION_KEY);
+
+        if (tmp != NULL) {
+            tmp += strlen(VM_RESOLUTION_KEY);
+
+            value = strsep(&tmp, "x");
+            err = kstrtoul(value, 10, &width);
+            if (err) {
+                printk(KERN_WARNING "vm width option is not defined\n");
+                width = 0;
+            }
+
+            value = strsep(&tmp, " ");
+            err = kstrtoul(value, 10, &height);
+            if (err) {
+                printk(KERN_WARNING "vm height option is not defined\n");
+                height = 0;
+            }
+        }
+
+        kfree(cmdline);
+    }
+
+    if (width != 0 && height != 0) {
+        printk(KERN_INFO "emul resolution : %lux%lu\n", width, height);
+    }
+
     /* register for input device */
     vt->idev = input_allocate_device();
     if (!vt->idev) {
@@ -338,17 +378,17 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     input_mt_init_slots(vt->idev, MAX_TRKID, 0);
 
     input_set_abs_params(vt->idev, ABS_X, 0,
-        /*TOUCHSCREEN_RESOLUTION_X*/0, 0, 0); //TODO:
+        width, 0, 0);
     input_set_abs_params(vt->idev, ABS_Y, 0,
-        /*TOUCHSCREEN_RESOLUTION_Y*/0, 0, 0); //TODO:
+        height, 0, 0);
     input_set_abs_params(vt->idev, ABS_MT_TRACKING_ID, 0,
         MAX_TRKID, 0, 0);
     input_set_abs_params(vt->idev, ABS_MT_TOUCH_MAJOR, 0,
         ABS_PRESSURE_MAX, 0, 0);
     input_set_abs_params(vt->idev, ABS_MT_POSITION_X, 0,
-        TOUCHSCREEN_RESOLUTION_X, 0, 0);
+        width, 0, 0);
     input_set_abs_params(vt->idev, ABS_MT_POSITION_Y, 0,
-        TOUCHSCREEN_RESOLUTION_Y, 0, 0);
+        height, 0, 0);
 
     ret = input_register_device(vt->idev);
     if (ret) {
