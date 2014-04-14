@@ -1,3 +1,6 @@
+* 1.4.35
+- set touchscreen resolution
+== GiWoong Kim <giwoong.kim@samsung.com> 2014-04-14
 * 1.4.34
 - enabling selective sensors and jacks
 == Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-03-20
