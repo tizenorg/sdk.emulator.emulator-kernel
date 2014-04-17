@@ -760,7 +760,7 @@ static int virtblk_probe(struct virtio_device *vdev)
 	// index 1 for swap partition
 	// index over 2 for mmcblk
 	if (index > 1) {
-		virtblk_name_format("mmcblk", index - 2, vblk->disk->disk_name, DISK_NAME_LEN);
+		snprintf(vblk->disk->disk_name, DISK_NAME_LEN, "mmcblk%d", index - 2);
 	}
 	else {
 		virtblk_name_format("vd", index, vblk->disk->disk_name, DISK_NAME_LEN);
