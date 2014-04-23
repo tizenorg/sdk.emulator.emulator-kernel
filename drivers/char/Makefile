@@ -64,4 +64,3 @@ js-rtc-y = rtc.o
 obj-$(CONFIG_TILE_SROM)		+= tile-srom.o
 
 obj-$(CONFIG_VDPRAM_DEVICE)	+= vdpram.o
-obj-$(CONFIG_VIRTIOGL)		+= virtio-gl.o
