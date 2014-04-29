@@ -32,9 +32,7 @@ config MARU_JACK
 
 config MARU_POWER_SUPPLY
 	tristate "MARU Power supply Driver"
-	depends on MARU != n
-
-
+	depends on MARU != n && !POWER_SUPPLY
 
 config MARU_VIRTIO_HWKEY
 	tristate "MARU Virtio HW Key Driver"
