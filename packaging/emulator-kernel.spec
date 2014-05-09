@@ -71,7 +71,7 @@ make EXTRAVERSION="-%{build_id}" %{imageName} %{?_smp_mflags}
 make EXTRAVERSION="-%{build_id}" modules %{?_smp_mflags}
 
 # 4. Create tar repo for build directory
-tar cpsf linux-kernel-build-%{fullVersion}.tar .
+tar cpSf linux-kernel-build-%{fullVersion}.tar .
 
 %install
 QA_SKIP_BUILD_ROOT="DO_NOT_WANT"; export QA_SKIP_BUILD_ROOT
