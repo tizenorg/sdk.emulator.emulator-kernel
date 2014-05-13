@@ -55,13 +55,13 @@
 #define DEVICE_NAME     "nfc"
 
 /* device protocol */
-#define MAX_BUF_SIZE  255
+#define NFC_MAX_BUF_SIZE  4096
 
 struct msg_info {
     unsigned char client_id;
     unsigned char client_type;
     uint32_t use;
-    char buf[MAX_BUF_SIZE];
+    char buf[NFC_MAX_BUF_SIZE];
 };
 
 static int g_read_count = 0;
@@ -146,7 +146,7 @@ static int add_inbuf(struct virtqueue *vq, struct msg_info *msg)
     struct scatterlist sg[1];
     int ret;
 
-    sg_init_one(sg, msg, MAX_BUF_SIZE);
+    sg_init_one(sg, msg, NFC_MAX_BUF_SIZE);
 
     ret = virtqueue_add_inbuf(vq, sg, 1, msg, GFP_ATOMIC);
     virtqueue_kick(vq);
@@ -501,10 +501,10 @@ static int nfc_probe(struct virtio_device* dev) {
 
 
     memset(&vnfc->read_msginfo, 0x00, sizeof(vnfc->read_msginfo));
-    sg_set_buf(vnfc->sg_read, &vnfc->read_msginfo, MAX_BUF_SIZE);
+    sg_set_buf(vnfc->sg_read, &vnfc->read_msginfo, NFC_MAX_BUF_SIZE);
 
     memset(&vnfc->send_msginfo, 0x00, sizeof(vnfc->send_msginfo));
-    sg_set_buf(vnfc->sg_send, &vnfc->send_msginfo, MAX_BUF_SIZE);
+    sg_set_buf(vnfc->sg_send, &vnfc->send_msginfo, NFC_MAX_BUF_SIZE);
 
 
     sg_init_one(vnfc->sg_read, &vnfc->read_msginfo, sizeof(vnfc->read_msginfo));
