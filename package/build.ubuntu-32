@@ -4,6 +4,8 @@ clean()
 {
 	echo "$SRCDIR"
 	make clean
+	rm -rf $SRCDIR/arch/x86/boot/bzImage*
+	rm -rf ${SRCDIR}/package/*.package.${TARGET_OS}
 	rm -rf $SRCDIR/*.zip
 	rm -rf $SRCDIR/*.tar.gz
 }
@@ -13,6 +15,12 @@ build()
 {
 	# x86 kernel
 	make ARCH=i386 i386_tizen_emul_defconfig
+	make ARCH=i386 -j4
+	mv arch/x86/boot/bzImage arch/x86/boot/bzImage.x86
+
+	# ivi x86 kernel
+	make clean
+	make ARCH=i386 i386_ivi_emul_defconfig
 	make ARCH=i386 -j4
 
 #	ARM_TOOLCHAIN=`which arm-linux-gnueabi-gcc`
@@ -30,11 +38,14 @@ build()
 install()
 {
 	X86_BIN_DIR=$SRCDIR/package/emulator-kernel-x86.package.${TARGET_OS}/data/tools/emulator/data/kernel
+	IVI_X86_BIN_DIR=$SRCDIR/package/emulator-kernel-ivi-x86.package.${TARGET_OS}/data/platforms/ivi-3.0/emulator-resources/kernel
 #	ARM_BIN_DIR=$SRCDIR/package/emulator-kernel-arm.package.${TARGET_OS}/data/tools/emulator/data/kernel
 	mkdir -p $X86_BIN_DIR
+	mkdir -p $IVI_X86_BIN_DIR
 #	mkdir -p $ARM_BIN_DIR
 
-	cp arch/x86/boot/bzImage $X86_BIN_DIR/bzImage.x86
+	cp arch/x86/boot/bzImage.x86 $X86_BIN_DIR/bzImage.x86
+	cp arch/x86/boot/bzImage $IVI_X86_BIN_DIR/bzImage
 #	cp arch/arm/boot/zImage $ARM_BIN_DIR/bzImage.arm
 }
 

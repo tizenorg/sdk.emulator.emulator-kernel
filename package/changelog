@@ -1,3 +1,7 @@
+* 1.4.37
+- Support building IVI x86 kernel automatically
+== Dongxing Liu <dongxing.x.liu@intel.com> 2014-05-27
+
 * 1.4.36
 - Apply Linux Kernel 3.12 
 == GiWoong Kim <giwoong.kim@samsung.com> 2014-05-13
