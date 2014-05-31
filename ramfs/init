@@ -1,0 +1,59 @@
+#!/bin/sh
+
+#
+# Copyright (C) 2010 Samsung Electronics
+# Kyungmin Park <kyungmin.park@samsung.com>
+#
+NEW_ROOT=/new_root
+NEW_INIT="/sbin/init"
+CONSOLE="/dev/console"
+
+mount -t proc proc /proc
+cmdline=`/bin/cat /proc/cmdline`
+
+echo
+echo "Kernel command line is: $cmdline"
+echo
+
+for element in $cmdline
+do
+	case "$element" in
+	nfsroot=*)
+		nfsroot=${element#nfsroot=}
+		;;
+	ip=*)
+		ip=${element#ip=}
+		;;
+	root=*)
+		root=${element#root=}
+		;;
+	esac
+done
+
+# mount nfs root if necessary
+if test "x$nfsroot" != "x"
+then
+	nfsopt="${nfsroot#*,}"
+	nfsroot="${nfsroot%%,*}"
+	if test "x$nfsroot" != "x"; then
+		nfsopt="-o $nfsopt"
+	fi
+	echo "Mounting root $nfsroot port $nfsport"
+	echo /bin/nfsmount $nfsopt "$nfsroot" /new_root
+	/bin/nfsmount $nfsopt "$nfsroot" /new_root
+else
+	echo "Image mount"
+	mount -o rw /dev/vda /new_root
+fi
+
+echo "create device filesystem"
+
+# create device filesystem
+/bin/mkdir -p /new_root/dev
+/bin/mount -t devtmpfs devtmpfs /new_root/dev
+/bin/mkdir -p /new_root/sys
+
+>${CONSOLE} <${CONSOLE} 2>&1
+
+echo "Switching root"
+exec switch_root -c ${CONSOLE} ${NEW_ROOT} ${NEW_INIT}

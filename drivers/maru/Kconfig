@@ -1,0 +1,81 @@
+menuconfig MARU
+	tristate "MARU virtual device drivers for emulator"
+	default n
+
+config MARU_CODEC
+	tristate "MARU codec driver"
+	depends on MARU != n
+
+config MARU_TOUCHSCREEN
+	tristate "MARU USB Touchscreen Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_TOUCHSCREEN
+	tristate "MARU Virtio Touchscreen Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_HWKEY
+	tristate "MARU Virtio Hwkey Driver"
+	depends on MARU != n
+
+config MARU_FB
+	tristate "MARU framebuffer driver"
+	depends on MARU != n
+
+config MARU_CAMERA
+        tristate "MARU Camera Driver"
+        depends on MARU != n && VIDEO_DEV && VIDEO_V4L2
+	select VIDEOBUF_VMALLOC
+        ---help---
+          Enables a MARU Virtual Camera driver.
+
+config MARU_BACKLIGHT
+        tristate "MARU Backlight Driver"
+        depends on MARU && BACKLIGHT_CLASS_DEVICE
+        default y
+        help
+          Say Y to enable the backlight driver of MARU.
+
+config MARU_OVERLAY
+	tristate "MARU overlay Driver"
+	depends on MARU != n && VIDEO_DEV && VIDEO_V4L2 && !SPARC32 && !SPARC64
+
+config MARU_JACK
+	tristate "MARU Jack Driver"
+	depends on MARU != n
+
+config MARU_POWER_SUPPLY
+	tristate "MARU Power supply Driver"
+	depends on MARU != n
+
+config MARU_USB_MASS_STORAGE
+	tristate "MARU Usb mass storage Driver"
+	depends on MARU != n
+
+config MARU_USB_MODE
+	tristate "MARU Usb mode Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_KEYBOARD
+	tristate "MARU VirtIO Keyboard Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_ESM
+	tristate "MARU VirtIO Emulator Status Medium Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_EVDI
+	tristate "MARU VirtIO Emulator Virtual Device Interface Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_SENSOR
+	tristate "MARU VirtIO Virtual Sensor Device Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_NFC
+	tristate "MARU VirtIO Virtual NFC Device Driver"
+	depends on MARU != n
+
+config MARU_BRILLCODEC
+	tristate "MARU brillcodec driver"
+	depends on MARU != n
