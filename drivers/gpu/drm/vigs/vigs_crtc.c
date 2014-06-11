@@ -31,7 +31,7 @@ static int vigs_crtc_update(struct drm_crtc *crtc,
 
     vigs_fb = fb_to_vigs_fb(crtc->fb);
 
-    if (vigs_fb->fb_sfc->scanout) {
+    if (vigs_fb->surfaces[0]->scanout) {
 retry:
         ret = vigs_framebuffer_pin(vigs_fb);
 
@@ -55,14 +55,14 @@ retry:
             goto retry;
         }
 
-        vigs_gem_reserve(&vigs_fb->fb_sfc->gem);
+        vigs_gem_reserve(&vigs_fb->surfaces[0]->gem);
 
         ret = vigs_comm_set_root_surface(vigs_dev->comm,
-                                         vigs_fb->fb_sfc->id,
+                                         vigs_fb->surfaces[0]->id,
                                          1,
-                                         vigs_gem_offset(&vigs_fb->fb_sfc->gem));
+                                         vigs_gem_offset(&vigs_fb->surfaces[0]->gem));
 
-        vigs_gem_unreserve(&vigs_fb->fb_sfc->gem);
+        vigs_gem_unreserve(&vigs_fb->surfaces[0]->gem);
 
         if (ret != 0) {
             vigs_framebuffer_unpin(vigs_fb);
@@ -71,7 +71,7 @@ retry:
         }
     } else {
         ret = vigs_comm_set_root_surface(vigs_dev->comm,
-                                         vigs_fb->fb_sfc->id,
+                                         vigs_fb->surfaces[0]->id,
                                          0,
                                          0);
 
@@ -80,7 +80,7 @@ retry:
         }
     }
 
-    if (vigs_old_fb && vigs_old_fb->fb_sfc->scanout) {
+    if (vigs_old_fb && vigs_old_fb->surfaces[0]->scanout) {
         vigs_framebuffer_unpin(vigs_old_fb);
     }
 
@@ -302,7 +302,7 @@ static void vigs_crtc_disable(struct drm_crtc *crtc)
 
     vigs_comm_set_root_surface(vigs_dev->comm, 0, 0, 0);
 
-    if (vigs_fb->fb_sfc->scanout) {
+    if (vigs_fb->surfaces[0]->scanout) {
         vigs_framebuffer_unpin(vigs_fb);
     }
 }

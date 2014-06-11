@@ -2,6 +2,7 @@
 #include "vigs_device.h"
 #include "vigs_mman.h"
 #include "vigs_surface.h"
+#include "vigs_dp.h"
 #include <drm/vigs_drm.h>
 #include <ttm/ttm_placement.h>
 
@@ -260,6 +261,13 @@ int vigs_gem_wait(struct vigs_gem_object *vigs_gem)
 void vigs_gem_free_object(struct drm_gem_object *gem)
 {
     struct vigs_gem_object *vigs_gem = gem_to_vigs_gem(gem);
+
+    if (vigs_gem->type == VIGS_GEM_TYPE_SURFACE) {
+        struct vigs_device *vigs_dev = gem->dev->dev_private;
+
+        vigs_dp_remove_surface(vigs_dev->dp,
+                               vigs_gem_to_vigs_surface(vigs_gem));
+    }
 
     vigs_gem_reserve(vigs_gem);
 

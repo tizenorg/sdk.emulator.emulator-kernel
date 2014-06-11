@@ -9,6 +9,9 @@ static const uint32_t formats[] =
 {
     DRM_FORMAT_XRGB8888,
     DRM_FORMAT_ARGB8888,
+    DRM_FORMAT_NV21,
+    fourcc_code('N', 'V', '4', '2'),
+    DRM_FORMAT_NV61
 };
 
 static int vigs_plane_update(struct drm_plane *plane,
@@ -23,33 +26,66 @@ static int vigs_plane_update(struct drm_plane *plane,
     struct vigs_plane *vigs_plane = plane_to_vigs_plane(plane);
     struct vigs_device *vigs_dev = plane->dev->dev_private;
     struct vigs_framebuffer *vigs_fb = fb_to_vigs_fb(fb);
-    int ret;
+    int ret, i;
     uint32_t src_x_whole = src_x >> 16;
     uint32_t src_y_whole = src_y >> 16;
     uint32_t src_w_whole = src_w >> 16;
     uint32_t src_h_whole = src_h >> 16;
+    vigsp_surface_id surface_ids[4] = { 0, 0, 0, 0 };
+    vigsp_plane_format format;
 
     DRM_DEBUG_KMS("enter: crtc_x = %d, crtc_y = %d, crtc_w = %u, crtc_h = %u, src_x = %u, src_y = %u, src_w = %u, src_h = %u\n",
                   crtc_x, crtc_y, crtc_w, crtc_h, src_x, src_y, src_w, src_h);
 
-    if (vigs_fb->fb_sfc->scanout) {
-        vigs_gem_reserve(&vigs_fb->fb_sfc->gem);
+    if (vigs_fb->surfaces[0]->scanout) {
+        vigs_gem_reserve(&vigs_fb->surfaces[0]->gem);
 
-        if (vigs_gem_in_vram(&vigs_fb->fb_sfc->gem) &&
-            vigs_surface_need_gpu_update(vigs_fb->fb_sfc)) {
+        if (vigs_gem_in_vram(&vigs_fb->surfaces[0]->gem) &&
+            vigs_surface_need_gpu_update(vigs_fb->surfaces[0])) {
             vigs_comm_update_gpu(vigs_dev->comm,
-                                 vigs_fb->fb_sfc->id,
-                                 vigs_fb->fb_sfc->width,
-                                 vigs_fb->fb_sfc->height,
-                                 vigs_gem_offset(&vigs_fb->fb_sfc->gem));
+                                 vigs_fb->surfaces[0]->id,
+                                 vigs_fb->surfaces[0]->width,
+                                 vigs_fb->surfaces[0]->height,
+                                 vigs_gem_offset(&vigs_fb->surfaces[0]->gem));
         }
 
-        vigs_gem_unreserve(&vigs_fb->fb_sfc->gem);
+        vigs_gem_unreserve(&vigs_fb->surfaces[0]->gem);
+    }
+
+    for (i = 0; i < 4; ++i) {
+        if (vigs_fb->surfaces[i]) {
+            surface_ids[i] = vigs_fb->surfaces[i]->id;
+        }
+    }
+
+    switch (fb->pixel_format) {
+    case DRM_FORMAT_XRGB8888:
+        format = vigsp_plane_bgrx8888;
+        break;
+    case DRM_FORMAT_ARGB8888:
+        format = vigsp_plane_bgra8888;
+        break;
+    case DRM_FORMAT_NV21:
+        format = vigsp_plane_nv21;
+        break;
+    case fourcc_code('N', 'V', '4', '2'):
+        format = vigsp_plane_nv42;
+        break;
+    case DRM_FORMAT_NV61:
+        format = vigsp_plane_nv61;
+        break;
+    default:
+        BUG();
+        format = vigsp_plane_bgrx8888;
+        break;
     }
 
     ret = vigs_comm_set_plane(vigs_dev->comm,
                               vigs_plane->index,
-                              vigs_fb->fb_sfc->id,
+                              fb->width,
+                              fb->height,
+                              format,
+                              surface_ids,
                               src_x_whole,
                               src_y_whole,
                               src_w_whole,
@@ -82,6 +118,7 @@ static int vigs_plane_disable(struct drm_plane *plane)
     struct vigs_plane *vigs_plane = plane_to_vigs_plane(plane);
     struct vigs_device *vigs_dev = plane->dev->dev_private;
     int ret;
+    vigsp_surface_id surface_ids[4] = { 0, 0, 0, 0 };
 
     DRM_DEBUG_KMS("enter\n");
 
@@ -92,6 +129,9 @@ static int vigs_plane_disable(struct drm_plane *plane)
     ret = vigs_comm_set_plane(vigs_dev->comm,
                               vigs_plane->index,
                               0,
+                              0,
+                              0,
+                              surface_ids,
                               0,
                               0,
                               0,

@@ -19,6 +19,7 @@ vigs_drm-y := main.o \
               vigs_fence.o \
               vigs_fenceman.o \
               vigs_file.o \
-              vigs_plane.o
+              vigs_plane.o \
+              vigs_dp.o
 
 obj-$(CONFIG_DRM_VIGS) += vigs_drm.o
