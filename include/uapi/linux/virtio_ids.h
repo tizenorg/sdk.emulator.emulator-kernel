@@ -52,6 +52,7 @@
 #define VIRTIO_ID_NFC			38 /* virtio nfc */
 #define VIRTIO_ID_JACK			39 /* virtio jack */
 #define VIRTIO_ID_POWER			40 /* virtio power supply */
+#define VIRTIO_ID_VMODEM		41 /* virtio VMODEM */
 #endif
 
 #endif /* _LINUX_VIRTIO_IDS_H */
