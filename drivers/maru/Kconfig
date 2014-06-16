@@ -49,3 +49,7 @@ config MARU_VIRTIO_NFC
 config MARU_BRILLCODEC
 	tristate "MARU brillcodec driver"
 	depends on MARU != n
+
+config MARU_VIRTIO_VMODEM
+	tristate "MARU VirtIO Virtual Modem Device Driver"
+	depends on MARU != n
