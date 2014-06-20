@@ -1,3 +1,9 @@
+* 2.0.1
+- sensors: re-structure with input_event
+- maru_haptic: force feedback driver is added
+- jack & power driver: MAX buf size to 512
+- evdi: added guest emuld connection message
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-06-20
 * 2.0.0
 - Major package version up
 == SeokYeon Hwang <syeon.hwang@samsung.com> 2014-06-10
