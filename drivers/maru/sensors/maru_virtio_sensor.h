@@ -147,27 +147,27 @@ void set_sensor_data(int type, const char* buf);
 int get_sensor_data(int type, char* data);
 
 #define SENSOR_CLASS_NAME			"sensors"
-#define MARU_SENSOR_DEVICE_VENDOR	"Tizen"
+#define MARU_SENSOR_DEVICE_VENDOR	"Tizen_SDK"
 
 #define DRIVER_ACCEL_NAME			"accel"
 #define SENSOR_ACCEL_INPUT_NAME		"accelerometer_sensor"
-#define MARU_ACCEL_DEVICE_NAME		"EMULATOR_ACCEL"
+#define MARU_ACCEL_DEVICE_NAME		"maru_sensor_accel_1"
 
 #define DRIVER_GEO_NAME				"geo"
 #define SENSOR_GEO_INPUT_NAME		"geomagnetic_sensor"
-#define MARU_GEO_DEVICE_NAME		"EMULATOR_GEO"
+#define MARU_GEO_DEVICE_NAME		"maru_sensor_geo_1"
 
 #define DRIVER_GYRO_NAME			"gyro"
 #define SENSOR_GYRO_INPUT_NAME		"gyro_sensor"
-#define MARU_GYRO_DEVICE_NAME		"EMULATOR_GYRO"
+#define MARU_GYRO_DEVICE_NAME		"maru_sensor_gyro_1"
 
 #define DRIVER_LIGHT_NAME			"light"
 #define SENSOR_LIGHT_INPUT_NAME		"light_sensor"
-#define MARU_LIGHT_DEVICE_NAME		"EMULATOR_LIGHT"
+#define MARU_LIGHT_DEVICE_NAME		"maru_sensor_light_1"
 
 #define DRIVER_PROXI_NAME			"proxi"
 #define SENSOR_PROXI_INPUT_NAME		"proximity_sensor"
-#define MARU_PROXI_DEVICE_NAME		"EMULATOR_PROXI"
+#define MARU_PROXI_DEVICE_NAME		"maru_sensor_proxi_1"
 
 #define SENSOR_HAPTIC_INPUT_NAME	"haptic_sensor"
 
