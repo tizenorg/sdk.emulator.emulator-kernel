@@ -1319,7 +1319,11 @@ static int v4l_enumstd(const struct v4l2_ioctl_ops *ops,
 	/* Return -ENODATA if the tvnorms for the current input
 	   or output is 0, meaning that it doesn't support this API. */
 	if (id == 0)
-		return -ENODATA;
+		/* return -ENODATA;
+		   FIXME: hot fix for gst-plugins-good0.10.
+		   It does not handle this error code(ENODATA).
+		   Thus, using the error code(ENOTTY), it can handle */
+		return -ENOTTY;
 
 	/* Return norm array in a canonical way */
 	for (i = 0; i <= index && id; i++) {
