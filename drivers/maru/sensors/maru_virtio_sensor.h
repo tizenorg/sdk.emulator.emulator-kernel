@@ -70,11 +70,12 @@ enum sensor_types {
 };
 
 enum sensor_capabilities {
-	sensor_cap_accel = 0x01,
-	sensor_cap_geo   = 0x02,
-	sensor_cap_gyro  = 0x04,
-	sensor_cap_light = 0x08,
-	sensor_cap_proxi = 0x10
+	sensor_cap_accel 	= 0x01,
+	sensor_cap_geo		= 0x02,
+	sensor_cap_gyro		= 0x04,
+	sensor_cap_light	= 0x08,
+	sensor_cap_proxi	= 0x10,
+	sensor_cap_haptic	= 0x20
 };
 
 #define __MAX_BUF_SIZE			1024
@@ -114,6 +115,7 @@ struct virtio_sensor {
 	void* gyro_handle;
 	void* light_handle;
 	void* proxi_handle;
+	void* haptic_handle;
 };
 
 #define MARU_DEVICE_ATTR(_name)	\
@@ -167,6 +169,8 @@ int get_sensor_data(int type, char* data);
 #define SENSOR_PROXI_INPUT_NAME		"proximity_sensor"
 #define MARU_PROXI_DEVICE_NAME		"EMULATOR_PROXI"
 
+#define SENSOR_HAPTIC_INPUT_NAME	"haptic_sensor"
+
 #define LOG(log_level, fmt, ...) \
 	printk(log_level "%s: " fmt "\n", SENSOR_CLASS_NAME, ##__VA_ARGS__)
 
@@ -199,5 +203,11 @@ int maru_light_exit(struct virtio_sensor *vs);
  */
 int maru_proxi_init(struct virtio_sensor *vs);
 int maru_proxi_exit(struct virtio_sensor *vs);
+
+/*
+ * Haptic device
+ */
+int maru_haptic_init(struct virtio_sensor *vs);
+int maru_haptic_exit(struct virtio_sensor *vs);
 
 #endif

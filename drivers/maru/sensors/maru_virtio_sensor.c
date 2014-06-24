@@ -287,6 +287,12 @@ static int device_init(struct virtio_sensor *vs)
 			return ret;
 	}
 
+	if (vs->sensor_capability & sensor_cap_haptic) {
+		ret = maru_haptic_init(vs);
+		if (ret)
+			return ret;
+	}
+
 	return ret;
 }
 
@@ -310,6 +316,10 @@ static void device_exit(struct virtio_sensor *vs)
 
 	if (vs->sensor_capability & sensor_cap_proxi) {
 		maru_proxi_exit(vs);
+	}
+
+	if (vs->sensor_capability & sensor_cap_haptic) {
+		maru_haptic_exit(vs);
 	}
 }
 
