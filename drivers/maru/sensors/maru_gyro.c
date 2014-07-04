@@ -74,7 +74,7 @@ static void maru_gyro_input_work_func(struct work_struct *work) {
 		mutex_unlock(&data->data_mutex);
 		if (!ret) {
 			sscanf(sensor_data, "%d,%d,%d", &gyro_x, &gyro_y, &gyro_z);
-			LOG(KERN_INFO, "gyro_set %d, %d, %d", gyro_x, gyro_y, gyro_z);
+			LOG(KERN_DEBUG, "gyro_set %d, %d, %d", gyro_x, gyro_y, gyro_z);
 
 			input_report_rel(data->input_data, REL_RX, gyro_x);
 			input_report_rel(data->input_data, REL_RY, gyro_y);
