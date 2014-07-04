@@ -8,7 +8,7 @@
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 18
+#define VIGS_PROTOCOL_VERSION 19
 
 #define VIGS_MAX_PLANES 2
 
@@ -70,7 +70,8 @@ typedef enum
     vigsp_plane_bgra8888 = 0x1,
     vigsp_plane_nv21 = 0x2,
     vigsp_plane_nv42 = 0x3,
-    vigsp_plane_nv61 = 0x4
+    vigsp_plane_nv61 = 0x4,
+    vigsp_plane_yuv420 = 0x5
 } vigsp_plane_format;
 
 #pragma pack(1)

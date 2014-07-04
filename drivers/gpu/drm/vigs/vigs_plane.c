@@ -11,7 +11,8 @@ static const uint32_t formats[] =
     DRM_FORMAT_ARGB8888,
     DRM_FORMAT_NV21,
     fourcc_code('N', 'V', '4', '2'),
-    DRM_FORMAT_NV61
+    DRM_FORMAT_NV61,
+    DRM_FORMAT_YUV420
 };
 
 static int vigs_plane_update(struct drm_plane *plane,
@@ -73,6 +74,9 @@ static int vigs_plane_update(struct drm_plane *plane,
         break;
     case DRM_FORMAT_NV61:
         format = vigsp_plane_nv61;
+        break;
+    case DRM_FORMAT_YUV420:
+        format = vigsp_plane_yuv420;
         break;
     default:
         BUG();
