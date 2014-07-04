@@ -59,7 +59,7 @@ static void maru_accel_input_work_func(struct work_struct *work) {
 	struct maru_accel_data *data = container_of((struct delayed_work *)work,
 			struct maru_accel_data, work);
 
-	LOG(KERN_DEBUG, "maru_accel_input_work_func starts");
+	LOG(1, "maru_accel_input_work_func starts");
 
 	memset(sensor_data, 0, __MAX_BUF_SENSOR);
 	poll_time = atomic_read(&data->poll_delay);
@@ -74,7 +74,7 @@ static void maru_accel_input_work_func(struct work_struct *work) {
 		mutex_unlock(&data->data_mutex);
 		if (!ret) {
 			sscanf(sensor_data, "%d,%d,%d", &accel_x, &accel_y, &accel_z);
-			LOG(KERN_INFO, "accel_set %d, %d, %d", accel_x, accel_y, accel_z);
+			LOG(1, "accel_set %d, %d, %d", accel_x, accel_y, accel_z);
 
 			input_report_rel(data->input_data, REL_RX, accel_x);
 			input_report_rel(data->input_data, REL_RY, accel_y);
@@ -87,7 +87,7 @@ static void maru_accel_input_work_func(struct work_struct *work) {
 	enable = atomic_read(&data->enable);
 	mutex_unlock(&data->data_mutex);
 
-	LOG(KERN_DEBUG, "enable: %d, poll_time: %d", enable, poll_time);
+	LOG(1, "enable: %d, poll_time: %d", enable, poll_time);
 	if (enable) {
 		if (poll_time > 0) {
 			schedule_delayed_work(&data->work, nsecs_to_jiffies(poll_time));
@@ -96,7 +96,7 @@ static void maru_accel_input_work_func(struct work_struct *work) {
 		}
 	}
 
-	LOG(KERN_DEBUG, "maru_accel_input_work_func ends");
+	LOG(1, "maru_accel_input_work_func ends");
 
 }
 
@@ -243,7 +243,7 @@ static int set_initial_value(struct maru_accel_data *data)
 
 	ret = get_sensor_data(sensor_type_accel_delay, sensor_data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to get initial delay time");
+		ERR("failed to get initial delay time");
 		return ret;
 	}
 
@@ -251,14 +251,14 @@ static int set_initial_value(struct maru_accel_data *data)
 
 	ret = get_sensor_data(sensor_type_accel_enable, sensor_data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to get initial enable");
+		ERR("failed to get initial enable");
 		return ret;
 	}
 
 	enable = sensor_atoi(sensor_data);
 
 	if (delay < 0) {
-		LOG(KERN_ERR, "weird value is set initial delay");
+		ERR("weird value is set initial delay");
 		return ret;
 	}
 
@@ -279,7 +279,7 @@ static int create_input_device(struct maru_accel_data *data)
 
 	input_data = input_allocate_device();
 	if (input_data == NULL) {
-		LOG(KERN_ERR, "failed initialing input handler");
+		ERR("failed initialing input handler");
 		accel_clear(data);
 		return -ENOMEM;
 	}
@@ -297,7 +297,7 @@ static int create_input_device(struct maru_accel_data *data)
 
 	ret = input_register_device(input_data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to register input data");
+		ERR("failed to register input data");
 		accel_clear(data);
 		return ret;
 	}
@@ -308,7 +308,7 @@ static int create_input_device(struct maru_accel_data *data)
 			&maru_accel_attribute_group);
 	if (ret) {
 		accel_clear(data);
-		LOG(KERN_ERR, "failed initialing devices");
+		ERR("failed initialing devices");
 		return ret;
 	}
 
@@ -319,11 +319,11 @@ int maru_accel_init(struct virtio_sensor *vs) {
 	int ret = 0;
 	struct maru_accel_data *data = NULL;
 
-	LOG(KERN_INFO, "maru_accel device init starts.");
+	INFO("maru_accel device init starts.");
 
 	data = kmalloc(sizeof(struct maru_accel_data), GFP_KERNEL);
 	if (data == NULL) {
-		LOG(KERN_ERR, "failed to create accel data.");
+		ERR("failed to create accel data.");
 		return -ENOMEM;
 	}
 
@@ -338,7 +338,7 @@ int maru_accel_init(struct virtio_sensor *vs) {
 	ret = register_sensor_device(accel_sensor_device, vs,
 			accel_sensor_attrs, DRIVER_ACCEL_NAME);
 	if (ret) {
-		LOG(KERN_ERR, "failed to register accel device");
+		ERR("failed to register accel device");
 		accel_clear(data);
 		return -1;
 	}
@@ -347,7 +347,7 @@ int maru_accel_init(struct virtio_sensor *vs) {
 		ret = l_register_sensor_device(l_accel_sensor_device, vs,
 			l_accel_sensor_attrs, DRIVER_ACCEL_NAME);
 	if (ret) {
-		LOG(KERN_ERR, "failed to register legacy accel device");
+		ERR("failed to register legacy accel device");
 		accel_clear(data);
 		return -1;
 	}
@@ -356,18 +356,18 @@ int maru_accel_init(struct virtio_sensor *vs) {
 	// create input
 	ret = create_input_device(data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to create input device");
+		ERR("failed to create input device");
 		return ret;
 	}
 
 	// set initial delay & enable
 	ret = set_initial_value(data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to set initial value");
+		ERR("failed to set initial value");
 		return ret;
 	}
 
-	LOG(KERN_INFO, "maru_accel device init ends.");
+	INFO("maru_accel device init ends.");
 
 	return ret;
 }

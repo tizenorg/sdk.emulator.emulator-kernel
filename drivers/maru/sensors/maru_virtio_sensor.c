@@ -42,6 +42,10 @@
 
 #include "maru_virtio_sensor.h"
 
+int sensor_driver_debug = 0;
+module_param(sensor_driver_debug, int, 0644);
+MODULE_PARM_DESC(sensor_driver_debug, "Turn on/off maru sensor debugging (default:off).");
+
 static struct virtio_device_id id_table[] = { { VIRTIO_ID_SENSOR,
 		VIRTIO_DEV_ANY_ID }, { 0 }, };
 
@@ -72,31 +76,31 @@ int register_sensor_device(struct device *dev, struct virtio_sensor *vs,
 	int i = 0, err = 0;
 
 	if (!vs->sensor_class) {
-		LOG(KERN_ERR, "sensor class is not created before make device");
+		ERR("sensor class is not created before make device");
 		return -1;
 	}
 
-	LOG(KERN_INFO, "device creation: %s.", name);
+	INFO("device creation: %s.", name);
 
 	dev = device_create(vs->sensor_class, NULL, 0, NULL, "%s", name);
 	if (dev < 0) {
-		LOG(KERN_ERR, "register_device_create failed!");
+		ERR("register_device_create failed!");
 		return -1;
 	}
 
 	if (attributes == NULL) {
-		LOG(KERN_ERR, "attributes is NULL.");
+		ERR("attributes is NULL.");
 		return -1;
 	}
 
 	for (i = 0; attributes[i] != NULL; i++) {
 		if ((err = device_create_file(dev, attributes[i])) < 0) {
-			LOG(KERN_ERR, "failed to create device file with attribute[%d - %d]", i, err);
+			ERR("failed to create device file with attribute[%d - %d]", i, err);
 			return -1;
 		}
 	}
 
-	LOG(KERN_INFO, "register_sensor_device ends: %s.", name);
+	INFO("register_sensor_device ends: %s.", name);
 
 	return 0;
 }
@@ -109,24 +113,24 @@ int l_register_sensor_device(struct device *dev, struct virtio_sensor *vs,
 	int i = 0, err = 0;
 
 	if (!vs->l_sensor_class) {
-		LOG(KERN_ERR, "l sensor class is not created before make device");
+		ERR("l sensor class is not created before make device");
 		return -1;
 	}
 
 	dev = device_create(vs->l_sensor_class, NULL, 0, NULL, "%s", name);
 	if (dev < 0) {
-		LOG(KERN_ERR, "legacy register_device_create failed!");
+		ERR("legacy register_device_create failed!");
 		return -1;
 	}
 
 	if (attributes == NULL) {
-		LOG(KERN_ERR, "l sensor attributes is NULL.");
+		ERR("l sensor attributes is NULL.");
 		return -1;
 	}
 
 	for (i = 0; attributes[i] != NULL; i++) {
 		if ((err = device_create_file(dev, attributes[i])) < 0) {
-			LOG(KERN_ERR, "failed to create legacy device file with attribute[%d - %d]", i, err);
+			ERR("failed to create legacy device file with attribute[%d - %d]", i, err);
 			return -1;
 		}
 	}
@@ -142,20 +146,20 @@ static void sensor_vq_done(struct virtqueue *rvq) {
 
 	msg = (struct msg_info*) virtqueue_get_buf(vs->vq, &len);
 	if (msg == NULL) {
-		LOG(KERN_ERR, "failed to virtqueue_get_buf");
+		ERR("failed to virtqueue_get_buf");
 		return;
 	}
 
 	if (msg->req != request_answer) {
-		LOG(KERN_DEBUG, "receive queue- not an answer message: %d", msg->req);
+		LOG(1, "receive queue- not an answer message: %d", msg->req);
 		return;
 	}
 	if (msg->buf == NULL) {
-		LOG(KERN_ERR, "receive queue- message from host is NULL.");
+		ERR("receive queue- message from host is NULL.");
 		return;
 	}
 
-	LOG(KERN_DEBUG, "msg buf: %s, req: %d, type: %d", msg->buf, msg->req, msg->type);
+	LOG(1, "msg buf: %s, req: %d, type: %d", msg->buf, msg->req, msg->type);
 
 	mutex_lock(&vs->lock);
 	memset(sensor_data, 0, __MAX_BUF_SENSOR);
@@ -171,12 +175,12 @@ void set_sensor_data(int type, const char* buf)
 	int err = 0;
 
 	if (buf == NULL) {
-		LOG(KERN_ERR, "set_sensor buf is NULL.");
+		ERR("set_sensor buf is NULL.");
 		return;
 	}
 
 	if (vs == NULL) {
-		LOG(KERN_ERR, "Invalid sensor handle");
+		ERR("Invalid sensor handle");
 		return;
 	}
 
@@ -188,12 +192,12 @@ void set_sensor_data(int type, const char* buf)
 	strcpy(vs->msginfo.buf, buf);
 	mutex_unlock(&vs->lock);
 
-	LOG(KERN_DEBUG, "set_sensor_data type: %d, req: %d, buf: %s",
+	LOG(1, "set_sensor_data type: %d, req: %d, buf: %s",
 			vs->msginfo.type, vs->msginfo.req, vs->msginfo.buf);
 
 	err = virtqueue_add_outbuf(vs->vq, vs->sg_vq, 1, &vs->msginfo, GFP_ATOMIC);
 	if (err < 0) {
-		LOG(KERN_ERR, "failed to add buffer to virtqueue (err = %d)", err);
+		ERR("failed to add buffer to virtqueue (err = %d)", err);
 		return;
 	}
 
@@ -206,7 +210,7 @@ int get_sensor_data(int type, char* data)
 	int err = 0;
 
 	if (vs == NULL || data == NULL) {
-		LOG(KERN_ERR, "Invalid sensor handle or data is NULL.");
+		ERR("Invalid sensor handle or data is NULL.");
 		return -1;
 	}
 
@@ -217,14 +221,14 @@ int get_sensor_data(int type, char* data)
 	vs->msginfo.type = type;
 	mutex_unlock(&vs->lock);
 
-	LOG(KERN_DEBUG, "get_sensor_data type: %d, req: %d",
+	LOG(1, "get_sensor_data type: %d, req: %d",
 			vs->msginfo.type, vs->msginfo.req);
 
 	sgs[0] = &vs->sg_vq[0];
 	sgs[1] = &vs->sg_vq[1];
 	err = virtqueue_add_sgs(vs->vq, sgs, 1, 1, &vs->msginfo, GFP_ATOMIC);
 	if (err < 0) {
-		LOG(KERN_ERR, "failed to add buffer to virtqueue (err = %d)", err);
+		ERR("failed to add buffer to virtqueue (err = %d)", err);
 		return err;
 	}
 
@@ -351,11 +355,11 @@ static int sensor_probe(struct virtio_device* dev)
 	int index = 0;
 	char sensor_data[__MAX_BUF_SENSOR];
 
-	LOG(KERN_INFO, "Sensor probe starts");
+	INFO("Sensor probe starts");
 
 	vs = kmalloc(sizeof(struct virtio_sensor), GFP_KERNEL);
 	if (!vs) {
-		LOG(KERN_ERR, "failed to allocate sensor structure.");
+		ERR("failed to allocate sensor structure.");
 		return -ENOMEM;
 	}
 
@@ -364,14 +368,14 @@ static int sensor_probe(struct virtio_device* dev)
 
 	vs->sensor_class = class_create(THIS_MODULE, SENSOR_CLASS_NAME);
 	if (IS_ERR(vs->sensor_class)) {
-		LOG(KERN_ERR, "sensor class creation is failed.");
+		ERR("sensor class creation is failed.");
 		return PTR_ERR(vs->sensor_class);
 	}
 
 #ifdef SUPPORT_LEGACY_SENSOR
 	vs->l_sensor_class = class_create(THIS_MODULE, L_SENSOR_CLASS_NAME);
 	if (IS_ERR(vs->sensor_class)) {
-		LOG(KERN_ERR, "sensor class creation is failed.");
+		ERR("sensor class creation is failed.");
 		return PTR_ERR(vs->sensor_class);
 	}
 #endif
@@ -379,7 +383,7 @@ static int sensor_probe(struct virtio_device* dev)
 	vs->vq = virtio_find_single_vq(dev, sensor_vq_done, "sensor");
 	if (IS_ERR(vs->vq)) {
 		cleanup(dev);
-		LOG(KERN_ERR, "failed to init virt queue");
+		ERR("failed to init virt queue");
 		return ret;
 	}
 
@@ -395,22 +399,22 @@ static int sensor_probe(struct virtio_device* dev)
 	memset(sensor_data, 0, __MAX_BUF_SENSOR);
 	ret = get_sensor_data(sensor_type_list, sensor_data);
 	if (ret) {
-		LOG(KERN_ERR, "sensor capability data is null.");
+		ERR("sensor capability data is null.");
 		cleanup(dev);
 		return ret;
 	}
 
 	vs->sensor_capability = sensor_atoi(sensor_data);
-	LOG(KERN_INFO, "sensor capability is %02x", vs->sensor_capability);
+	INFO("sensor capability is %02x", vs->sensor_capability);
 
 	ret = device_init(vs);
 	if (ret) {
-		LOG(KERN_ERR, "failed initialing devices");
+		ERR("failed initialing devices");
 		cleanup(dev);
 		return ret;
 	}
 
-	LOG(KERN_INFO, "Sensor probe completes");
+	INFO("Sensor probe completes");
 
 	return ret;
 }
@@ -420,7 +424,7 @@ static void sensor_remove(struct virtio_device* dev)
 	struct virtio_sensor* vs = dev->priv;
 	if (!vs)
 	{
-		LOG(KERN_ERR, "vs is NULL");
+		ERR("vs is NULL");
 		return;
 	}
 
@@ -430,7 +434,7 @@ static void sensor_remove(struct virtio_device* dev)
 
 	cleanup(dev);
 
-	LOG(KERN_INFO, "Sensor driver is removed.");
+	INFO("Sensor driver is removed.");
 }
 
 MODULE_DEVICE_TABLE(virtio, id_table);
@@ -448,7 +452,7 @@ static struct virtio_driver virtio_sensor_driver = {
 
 static int __init sensor_init(void)
 {
-	LOG(KERN_INFO, "Sensor driver initialized.");
+	INFO("Sensor driver initialized.");
 
 	return register_virtio_driver(&virtio_sensor_driver);
 }
@@ -457,7 +461,7 @@ static void __exit sensor_exit(void)
 {
 	unregister_virtio_driver(&virtio_sensor_driver);
 
-	LOG(KERN_INFO, "Sensor driver is destroyed.");
+	INFO("Sensor driver is destroyed.");
 }
 
 module_init(sensor_init);

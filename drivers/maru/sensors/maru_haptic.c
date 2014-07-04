@@ -53,13 +53,13 @@ static void haptic_clear(struct maru_haptic_data *data) {
 
 static int maru_upload_effect(struct input_dev *dev, struct ff_effect *effect, struct ff_effect *old)
 {
-	LOG(KERN_INFO, "called maru_upload_effect. No work to do.");
+	INFO("called maru_upload_effect. No work to do.");
 	return 0;
 }
 
 static int maru_erase_effect(struct input_dev *dev, int effect_id)
 {
-	LOG(KERN_INFO, "called maru_erase_effect. No work to do.");
+	INFO("called maru_erase_effect. No work to do.");
 	return 0;
 }
 
@@ -73,7 +73,7 @@ static void maru_set_autocenter(struct input_dev *dev, u16 magnitude)
 
 static int maru_playback(struct input_dev *dev, int effect_id, int value)
 {
-	LOG(KERN_INFO, "called maru_playback. No work to do.");
+	INFO("called maru_playback. No work to do.");
 	return 0;
 }
 
@@ -85,7 +85,7 @@ static int create_input_device(struct maru_haptic_data *data)
 
 	input_data = input_allocate_device();
 	if (input_data == NULL) {
-		LOG(KERN_ERR, "failed initialing input handler");
+		ERR("failed initialing input handler");
 		haptic_clear(data);
 		return -ENOMEM;
 	}
@@ -114,7 +114,7 @@ static int create_input_device(struct maru_haptic_data *data)
 
 	ret = input_register_device(input_data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to register input data");
+		ERR("failed to register input data");
 		haptic_clear(data);
 		return ret;
 	}
@@ -127,11 +127,11 @@ int maru_haptic_init(struct virtio_sensor *vs) {
 	int ret = 0;
 	struct maru_haptic_data *data = NULL;
 
-	LOG(KERN_INFO, "maru_haptic device init starts.");
+	INFO("maru_haptic device init starts.");
 
 	data = kmalloc(sizeof(struct maru_haptic_data), GFP_KERNEL);
 	if (data == NULL) {
-		LOG(KERN_ERR, "failed to create haptic data.");
+		ERR("failed to create haptic data.");
 		return -ENOMEM;
 	}
 
@@ -141,11 +141,11 @@ int maru_haptic_init(struct virtio_sensor *vs) {
 	// create input
 	ret = create_input_device(data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to create input device");
+		ERR("failed to create input device");
 		return ret;
 	}
 
-	LOG(KERN_INFO, "maru_haptic device init ends.");
+	INFO("maru_haptic device init ends.");
 
 	return ret;
 }

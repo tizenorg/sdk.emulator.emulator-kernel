@@ -59,7 +59,7 @@ static void maru_gyro_input_work_func(struct work_struct *work) {
 	struct maru_gyro_data *data = container_of((struct delayed_work *)work,
 			struct maru_gyro_data, work);
 
-	LOG(KERN_DEBUG, "maru_gyro_input_work_func starts");
+	LOG(1, "maru_gyro_input_work_func starts");
 
 	memset(sensor_data, 0, __MAX_BUF_SENSOR);
 	poll_time = atomic_read(&data->poll_delay);
@@ -74,7 +74,7 @@ static void maru_gyro_input_work_func(struct work_struct *work) {
 		mutex_unlock(&data->data_mutex);
 		if (!ret) {
 			sscanf(sensor_data, "%d,%d,%d", &gyro_x, &gyro_y, &gyro_z);
-			LOG(KERN_INFO, "gyro_set %d, %d, %d", gyro_x, gyro_y, gyro_z);
+			LOG(1, "gyro_set %d, %d, %d", gyro_x, gyro_y, gyro_z);
 
 			input_report_rel(data->input_data, REL_RX, gyro_x);
 			input_report_rel(data->input_data, REL_RY, gyro_y);
@@ -87,7 +87,7 @@ static void maru_gyro_input_work_func(struct work_struct *work) {
 	enable = atomic_read(&data->enable);
 	mutex_unlock(&data->data_mutex);
 
-	LOG(KERN_DEBUG, "enable: %d, poll_time: %d", enable, poll_time);
+	LOG(1, "enable: %d, poll_time: %d", enable, poll_time);
 	if (enable) {
 		if (poll_time > 0) {
 			schedule_delayed_work(&data->work, nsecs_to_jiffies(poll_time));
@@ -96,7 +96,7 @@ static void maru_gyro_input_work_func(struct work_struct *work) {
 		}
 	}
 
-	LOG(KERN_DEBUG, "maru_gyro_input_work_func ends");
+	LOG(1, "maru_gyro_input_work_func ends");
 
 }
 
@@ -269,7 +269,7 @@ static int set_initial_value(struct maru_gyro_data *data)
 
 	ret = get_sensor_data(sensor_type_gyro_delay, sensor_data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to get initial delay time");
+		ERR("failed to get initial delay time");
 		return ret;
 	}
 
@@ -277,14 +277,14 @@ static int set_initial_value(struct maru_gyro_data *data)
 
 	ret = get_sensor_data(sensor_type_gyro_enable, sensor_data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to get initial enable");
+		ERR("failed to get initial enable");
 		return ret;
 	}
 
 	enable = sensor_atoi(sensor_data);
 
 	if (delay < 0) {
-		LOG(KERN_ERR, "weird value is set initial delay");
+		ERR("weird value is set initial delay");
 		return ret;
 	}
 
@@ -305,7 +305,7 @@ static int create_input_device(struct maru_gyro_data *data)
 
 	input_data = input_allocate_device();
 	if (input_data == NULL) {
-		LOG(KERN_ERR, "failed initialing input handler");
+		ERR("failed initialing input handler");
 		gyro_clear(data);
 		return -ENOMEM;
 	}
@@ -323,7 +323,7 @@ static int create_input_device(struct maru_gyro_data *data)
 
 	ret = input_register_device(input_data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to register input data");
+		ERR("failed to register input data");
 		gyro_clear(data);
 		return ret;
 	}
@@ -334,7 +334,7 @@ static int create_input_device(struct maru_gyro_data *data)
 			&maru_gyro_attribute_group);
 	if (ret) {
 		gyro_clear(data);
-		LOG(KERN_ERR, "failed initialing devices");
+		ERR("failed initialing devices");
 		return ret;
 	}
 
@@ -345,11 +345,11 @@ int maru_gyro_init(struct virtio_sensor *vs) {
 	int ret = 0;
 	struct maru_gyro_data *data = NULL;
 
-	LOG(KERN_INFO, "maru_gyro device init starts.");
+	INFO("maru_gyro device init starts.");
 
 	data = kmalloc(sizeof(struct maru_gyro_data), GFP_KERNEL);
 	if (data == NULL) {
-		LOG(KERN_ERR, "failed to create gyro data.");
+		ERR("failed to create gyro data.");
 		return -ENOMEM;
 	}
 
@@ -364,7 +364,7 @@ int maru_gyro_init(struct virtio_sensor *vs) {
 	ret = register_sensor_device(gyro_sensor_device, vs,
 			gyro_sensor_attrs, DRIVER_GYRO_NAME);
 	if (ret) {
-		LOG(KERN_ERR, "failed to register gyro device");
+		ERR("failed to register gyro device");
 		gyro_clear(data);
 		return -1;
 	}
@@ -373,7 +373,7 @@ int maru_gyro_init(struct virtio_sensor *vs) {
 		ret = l_register_sensor_device(l_gyro_sensor_device, vs,
 			l_gyro_sensor_attrs, DRIVER_GYRO_NAME);
 	if (ret) {
-		LOG(KERN_ERR, "failed to register legacy gyro device");
+		ERR("failed to register legacy gyro device");
 		gyro_clear(data);
 		return -1;
 	}
@@ -382,18 +382,18 @@ int maru_gyro_init(struct virtio_sensor *vs) {
 	// create input
 	ret = create_input_device(data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to create input device");
+		ERR("failed to create input device");
 		return ret;
 	}
 
 	// set initial delay & enable
 	ret = set_initial_value(data);
 	if (ret) {
-		LOG(KERN_ERR, "failed to set initial value");
+		ERR("failed to set initial value");
 		return ret;
 	}
 
-	LOG(KERN_INFO, "maru_gyro device init ends.");
+	INFO("maru_gyro device init ends.");
 
 	return ret;
 }

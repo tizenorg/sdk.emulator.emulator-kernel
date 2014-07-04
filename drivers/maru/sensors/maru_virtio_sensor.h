@@ -171,8 +171,21 @@ int get_sensor_data(int type, char* data);
 
 #define SENSOR_HAPTIC_INPUT_NAME	"haptic_sensor"
 
+// It locates /sys/module/maru_virtio_sensor/parameters/sensor_driver_debug
+extern int sensor_driver_debug;
+
+#define ERR(fmt, ...)	\
+	printk(KERN_ERR "%s: " fmt "\n", SENSOR_CLASS_NAME, ##__VA_ARGS__)
+
+#define INFO(fmt, ...)	\
+	printk(KERN_INFO "%s: " fmt "\n", SENSOR_CLASS_NAME, ##__VA_ARGS__)
+
 #define LOG(log_level, fmt, ...) \
-	printk(log_level "%s: " fmt "\n", SENSOR_CLASS_NAME, ##__VA_ARGS__)
+	do {	\
+		if (sensor_driver_debug >= (log_level)) {	\
+			printk(KERN_INFO "%s: " fmt "\n", SENSOR_CLASS_NAME, ##__VA_ARGS__);	\
+		}	\
+	} while (0)
 
 /*
  * Accelerometer device
