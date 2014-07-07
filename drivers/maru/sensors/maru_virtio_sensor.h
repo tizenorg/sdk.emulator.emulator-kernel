@@ -64,18 +64,22 @@ enum sensor_types {
 	sensor_type_proxi,
 	sensor_type_proxi_enable,
 	sensor_type_proxi_delay,
+	sensor_type_rotation_vector,
+	sensor_type_rotation_vector_enable,
+	sensor_type_rotation_vector_delay,
 	sensor_type_mag,
 	sensor_type_tilt,
 	sensor_type_max
 };
 
 enum sensor_capabilities {
-	sensor_cap_accel 	= 0x01,
-	sensor_cap_geo		= 0x02,
-	sensor_cap_gyro		= 0x04,
-	sensor_cap_light	= 0x08,
-	sensor_cap_proxi	= 0x10,
-	sensor_cap_haptic	= 0x20
+	sensor_cap_accel 			= 0x01,
+	sensor_cap_geo				= 0x02,
+	sensor_cap_gyro				= 0x04,
+	sensor_cap_light			= 0x08,
+	sensor_cap_proxi			= 0x10,
+	sensor_cap_rotation_vector	= 0x20,
+	sensor_cap_haptic			= 0x40
 };
 
 #define __MAX_BUF_SIZE			1024
@@ -109,12 +113,14 @@ struct virtio_sensor {
 #endif
 
 	int sensor_capability;
+	int sensor_fail_init;
 
 	void* accel_handle;
 	void* geo_handle;
 	void* gyro_handle;
 	void* light_handle;
 	void* proxi_handle;
+	void* rotation_vector_handle;
 	void* haptic_handle;
 };
 
@@ -169,6 +175,10 @@ int get_sensor_data(int type, char* data);
 #define SENSOR_PROXI_INPUT_NAME		"proximity_sensor"
 #define MARU_PROXI_DEVICE_NAME		"maru_sensor_proxi_1"
 
+#define DRIVER_ROTATION_NAME		"rotation"
+#define SENSOR_ROTATION_INPUT_NAME	"rot_sensor"
+#define MARU_ROTATION_DEVICE_NAME	"maru_sensor_rotation_vector_1"
+
 #define SENSOR_HAPTIC_INPUT_NAME	"haptic_sensor"
 
 // It locates /sys/module/maru_virtio_sensor/parameters/sensor_driver_debug
@@ -216,6 +226,12 @@ int maru_light_exit(struct virtio_sensor *vs);
  */
 int maru_proxi_init(struct virtio_sensor *vs);
 int maru_proxi_exit(struct virtio_sensor *vs);
+
+/*
+ * Rotation Vector device
+ */
+int maru_rotation_vector_init(struct virtio_sensor *vs);
+int maru_rotation_vector_exit(struct virtio_sensor *vs);
 
 /*
  * Haptic device

@@ -392,5 +392,6 @@ int maru_geo_exit(struct virtio_sensor *vs) {
 
 	data = (struct maru_geo_data *)vs->geo_handle;
 	geo_clear(data);
+	INFO("maru_geo device exit ends.");
 	return 0;
 }

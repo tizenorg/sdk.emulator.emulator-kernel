@@ -1,5 +1,5 @@
 /*
- * Maru Virtio Accelerometer Sensor Device Driver
+ * Maru Virtio Rotation Vector Sensor Device Driver
  *
  * Copyright (c) 2014 Samsung Electronics Co., Ltd. All rights reserved.
  *
@@ -32,7 +32,7 @@
 
 #include "maru_virtio_sensor.h"
 
-struct maru_accel_data {
+struct maru_rotation_vector_data {
 	struct input_dev *input_data;
 	struct delayed_work work;
 	struct mutex data_mutex;
@@ -43,23 +43,19 @@ struct maru_accel_data {
 	atomic_t poll_delay;
 };
 
-static struct device *accel_sensor_device;
+static struct device *rotation_vector_sensor_device;
 
-#ifdef SUPPORT_LEGACY_SENSOR
-static struct device *l_accel_sensor_device;
-#endif
-
-static void maru_accel_input_work_func(struct work_struct *work) {
+static void maru_rotation_vector_input_work_func(struct work_struct *work) {
 
 	int poll_time = 200000000;
 	int enable = 0;
 	int ret = 0;
-	int accel_x, accel_y, accel_z;
+	int quad_a, quad_b, quad_c, quad_d, accuracy;
 	char sensor_data[__MAX_BUF_SENSOR];
-	struct maru_accel_data *data = container_of((struct delayed_work *)work,
-			struct maru_accel_data, work);
+	struct maru_rotation_vector_data *data = container_of((struct delayed_work *)work,
+			struct maru_rotation_vector_data, work);
 
-	LOG(1, "maru_accel_input_work_func starts");
+	LOG(1, "maru_rotation_vector_input_work_func starts");
 
 	memset(sensor_data, 0, __MAX_BUF_SENSOR);
 	poll_time = atomic_read(&data->poll_delay);
@@ -70,15 +66,17 @@ static void maru_accel_input_work_func(struct work_struct *work) {
 
 	if (enable) {
 		mutex_lock(&data->data_mutex);
-		ret = get_sensor_data(sensor_type_accel, sensor_data);
+		ret = get_sensor_data(sensor_type_rotation_vector, sensor_data);
 		mutex_unlock(&data->data_mutex);
 		if (!ret) {
-			sscanf(sensor_data, "%d,%d,%d", &accel_x, &accel_y, &accel_z);
-			LOG(1, "accel_set %d, %d, %d", accel_x, accel_y, accel_z);
+			sscanf(sensor_data, "%d,%d,%d,%d,%d", &quad_a, &quad_b, &quad_c, &quad_d, &accuracy);
+			LOG(1, "rotation_vector_set %d,%d,%d,%d,%d", quad_a, quad_b, quad_c, quad_d, accuracy);
 
-			input_report_rel(data->input_data, REL_RX, accel_x);
-			input_report_rel(data->input_data, REL_RY, accel_y);
-			input_report_rel(data->input_data, REL_RZ, accel_z);
+			input_report_rel(data->input_data, REL_X, quad_a);
+			input_report_rel(data->input_data, REL_Y, quad_b);
+			input_report_rel(data->input_data, REL_Z, quad_c);
+			input_report_rel(data->input_data, REL_RX, quad_d);
+			input_report_rel(data->input_data, REL_RY, accuracy);
 			input_sync(data->input_data);
 		}
 	}
@@ -96,13 +94,13 @@ static void maru_accel_input_work_func(struct work_struct *work) {
 		}
 	}
 
-	LOG(1, "maru_accel_input_work_func ends");
+	LOG(1, "maru_rotation_vector_input_work_func ends");
 
 }
 
 static ssize_t maru_name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%s", MARU_ACCEL_DEVICE_NAME);
+	return sprintf(buf, "%s", MARU_ROTATION_DEVICE_NAME);
 }
 
 static ssize_t maru_vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -112,19 +110,19 @@ static ssize_t maru_vendor_show(struct device *dev, struct device_attribute *att
 
 static ssize_t maru_enable_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_accel_enable, buf);
+	return get_data_for_show(sensor_type_rotation_vector_enable, buf);
 }
 
 static ssize_t maru_enable_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct input_dev *input_data = to_input_dev(dev);
-	struct maru_accel_data *data = input_get_drvdata(input_data);
+	struct maru_rotation_vector_data *data = input_get_drvdata(input_data);
 	int value = simple_strtoul(buf, NULL, 10);
 
 	if (value != 0 && value != 1)
 		return count;
 
-	set_sensor_data(sensor_type_accel_enable, buf);
+	set_sensor_data(sensor_type_rotation_vector_enable, buf);
 
 	if (value) {
 		if (atomic_read(&data->enable) != 1) {
@@ -144,16 +142,16 @@ static ssize_t maru_enable_store(struct device *dev, struct device_attribute *at
 
 static ssize_t maru_poll_delay_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_accel_delay, buf);
+	return get_data_for_show(sensor_type_rotation_vector_delay, buf);
 }
 
 static ssize_t maru_poll_delay_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct input_dev *input_data = to_input_dev(dev);
-	struct maru_accel_data *data = input_get_drvdata(input_data);
+	struct maru_rotation_vector_data *data = input_get_drvdata(input_data);
 	int value = simple_strtoul(buf, NULL, 10);
 
-	set_sensor_data(sensor_type_accel_delay, buf);
+	set_sensor_data(sensor_type_rotation_vector_delay, buf);
 	atomic_set(&data->poll_delay, value);
 
 	return strnlen(buf, __MAX_BUF_SENSOR);
@@ -165,66 +163,35 @@ static struct device_attribute dev_attr_sensor_name =
 static struct device_attribute dev_attr_sensor_vendor =
 		__ATTR(vendor, S_IRUGO, maru_vendor_show, NULL);
 
-static struct device_attribute *accel_sensor_attrs [] = {
+static struct device_attribute *rotation_vector_sensor_attrs [] = {
 	&dev_attr_sensor_name,
 	&dev_attr_sensor_vendor,
 	NULL,
 };
 
-#ifdef SUPPORT_LEGACY_SENSOR
-#define ACCEL_NAME_STR		"accel_sim"
-
-static ssize_t accel_name_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%s", ACCEL_NAME_STR);
-}
-
-static ssize_t xyz_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return get_data_for_show(sensor_type_accel, buf);
-}
-
-static ssize_t xyz_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-	set_sensor_data(sensor_type_accel, buf);
-	return strnlen(buf, __MAX_BUF_SENSOR);
-}
-
-static struct device_attribute dev_attr_l_sensor_name =
-		__ATTR(name, S_IRUGO, accel_name_show, NULL);
-
-static DEVICE_ATTR(xyz, 0644, xyz_show, xyz_store);
-
-static struct device_attribute *l_accel_sensor_attrs [] = {
-	&dev_attr_l_sensor_name,
-	&dev_attr_xyz,
-	NULL,
-};
-#endif
-
-static struct device_attribute attr_accel [] =
+static struct device_attribute attr_rotation_vector [] =
 {
 	MARU_ATTR_RW(enable),
 	MARU_ATTR_RW(poll_delay),
 };
 
-static struct attribute *maru_accel_attribute[] = {
-	&attr_accel[0].attr,
-	&attr_accel[1].attr,
+static struct attribute *maru_rotation_vector_attribute[] = {
+	&attr_rotation_vector[0].attr,
+	&attr_rotation_vector[1].attr,
 	NULL
 };
 
-static struct attribute_group maru_accel_attribute_group = {
-	.attrs = maru_accel_attribute
+static struct attribute_group maru_rotation_vector_attribute_group = {
+	.attrs = maru_rotation_vector_attribute
 };
 
-static void accel_clear(struct maru_accel_data *data) {
+static void rotation_vector_clear(struct maru_rotation_vector_data *data) {
 	if (data == NULL)
 		return;
 
 	if (data->input_data) {
 		sysfs_remove_group(&data->input_data->dev.kobj,
-			&maru_accel_attribute_group);
+			&maru_rotation_vector_attribute_group);
 		input_free_device(data->input_data);
 	}
 
@@ -232,31 +199,21 @@ static void accel_clear(struct maru_accel_data *data) {
 	data = NULL;
 }
 
-static int set_initial_value(struct maru_accel_data *data)
+static int set_initial_value(struct maru_rotation_vector_data *data)
 {
 	int delay = 0;
 	int ret = 0;
-	int enable = 0;
 	char sensor_data [__MAX_BUF_SENSOR];
 
 	memset(sensor_data, 0, __MAX_BUF_SENSOR);
 
-	ret = get_sensor_data(sensor_type_accel_delay, sensor_data);
+	ret = get_sensor_data(sensor_type_rotation_vector_delay, sensor_data);
 	if (ret) {
 		ERR("failed to get initial delay time");
 		return ret;
 	}
 
 	delay = sensor_atoi(sensor_data);
-
-	ret = get_sensor_data(sensor_type_accel_enable, sensor_data);
-	if (ret) {
-		ERR("failed to get initial enable");
-		return ret;
-	}
-
-	enable = sensor_atoi(sensor_data);
-
 	if (delay < 0) {
 		ERR("weird value is set initial delay");
 		return ret;
@@ -264,15 +221,15 @@ static int set_initial_value(struct maru_accel_data *data)
 
 	atomic_set(&data->poll_delay, delay);
 
-	if (enable) {
-		atomic_set(&data->enable, 1);
-		schedule_delayed_work(&data->work, 0);
-	}
+	memset(sensor_data, 0, sizeof(sensor_data));
+	sensor_data[0] = '0';
+	set_sensor_data(sensor_type_rotation_vector_enable, sensor_data);
+	atomic_set(&data->enable, 0);
 
 	return ret;
 }
 
-static int create_input_device(struct maru_accel_data *data)
+static int create_input_device(struct maru_rotation_vector_data *data)
 {
 	int ret = 0;
 	struct input_dev *input_data = NULL;
@@ -280,34 +237,36 @@ static int create_input_device(struct maru_accel_data *data)
 	input_data = input_allocate_device();
 	if (input_data == NULL) {
 		ERR("failed initialing input handler");
-		accel_clear(data);
+		rotation_vector_clear(data);
 		return -ENOMEM;
 	}
 
-	input_data->name = SENSOR_ACCEL_INPUT_NAME;
+	input_data->name = SENSOR_ROTATION_INPUT_NAME;
 	input_data->id.bustype = BUS_I2C;
 
 	set_bit(EV_REL, input_data->evbit);
 	set_bit(EV_SYN, input_data->evbit);
+	input_set_capability(input_data, EV_REL, REL_X);
+	input_set_capability(input_data, EV_REL, REL_Y);
+	input_set_capability(input_data, EV_REL, REL_Z);
 	input_set_capability(input_data, EV_REL, REL_RX);
 	input_set_capability(input_data, EV_REL, REL_RY);
-	input_set_capability(input_data, EV_REL, REL_RZ);
 
 	data->input_data = input_data;
 
 	ret = input_register_device(input_data);
 	if (ret) {
 		ERR("failed to register input data");
-		accel_clear(data);
+		rotation_vector_clear(data);
 		return ret;
 	}
 
 	input_set_drvdata(input_data, data);
 
 	ret = sysfs_create_group(&input_data->dev.kobj,
-			&maru_accel_attribute_group);
+			&maru_rotation_vector_attribute_group);
 	if (ret) {
-		accel_clear(data);
+		rotation_vector_clear(data);
 		ERR("failed initialing devices");
 		return ret;
 	}
@@ -315,43 +274,33 @@ static int create_input_device(struct maru_accel_data *data)
 	return ret;
 }
 
-int maru_accel_init(struct virtio_sensor *vs) {
+int maru_rotation_vector_init(struct virtio_sensor *vs) {
 	int ret = 0;
-	struct maru_accel_data *data = NULL;
+	struct maru_rotation_vector_data *data = NULL;
 
-	INFO("maru_accel device init starts.");
+	INFO("maru_rotation_vector device init starts.");
 
-	data = kmalloc(sizeof(struct maru_accel_data), GFP_KERNEL);
+	data = kmalloc(sizeof(struct maru_rotation_vector_data), GFP_KERNEL);
 	if (data == NULL) {
-		ERR("failed to create accel data.");
+		ERR("failed to create rotation_vector data.");
 		return -ENOMEM;
 	}
 
-	vs->accel_handle = data;
+	vs->rotation_vector_handle = data;
 	data->vs = vs;
 
 	mutex_init(&data->data_mutex);
 
-	INIT_DELAYED_WORK(&data->work, maru_accel_input_work_func);
+	INIT_DELAYED_WORK(&data->work, maru_rotation_vector_input_work_func);
 
 	// create name & vendor
-	ret = register_sensor_device(accel_sensor_device, vs,
-			accel_sensor_attrs, DRIVER_ACCEL_NAME);
+	ret = register_sensor_device(rotation_vector_sensor_device, vs,
+			rotation_vector_sensor_attrs, DRIVER_ROTATION_NAME);
 	if (ret) {
-		ERR("failed to register accel device");
-		accel_clear(data);
+		ERR("failed to register rotation_vector device");
+		rotation_vector_clear(data);
 		return -1;
 	}
-
-#ifdef SUPPORT_LEGACY_SENSOR
-		ret = l_register_sensor_device(l_accel_sensor_device, vs,
-			l_accel_sensor_attrs, DRIVER_ACCEL_NAME);
-	if (ret) {
-		ERR("failed to register legacy accel device");
-		accel_clear(data);
-		return -1;
-	}
-#endif
 
 	// create input
 	ret = create_input_device(data);
@@ -367,16 +316,16 @@ int maru_accel_init(struct virtio_sensor *vs) {
 		return ret;
 	}
 
-	INFO("maru_accel device init ends.");
+	INFO("maru_rotation_vector device init ends.");
 
 	return ret;
 }
 
-int maru_accel_exit(struct virtio_sensor *vs) {
-	struct maru_accel_data *data = NULL;
+int maru_rotation_vector_exit(struct virtio_sensor *vs) {
+	struct maru_rotation_vector_data *data = NULL;
 
-	data = (struct maru_accel_data *)vs->accel_handle;
-	accel_clear(data);
-	INFO("maru_accel device exit ends.");
+	data = (struct maru_rotation_vector_data *)vs->rotation_vector_handle;
+	rotation_vector_clear(data);
+	INFO("maru_rotation_vector device exit ends.");
 	return 0;
 }
