@@ -393,5 +393,6 @@ int maru_light_exit(struct virtio_sensor *vs) {
 
 	data = (struct maru_light_data *)vs->light_handle;
 	light_clear(data);
+	INFO("maru_light device exit ends.");
 	return 0;
 }

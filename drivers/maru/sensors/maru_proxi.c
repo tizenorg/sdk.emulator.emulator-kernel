@@ -387,5 +387,6 @@ int maru_proxi_exit(struct virtio_sensor *vs) {
 
 	data = (struct maru_proxi_data *)vs->proxi_handle;
 	proxi_clear(data);
+	INFO("maru_proxi device exit ends.");
 	return 0;
 }

@@ -257,72 +257,101 @@ int get_data_for_show(int type, char* buf)
 	return sprintf(buf, "%s", sensor_data);
 }
 
-static int device_init(struct virtio_sensor *vs)
+static void device_init(struct virtio_sensor *vs)
 {
 	int ret = 0;
 
 	if (vs->sensor_capability & sensor_cap_accel) {
 		ret = maru_accel_init(vs);
-		if (ret)
-			return ret;
+		if (ret) {
+			vs->sensor_fail_init |= sensor_cap_accel;
+			ERR("failed to init accel with error %d", ret);
+		}
 	}
 
 	if (vs->sensor_capability & sensor_cap_geo) {
 		ret = maru_geo_init(vs);
-		if (ret)
-			return ret;
+		if (ret) {
+			vs->sensor_fail_init |= sensor_cap_geo;
+			ERR("failed to init geo with error %d", ret);
+		}
 	}
 
 	if (vs->sensor_capability & sensor_cap_gyro) {
 		ret = maru_gyro_init(vs);
-		if (ret)
-			return ret;
+		if (ret) {
+			vs->sensor_fail_init |= sensor_cap_gyro;
+			ERR("failed to init gyro with error %d", ret);
+		}
 	}
 
 	if (vs->sensor_capability & sensor_cap_light) {
 		ret = maru_light_init(vs);
-		if (ret)
-			return ret;
+		if (ret) {
+			vs->sensor_fail_init |= sensor_cap_light;
+			ERR("failed to init light with error %d", ret);
+		}
 	}
 
 	if (vs->sensor_capability & sensor_cap_proxi) {
 		ret = maru_proxi_init(vs);
-		if (ret)
-			return ret;
+		if (ret) {
+			vs->sensor_fail_init |= sensor_cap_proxi;
+			ERR("failed to init proxi with error %d", ret);
+		}
+	}
+
+	if (vs->sensor_capability & sensor_cap_rotation_vector) {
+		ret = maru_rotation_vector_init(vs);
+		if (ret) {
+			vs->sensor_fail_init |= sensor_cap_rotation_vector;
+			ERR("failed to init rotation vector with error %d", ret);
+		}
 	}
 
 	if (vs->sensor_capability & sensor_cap_haptic) {
 		ret = maru_haptic_init(vs);
-		if (ret)
-			return ret;
+		if (ret) {
+			vs->sensor_fail_init |= sensor_cap_haptic;
+			ERR("failed to init haptic with error %d", ret);
+		}
 	}
-
-	return ret;
 }
 
 static void device_exit(struct virtio_sensor *vs)
 {
-	if (vs->sensor_capability & sensor_cap_accel) {
+	if (vs->sensor_capability & sensor_cap_accel &&
+			!(vs->sensor_fail_init & sensor_cap_accel)) {
 		maru_accel_exit(vs);
 	}
 
-	if (vs->sensor_capability & sensor_cap_geo) {
+	if (vs->sensor_capability & sensor_cap_geo &&
+			!(vs->sensor_fail_init & sensor_cap_geo)) {
 		maru_geo_exit(vs);
 	}
 
-	if (vs->sensor_capability & sensor_cap_gyro) {
+	if (vs->sensor_capability & sensor_cap_gyro &&
+			!(vs->sensor_fail_init & sensor_cap_gyro)) {
 		maru_gyro_exit(vs);
 	}
 
-	if (vs->sensor_capability & sensor_cap_light) {
+	if (vs->sensor_capability & sensor_cap_light &&
+			!(vs->sensor_fail_init & sensor_cap_light)) {
 		maru_light_exit(vs);
 	}
 
-	if (vs->sensor_capability & sensor_cap_proxi) {
+	if (vs->sensor_capability & sensor_cap_proxi &&
+			!(vs->sensor_fail_init & sensor_cap_proxi)) {
 		maru_proxi_exit(vs);
 	}
 
-	if (vs->sensor_capability & sensor_cap_haptic) {
+	if (vs->sensor_capability & sensor_cap_rotation_vector &&
+			!(vs->sensor_fail_init & sensor_cap_rotation_vector)) {
+		maru_rotation_vector_exit(vs);
+	}
+
+	if (vs->sensor_capability & sensor_cap_haptic &&
+			!(vs->sensor_fail_init & sensor_cap_haptic)) {
 		maru_haptic_exit(vs);
 	}
 }
@@ -407,9 +436,16 @@ static int sensor_probe(struct virtio_device* dev)
 	vs->sensor_capability = sensor_atoi(sensor_data);
 	INFO("sensor capability is %02x", vs->sensor_capability);
 
-	ret = device_init(vs);
-	if (ret) {
-		ERR("failed initialing devices");
+	if (vs->sensor_capability == 0) {
+		ERR("No sensor devices ");
+		cleanup(dev);
+		return ret;
+	}
+
+	device_init(vs);
+
+	if (vs->sensor_capability == vs->sensor_fail_init) {
+		ERR("failed initialing all devices");
 		cleanup(dev);
 		return ret;
 	}

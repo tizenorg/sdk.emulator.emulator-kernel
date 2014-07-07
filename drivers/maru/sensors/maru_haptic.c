@@ -155,6 +155,7 @@ int maru_haptic_exit(struct virtio_sensor *vs) {
 
 	data = (struct maru_haptic_data *)vs->haptic_handle;
 	haptic_clear(data);
+	INFO("maru_haptic device exit ends.");
 
 	return 0;
 }

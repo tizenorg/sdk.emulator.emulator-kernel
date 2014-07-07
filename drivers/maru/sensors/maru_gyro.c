@@ -403,5 +403,6 @@ int maru_gyro_exit(struct virtio_sensor *vs) {
 
 	data = (struct maru_gyro_data *)vs->gyro_handle;
 	gyro_clear(data);
+	INFO("maru_gyro device exit ends.");
 	return 0;
 }
