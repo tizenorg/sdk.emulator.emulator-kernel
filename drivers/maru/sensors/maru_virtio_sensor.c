@@ -291,6 +291,12 @@ static int device_init(struct virtio_sensor *vs)
 			return ret;
 	}
 
+	if (vs->sensor_capability & sensor_cap_rotation_vector) {
+		ret = maru_rotation_vector_init(vs);
+		if (ret)
+			return ret;
+	}
+
 	if (vs->sensor_capability & sensor_cap_haptic) {
 		ret = maru_haptic_init(vs);
 		if (ret)
@@ -320,6 +326,10 @@ static void device_exit(struct virtio_sensor *vs)
 
 	if (vs->sensor_capability & sensor_cap_proxi) {
 		maru_proxi_exit(vs);
+	}
+
+	if (vs->sensor_capability & sensor_cap_rotation_vector) {
+		maru_rotation_vector_exit(vs);
 	}
 
 	if (vs->sensor_capability & sensor_cap_haptic) {
