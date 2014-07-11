@@ -1,3 +1,6 @@
+* 2.0.2
+- Add emulator specific uname
+== Munkyu Im <munkyu.im@samsung.com> 2014-07-11
 * 2.0.1
 - sensors: re-structure with input_event
 - maru_haptic: force feedback driver is added
