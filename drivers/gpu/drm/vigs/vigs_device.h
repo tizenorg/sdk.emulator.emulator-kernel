@@ -60,6 +60,12 @@ struct vigs_device
      * so no race will occur.
      */
     bool track_gem_access;
+
+    /*
+     * A hack to tell if DPMS callback is called from inside
+     * 'fb_blank' or vice-versa.
+     */
+    bool in_dpms;
 };
 
 int vigs_device_init(struct vigs_device *vigs_dev,

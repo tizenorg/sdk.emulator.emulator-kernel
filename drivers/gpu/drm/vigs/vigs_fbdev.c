@@ -182,13 +182,14 @@ static int vigs_fbdev_set_par(struct fb_info *fbi)
 }
 
 /*
- * This is 'drm_fb_helper_dpms' modified to set 'fbdev'
- * flag inside 'mode_config.mutex'.
+ * This is 'drm_fb_helper_dpms' modified to set 'in_dpms'
+ * flag inside drm_modeset_lock_all.
  */
 static void vigs_fbdev_dpms(struct fb_info *fbi, int dpms_mode)
 {
     struct drm_fb_helper *fb_helper = fbi->par;
     struct drm_device *dev = fb_helper->dev;
+    struct vigs_device *vigs_dev = dev->dev_private;
     struct drm_crtc *crtc;
     struct vigs_crtc *vigs_crtc;
     struct drm_connector *connector;
@@ -200,6 +201,18 @@ static void vigs_fbdev_dpms(struct fb_info *fbi, int dpms_mode)
      * restore the fbdev console mode completely, just bail out early.
      */
     if (oops_in_progress) {
+        return;
+    }
+
+    if (vigs_dev->in_dpms) {
+        /*
+         * If this is called from 'vigs_crtc_dpms' then we just
+         * return in order to not deadlock. Note that it's
+         * correct to check this flag here without any locks
+         * being held since 'fb_blank' callback is already called with
+         * console lock being held and 'vigs_crtc_dpms' only sets in_dpms
+         * inside the console lock.
+         */
         return;
     }
 
@@ -220,7 +233,7 @@ static void vigs_fbdev_dpms(struct fb_info *fbi, int dpms_mode)
             continue;
         }
 
-        vigs_crtc->in_fb_blank = true;
+        vigs_dev->in_dpms = true;
 
         /* Walk the connectors & encoders on this fb turning them on/off */
         for (j = 0; j < fb_helper->connector_count; j++) {
@@ -230,7 +243,7 @@ static void vigs_fbdev_dpms(struct fb_info *fbi, int dpms_mode)
                 dev->mode_config.dpms_property, dpms_mode);
         }
 
-        vigs_crtc->in_fb_blank = false;
+        vigs_dev->in_dpms = false;
     }
 
     drm_modeset_unlock_all(dev);
