@@ -105,25 +105,28 @@ enum codec_api_index {
 	CODEC_ENCODE_VIDEO,
 	CODEC_DECODE_AUDIO,
 	CODEC_ENCODE_AUDIO,
-	CODEC_PICTURE_COPY,
+	CODEC_PICTURE_COPY, // for old plugins
 	CODEC_DEINIT,
 	CODEC_FLUSH_BUFFERS,
+	CODEC_DECODE_VIDEO2,
+};
+
+struct codec_buffer_id {
+	uint32_t buffer_index;
+	uint32_t buffer_size;
 };
 
 struct codec_param {
 	int32_t api_index;
 	int32_t ctx_index;
 	int32_t mem_offset;
+
+	struct codec_buffer_id buffer_id;
 };
 
 struct codec_element {
 	void	*buf;
 	uint32_t buf_size;
-};
-
-struct codec_buffer_id {
-	uint32_t buffer_index;
-	uint32_t buffer_size;
 };
 
 struct context_id {
@@ -214,15 +217,15 @@ DEFINE_SPINLOCK(critical_section);
 // bottom-half
 static DECLARE_WAIT_QUEUE_HEAD(wait_queue);
 
-static struct workqueue_struct *maru_brill_codec_bh_workqueue;
-static void maru_brill_codec_bh_func(struct work_struct *work);
-static DECLARE_WORK(maru_brill_codec_bh_work, maru_brill_codec_bh_func);
-static void maru_brill_codec_bh(struct maru_brill_codec_device *dev);
+static struct workqueue_struct *codec_bh_workqueue;
+static void codec_bh_func(struct work_struct *work);
+static DECLARE_WORK(codec_bh_work, codec_bh_func);
+static void codec_bh(struct maru_brill_codec_device *dev);
 
-static void maru_brill_codec_context_add(uint32_t user_pid, uint32_t ctx_id);
-static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque);
+static void context_add(uint32_t user_pid, uint32_t ctx_id);
+static int invoke_api_and_release_buffer(void *opaque);
 
-static void maru_brill_codec_divide_device_memory(void)
+static void divide_device_memory(void)
 {
 	int i = 0, cnt = 0;
 	int offset = 0;
@@ -240,7 +243,7 @@ static void maru_brill_codec_divide_device_memory(void)
 	}
 }
 
-static void maru_brill_codec_bh_func(struct work_struct *work)
+static void codec_bh_func(struct work_struct *work)
 {
 	uint32_t value;
 
@@ -258,10 +261,10 @@ static void maru_brill_codec_bh_func(struct work_struct *work)
 	} while (value);
 }
 
-static void maru_brill_codec_bh(struct maru_brill_codec_device *dev)
+static void codec_bh(struct maru_brill_codec_device *dev)
 {
 	DEBUG("add bottom-half function to codec_workqueue\n");
-	queue_work(maru_brill_codec_bh_workqueue, &maru_brill_codec_bh_work);
+	queue_work(codec_bh_workqueue, &codec_bh_work);
 }
 
 
@@ -381,7 +384,7 @@ static void release_device_memory(uint32_t mem_offset)
 		}
 	} else {
 		// can not enter here...
-		DEBUG("there is not any using memory block.\n");
+		ERROR("there is not any using memory block.\n");
 	}
 	mutex_unlock(&block->access_mutex);
 }
@@ -441,6 +444,42 @@ static void maru_brill_codec_info_cache(void)
 	maru_brill_codec->codec_elem_cached = true;
 }
 
+static long put_data_into_buffer(struct codec_buffer_id *opaque) {
+	long value = 0, ret = 0;
+	uint32_t offset = 0;
+	unsigned long flags;
+
+	DEBUG("read data into small buffer\n");
+
+    value = secure_device_memory(opaque->buffer_index, opaque->buffer_size, 0, &offset);
+
+	if (value < 0) {
+		DEBUG("failed to get available memory\n");
+		ret = -EINVAL;
+	} else {
+		DEBUG("send a request to pop data from device. %d\n", opaque->buffer_index);
+
+		ENTER_CRITICAL_SECTION(flags);
+		writel((uint32_t)offset,
+				maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
+		writel((uint32_t)opaque->buffer_index,
+				maru_brill_codec->ioaddr + CODEC_CMD_GET_DATA_FROM_QUEUE);
+		LEAVE_CRITICAL_SECTION(flags);
+
+		opaque->buffer_size = offset;
+	}
+
+	/* 1 means that only an available buffer is left at the moment.
+	 * gst-plugins-emulator will allocate heap buffer to store
+	 output buffer of codec.
+	 */
+	if (value == 1) {
+		ret = 1;
+	}
+
+	return ret;
+}
+
 static long maru_brill_codec_ioctl(struct file *file,
 			unsigned int cmd,
 			unsigned long arg)
@@ -449,6 +488,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 
 	switch (cmd) {
 	case CODEC_CMD_GET_VERSION:
+	{
 		DEBUG("%s version: %d\n", DEVICE_NAME, maru_brill_codec->version);
 
 		if (copy_to_user((void *)arg, &maru_brill_codec->version, sizeof(int))) {
@@ -456,6 +496,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 			ret = -EIO;
 		}
 		break;
+	}
 	case CODEC_CMD_GET_ELEMENT:
 	{
 		uint32_t len = 0;
@@ -479,9 +520,8 @@ static long maru_brill_codec_ioctl(struct file *file,
 			ERROR("ioctl: failed to copy data to user\n");
 			ret = -EIO;
 		}
-	}
 		break;
-
+	}
 	case CODEC_CMD_GET_ELEMENT_DATA:
 	{
 		void *codec_elem = NULL;
@@ -497,8 +537,8 @@ static long maru_brill_codec_ioctl(struct file *file,
 			ERROR("ioctl: failed to copy data to user\n");
 			ret = -EIO;
 		}
-	}
 		break;
+	}
 	case CODEC_CMD_GET_CONTEXT_INDEX:
 	{
 		DEBUG("request a device to get an index of codec context \n");
@@ -510,58 +550,35 @@ static long maru_brill_codec_ioctl(struct file *file,
 		} else {
 			// task_id & context_id
 			DEBUG("add context. ctx_id: %d\n", (int)value);
-			maru_brill_codec_context_add((uint32_t)file, value);
+			context_add((uint32_t)file, value);
 
 			if (copy_to_user((void *)arg, &value, sizeof(int))) {
 				ERROR("ioctl: failed to copy data to user\n");
 				ret = -EIO;
 			}
 		}
-	}
 		break;
-	case CODEC_CMD_PUT_DATA_INTO_BUFFER:
+	}
+	case CODEC_CMD_PUT_DATA_INTO_BUFFER: // for old plugins
 	{
-		uint32_t offset = 0;
-		unsigned long flags;
 		struct codec_buffer_id opaque;
 
-		DEBUG("read data into small buffer\n");
 		if (copy_from_user(&opaque, (void *)arg, sizeof(struct codec_buffer_id))) {
 			ERROR("ioctl: failed to copy data from user\n");
 			ret = -EIO;
 			break;
 		}
-
-		value = secure_device_memory(opaque.buffer_index, opaque.buffer_size, 0, &offset);
-		if (value < 0) {
-			DEBUG("failed to get available memory\n");
-			ret = -EINVAL;
-		} else {
-			DEBUG("send a request to pop data from device. %d\n", opaque.buffer_index);
-
-			ENTER_CRITICAL_SECTION(flags);
-			writel((uint32_t)offset,
-					maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-			writel((uint32_t)opaque.buffer_index,
-					maru_brill_codec->ioaddr + CODEC_CMD_GET_DATA_FROM_QUEUE);
-			LEAVE_CRITICAL_SECTION(flags);
-
-			opaque.buffer_size = offset;
-			if (copy_to_user((void *)arg, &opaque, sizeof(struct codec_buffer_id))) {
-				ERROR("ioctl: failed to copy data to user.\n");
-				ret = -EIO;
-			}
+		if (put_data_into_buffer(&opaque) < 0) {
+			ret = -EIO;
+			break;
 		}
 
-		/* 1 means that only an available buffer is left at the moment.
-		 * gst-plugins-emulator will allocate heap buffer to store
-		   output buffer of codec.
-		 */
-		if (value == 1) {
-			ret = 1;
+		if (copy_to_user((void *)arg, &opaque, sizeof(struct codec_buffer_id))) {
+			ERROR("ioctl: failed to copy data to user.\n");
+			ret = -EIO;
 		}
-	}
 		break;
+	}
 	case CODEC_CMD_SECURE_BUFFER:
 	{
 		uint32_t offset = 0;
@@ -585,8 +602,8 @@ static long maru_brill_codec_ioctl(struct file *file,
 				ret = -EIO;
 			}
 		}
-	}
 		break;
+	}
 	case CODEC_CMD_TRY_SECURE_BUFFER:
 	{
 		uint32_t offset = 0;
@@ -622,18 +639,31 @@ static long maru_brill_codec_ioctl(struct file *file,
 			break;
 		}
 		release_device_memory(mem_offset);
-	}
 		break;
+	}
 	case CODEC_CMD_INVOKE_API_AND_RELEASE_BUFFER:
 	{
-		struct codec_param ioparam = { 0 };
+		struct codec_param ioparam = { 0, };
 
 		if (copy_from_user(&ioparam, (void *)arg, sizeof(struct codec_param))) {
 			ERROR("failed to get codec parameter info from user\n");
-			return -EIO;
+			ret = -EIO;
+			break;
 		}
 
-		ret = maru_brill_codec_invoke_api_and_release_buffer(&ioparam);
+		invoke_api_and_release_buffer(&ioparam);
+
+		if (ioparam.buffer_id.buffer_index) { // if client wants output data
+			if (put_data_into_buffer((struct codec_buffer_id *)&ioparam.buffer_id) < 0) {
+				ret = -EIO;
+				break;
+			}
+
+			if (copy_to_user((void *)arg, &ioparam, sizeof(struct codec_param))) {
+				ERROR("ioctl: failed to copy data to user.\n");
+				ret = -EIO;
+			}
+		}
 	}
 		break;
 	default:
@@ -645,7 +675,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 	return ret;
 }
 
-static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
+static int invoke_api_and_release_buffer(void *opaque)
 {
 	struct codec_param *ioparam = (struct codec_param *)opaque;
 	int api_index, ctx_index;
@@ -658,6 +688,9 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 
 	switch (api_index) {
 	case CODEC_INIT:
+	case CODEC_DECODE_VIDEO ... CODEC_ENCODE_AUDIO:
+	case CODEC_DECODE_VIDEO2:
+	case CODEC_PICTURE_COPY: // for old plugins
 	{
 		ENTER_CRITICAL_SECTION(flags);
 		writel((uint32_t)ioparam->mem_offset,
@@ -670,52 +703,11 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 
 		release_device_memory(ioparam->mem_offset);
 
-		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
-		context_flags[ctx_index] = 0;
+		break;
 	}
-		break;
-	case CODEC_DECODE_VIDEO ... CODEC_ENCODE_AUDIO:
-		ENTER_CRITICAL_SECTION(flags);
-		writel((uint32_t)ioparam->mem_offset,
-				maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-		writel((int32_t)ioparam->ctx_index,
-				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
-		writel((int32_t)ioparam->api_index,
-				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
-		LEAVE_CRITICAL_SECTION(flags);
-
-		release_device_memory(ioparam->mem_offset);
-
-		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
-		context_flags[ctx_index] = 0;
-		break;
-	case CODEC_PICTURE_COPY:
-		ENTER_CRITICAL_SECTION(flags);
-		writel((uint32_t)ioparam->mem_offset,
-				maru_brill_codec->ioaddr + CODEC_CMD_DEVICE_MEM_OFFSET);
-		writel((int32_t)ioparam->ctx_index,
-				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
-		writel((int32_t)ioparam->api_index,
-				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
-		LEAVE_CRITICAL_SECTION(flags);
-
-		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
-		context_flags[ctx_index] = 0;
-		break;
 	case CODEC_DEINIT:
-		ENTER_CRITICAL_SECTION(flags);
-		writel((int32_t)ioparam->ctx_index,
-				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
-		writel((int32_t)ioparam->api_index,
-				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
-		LEAVE_CRITICAL_SECTION(flags);
-
-		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
-		context_flags[ctx_index] = 0;
-
-		dispose_device_memory(ioparam->ctx_index);
-		break;
 	case CODEC_FLUSH_BUFFERS:
+	{
 		ENTER_CRITICAL_SECTION(flags);
 		writel((int32_t)ioparam->ctx_index,
 				maru_brill_codec->ioaddr + CODEC_CMD_CONTEXT_INDEX);
@@ -723,12 +715,18 @@ static int maru_brill_codec_invoke_api_and_release_buffer(void *opaque)
 				maru_brill_codec->ioaddr + CODEC_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
 
-		wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
-		context_flags[ctx_index] = 0;
 		break;
+	}
 	default:
 		DEBUG("invalid API commands: %d", api_index);
-		break;
+		return -1;
+	}
+
+	wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
+	context_flags[ctx_index] = 0;
+
+	if (api_index == CODEC_DEINIT) {
+		dispose_device_memory(ioparam->ctx_index);
 	}
 
 	DEBUG("leave %s\n", __func__);
@@ -776,14 +774,14 @@ static irqreturn_t maru_brill_codec_irq_handler(int irq, void *dev_id)
 	spin_lock_irqsave(&dev->lock, flags);
 
 	DEBUG("handle an interrupt from codec device.\n");
-	maru_brill_codec_bh(dev);
+	codec_bh(dev);
 
 	spin_unlock_irqrestore(&dev->lock, flags);
 
 	return IRQ_HANDLED;
 }
 
-static void maru_brill_codec_context_add(uint32_t user_pid, uint32_t ctx_id)
+static void context_add(uint32_t user_pid, uint32_t ctx_id)
 {
 	struct list_head *pos, *temp;
 	struct user_process_id *pid_elem = NULL;
@@ -1027,7 +1025,7 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 		mutex_init(&block->access_mutex);
 	}
 
-	maru_brill_codec_divide_device_memory();
+	divide_device_memory();
 
 	spin_lock_init(&maru_brill_codec->lock);
 
@@ -1157,8 +1155,8 @@ static int __init maru_brill_codec_init(void)
 {
 	printk(KERN_INFO "%s: driver is initialized.\n", DEVICE_NAME);
 
-	maru_brill_codec_bh_workqueue = create_workqueue ("maru_brill_codec");
-	if (!maru_brill_codec_bh_workqueue) {
+	codec_bh_workqueue = create_workqueue ("maru_brill_codec");
+	if (!codec_bh_workqueue) {
 		ERROR("failed to allocate workqueue\n");
 		return -ENOMEM;
 	}
@@ -1170,9 +1168,9 @@ static void __exit maru_brill_codec_exit(void)
 {
 	printk(KERN_INFO "%s: driver is finalized.\n", DEVICE_NAME);
 
-	if (maru_brill_codec_bh_workqueue) {
-		destroy_workqueue (maru_brill_codec_bh_workqueue);
-		maru_brill_codec_bh_workqueue = NULL;
+	if (codec_bh_workqueue) {
+		destroy_workqueue (codec_bh_workqueue);
+		codec_bh_workqueue = NULL;
 	}
 	pci_unregister_driver(&driver);
 }
