@@ -8,7 +8,7 @@
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 19
+#define VIGS_PROTOCOL_VERSION 20
 
 #define VIGS_MAX_PLANES 2
 
@@ -73,6 +73,14 @@ typedef enum
     vigsp_plane_nv61 = 0x4,
     vigsp_plane_yuv420 = 0x5
 } vigsp_plane_format;
+
+typedef enum
+{
+    vigsp_rotation0   = 0x0,
+    vigsp_rotation90  = 0x1,
+    vigsp_rotation180 = 0x2,
+    vigsp_rotation270 = 0x3
+} vigsp_rotation;
 
 #pragma pack(1)
 
@@ -333,6 +341,9 @@ struct vigsp_cmd_set_plane_request
     vigsp_s32 dst_y;
     struct vigsp_size dst_size;
     vigsp_s32 z_pos;
+    vigsp_bool hflip;
+    vigsp_bool vflip;
+    vigsp_rotation rotation;
 };
 
 /*

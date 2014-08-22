@@ -22,6 +22,9 @@ struct vigs_plane
     unsigned int crtc_h;
 
     int z_pos;
+    int hflip;
+    int vflip;
+    int rotation;
 
     bool enabled;
 };
@@ -41,6 +44,10 @@ int vigs_plane_init(struct vigs_device *vigs_dev, u32 index);
 int vigs_plane_set_zpos_ioctl(struct drm_device *drm_dev,
                               void *data,
                               struct drm_file *file_priv);
+
+int vigs_plane_set_transform_ioctl(struct drm_device *drm_dev,
+                                   void *data,
+                                   struct drm_file *file_priv);
 
 /*
  * @}
