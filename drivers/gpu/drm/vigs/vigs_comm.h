@@ -79,7 +79,10 @@ int vigs_comm_set_plane(struct vigs_comm *comm,
                         int dst_y,
                         unsigned int dst_w,
                         unsigned int dst_h,
-                        int z_pos);
+                        int z_pos,
+                        int hflip,
+                        int vflip,
+                        int rotation);
 
 int vigs_comm_fence(struct vigs_comm *comm, struct vigs_fence *fence);
 

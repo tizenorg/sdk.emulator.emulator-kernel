@@ -98,7 +98,10 @@ static int vigs_plane_update(struct drm_plane *plane,
                               crtc_y,
                               crtc_w,
                               crtc_h,
-                              vigs_plane->z_pos);
+                              vigs_plane->z_pos,
+                              vigs_plane->hflip,
+                              vigs_plane->vflip,
+                              vigs_plane->rotation);
 
     if (ret == 0) {
         vigs_plane->src_x = src_x;
@@ -136,6 +139,9 @@ static int vigs_plane_disable(struct drm_plane *plane)
                               0,
                               0,
                               surface_ids,
+                              0,
+                              0,
+                              0,
                               0,
                               0,
                               0,
@@ -235,6 +241,41 @@ int vigs_plane_set_zpos_ioctl(struct drm_device *drm_dev,
     vigs_plane = plane_to_vigs_plane(plane);
 
     vigs_plane->z_pos = args->zpos;
+
+    ret = 0;
+
+out:
+    drm_modeset_unlock_all(drm_dev);
+
+    return ret;
+}
+
+int vigs_plane_set_transform_ioctl(struct drm_device *drm_dev,
+                                   void *data,
+                                   struct drm_file *file_priv)
+{
+    struct drm_vigs_plane_set_transform *args = data;
+    struct drm_mode_object *obj;
+    struct drm_plane *plane;
+    struct vigs_plane *vigs_plane;
+    int ret;
+
+    drm_modeset_lock_all(drm_dev);
+
+    obj = drm_mode_object_find(drm_dev,
+                               args->plane_id,
+                               DRM_MODE_OBJECT_PLANE);
+    if (!obj) {
+        ret = -EINVAL;
+        goto out;
+    }
+
+    plane = obj_to_plane(obj);
+    vigs_plane = plane_to_vigs_plane(plane);
+
+    vigs_plane->hflip = args->hflip;
+    vigs_plane->vflip = args->vflip;
+    vigs_plane->rotation = args->rotation;
 
     ret = 0;
 

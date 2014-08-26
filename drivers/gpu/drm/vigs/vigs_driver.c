@@ -68,6 +68,8 @@ static struct drm_ioctl_desc vigs_drm_ioctls[] =
                                         DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_PLANE_SET_ZPOS, vigs_plane_set_zpos_ioctl,
                                            DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_PLANE_SET_TRANSFORM, vigs_plane_set_transform_ioctl,
+                                                DRM_UNLOCKED | DRM_AUTH),
 
     DRM_IOCTL_DEF_DRV(VIGS_DP_CREATE_SURFACE, vigs_dp_surface_create_ioctl,
                                               DRM_UNLOCKED | DRM_AUTH),

@@ -100,16 +100,15 @@ static void vigs_crtc_destroy(struct drm_crtc *crtc)
 
 static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
 {
-    struct vigs_crtc *vigs_crtc = crtc_to_vigs_crtc(crtc);
     struct vigs_device *vigs_dev = crtc->dev->dev_private;
     int blank, i;
     struct fb_event event;
 
-    DRM_DEBUG_KMS("enter: fb_blank = %d, mode = %d\n",
-                  vigs_crtc->in_fb_blank,
+    DRM_DEBUG_KMS("enter: in_dpms = %d, mode = %d\n",
+                  vigs_dev->in_dpms,
                   mode);
 
-    if (vigs_crtc->in_fb_blank) {
+    if (vigs_dev->in_dpms) {
         return;
     }
 
@@ -153,7 +152,20 @@ static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
      */
     for (i = 0; i < 5; ++i) {
         if (console_trylock()) {
+            /*
+             * We must set in_dpms to true while walking
+             * fb call chain because a callback inside the
+             * call chain might do FB_BLANK on its own, i.e.
+             * 'vigs_fbdev_dpms' might get called from here. To avoid
+             * this we set in_dpms to true and 'vigs_fbdev_dpms'
+             * checks this and returns.
+             */
+            vigs_dev->in_dpms = true;
+
             fb_notifier_call_chain(FB_EVENT_BLANK, &event);
+
+            vigs_dev->in_dpms = false;
+
             console_unlock();
             return;
         }
