@@ -10,6 +10,7 @@
 #include "vigs_file.h"
 #include "vigs_plane.h"
 #include "vigs_mman.h"
+#include "vigs_dp.h"
 #include <drm/drmP.h>
 #include <linux/module.h>
 #include <drm/vigs_drm.h>
@@ -66,7 +67,12 @@ static struct drm_ioctl_desc vigs_drm_ioctls[] =
     DRM_IOCTL_DEF_DRV(VIGS_FENCE_UNREF, vigs_fence_unref_ioctl,
                                         DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_PLANE_SET_ZPOS, vigs_plane_set_zpos_ioctl,
-                                           DRM_UNLOCKED | DRM_AUTH)
+                                           DRM_UNLOCKED | DRM_AUTH),
+
+    DRM_IOCTL_DEF_DRV(VIGS_DP_CREATE_SURFACE, vigs_dp_surface_create_ioctl,
+                                              DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_DP_OPEN_SURFACE, vigs_dp_surface_open_ioctl,
+                                            DRM_UNLOCKED | DRM_AUTH)
 };
 
 static const struct file_operations vigs_drm_driver_fops =

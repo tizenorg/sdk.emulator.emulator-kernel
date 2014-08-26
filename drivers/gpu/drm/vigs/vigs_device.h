@@ -6,6 +6,7 @@
 
 struct vigs_mman;
 struct vigs_fenceman;
+struct vigs_dp;
 struct vigs_comm;
 struct vigs_fbdev;
 struct vigs_surface;
@@ -38,6 +39,8 @@ struct vigs_device
     struct ttm_object_device *obj_dev;
 
     struct vigs_fenceman *fenceman;
+
+    struct vigs_dp *dp;
 
     struct vigs_comm *comm;
 

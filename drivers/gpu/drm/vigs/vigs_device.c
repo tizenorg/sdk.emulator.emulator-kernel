@@ -9,6 +9,7 @@
 #include "vigs_fbdev.h"
 #include "vigs_execbuffer.h"
 #include "vigs_surface.h"
+#include "vigs_dp.h"
 #include <drm/vigs_drm.h>
 
 static void vigs_device_mman_vram_to_gpu(void *user_data,
@@ -170,10 +171,16 @@ int vigs_device_init(struct vigs_device *vigs_dev,
         goto fail4;
     }
 
-    ret = vigs_comm_create(vigs_dev, &vigs_dev->comm);
+    ret = vigs_dp_create(vigs_dev, &vigs_dev->dp);
 
     if (ret != 0) {
         goto fail5;
+    }
+
+    ret = vigs_comm_create(vigs_dev, &vigs_dev->comm);
+
+    if (ret != 0) {
+        goto fail6;
     }
 
     spin_lock_init(&vigs_dev->irq_lock);
@@ -185,27 +192,27 @@ int vigs_device_init(struct vigs_device *vigs_dev,
     ret = vigs_crtc_init(vigs_dev);
 
     if (ret != 0) {
-        goto fail6;
+        goto fail7;
     }
 
     ret = vigs_output_init(vigs_dev);
 
     if (ret != 0) {
-        goto fail6;
+        goto fail7;
     }
 
     for (i = 0; i < VIGS_MAX_PLANES; ++i) {
         ret = vigs_plane_init(vigs_dev, i);
 
         if (ret != 0) {
-            goto fail6;
+            goto fail7;
         }
     }
 
     ret = drm_vblank_init(drm_dev, 1);
 
     if (ret != 0) {
-        goto fail6;
+        goto fail7;
     }
 
     /*
@@ -217,24 +224,26 @@ int vigs_device_init(struct vigs_device *vigs_dev,
     ret = drm_irq_install(drm_dev);
 
     if (ret != 0) {
-        goto fail7;
+        goto fail8;
     }
 
     ret = vigs_fbdev_create(vigs_dev, &vigs_dev->fbdev);
 
     if (ret != 0) {
-        goto fail8;
+        goto fail9;
     }
 
     return 0;
 
-fail8:
+fail9:
     drm_irq_uninstall(drm_dev);
-fail7:
+fail8:
     drm_vblank_cleanup(drm_dev);
-fail6:
+fail7:
     drm_mode_config_cleanup(vigs_dev->drm_dev);
     vigs_comm_destroy(vigs_dev->comm);
+fail6:
+    vigs_dp_destroy(vigs_dev->dp);
 fail5:
     vigs_fenceman_destroy(vigs_dev->fenceman);
 fail4:
@@ -259,6 +268,7 @@ void vigs_device_cleanup(struct vigs_device *vigs_dev)
     drm_vblank_cleanup(vigs_dev->drm_dev);
     drm_mode_config_cleanup(vigs_dev->drm_dev);
     vigs_comm_destroy(vigs_dev->comm);
+    vigs_dp_destroy(vigs_dev->dp);
     vigs_fenceman_destroy(vigs_dev->fenceman);
     ttm_object_device_release(&vigs_dev->obj_dev);
     vigs_mman_destroy(vigs_dev->mman);
