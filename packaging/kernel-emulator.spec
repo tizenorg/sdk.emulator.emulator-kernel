@@ -5,12 +5,11 @@
 
 %define upstream_version 3.12.18
 
-#%if !0%{?_with_emulator}
-#ExclusiveArch:
-#%else
+%if !0%{?_with_emulator}
+ExclusiveArch:
+%else
 %define platform emulator
-ExclusiveArch: %{arch_32bits}
-#%endif
+%endif
 
 %if !%{defined platform}
 %define platform default
