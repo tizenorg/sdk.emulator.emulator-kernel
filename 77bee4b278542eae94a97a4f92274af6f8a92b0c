@@ -1,3 +1,16 @@
+Code-Review+2: SeokYeon Hwang <syeon.hwang@samsung.com>
+Verified+1: SeokYeon Hwang <syeon.hwang@samsung.com>
+Code-Review+1: Sooyoung Ha <yoosah.ha@samsung.com>
+Code-Review+1: Philippe Coval <philippe.coval@open.eurogiciel.org>
+Verified+1: Philippe Coval <philippe.coval@open.eurogiciel.org>
+Code-Review+1: Sangho Park <sangho1206.park@samsung.com>
+Code-Review+1: Stéphane Desneux (sdx) <stephane.desneux@open.eurogiciel.org>
+Submitted-by: SeokYeon Hwang <syeon.hwang@samsung.com>
+Submitted-at: Fri, 12 Sep 2014 02:02:39 -0700
+Reviewed-on: https://review.tizen.org/gerrit/27161
+Project: sdk/emulator/emulator-kernel
+Branch: refs/heads/tizen
+
 Reviewed-on: https://review.tizen.org/gerrit/27161
 Project: sdk/emulator/emulator-kernel
 Branch: refs/heads/tizen
