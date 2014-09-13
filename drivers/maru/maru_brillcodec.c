@@ -54,7 +54,7 @@ MODULE_AUTHOR("Kitae KIM <kt920.kim@samsung.com");
 MODULE_LICENSE("GPL2");
 
 #define DEVICE_NAME		"brillcodec"
-#define VERSION			3
+#define DRIVER_VERSION	3
 
 // DEBUG
 //#define CODEC_DEBUG
@@ -88,22 +88,21 @@ DEFINE_SPINLOCK(critical_section);
 #define LEAVE_CRITICAL_SECTION(flags)	spin_unlock_irqrestore(&critical_section, flags);
 
 enum device_cmd {							// driver and device
-	DEVICE_CMD_API_INDEX = 10,
+	DEVICE_CMD_API_INDEX = 0,
 	DEVICE_CMD_CONTEXT_INDEX,
-	DEVICE_CMD_DEVICE_MEM_OFFSET = 13,
+	DEVICE_CMD_DEVICE_MEM_OFFSET,
 	DEVICE_CMD_GET_THREAD_STATE,
 	DEVICE_CMD_GET_CTX_FROM_QUEUE,
 	DEVICE_CMD_GET_DATA_FROM_QUEUE,
 	DEVICE_CMD_RELEASE_CONTEXT,
-	DEVICE_CMD_GET_VERSION = 20,
 	DEVICE_CMD_GET_ELEMENT,
 	DEVICE_CMD_GET_CONTEXT_INDEX,
-	DEVICE_CMD_GET_ELEMENT_DATA,
+	DEVICE_CMD_GET_DEVICE_INFO,
 };
 
 /* Define i/o and api values.  */
 enum ioctl_cmd {							// plugin and driver
-	IOCTL_CMD_GET_VERSION,
+	IOCTL_CMD_GET_VERSION = 0,
 	IOCTL_CMD_GET_ELEMENTS_SIZE,
 	IOCTL_CMD_GET_ELEMENTS,
 	IOCTL_CMD_GET_CONTEXT_INDEX,
@@ -177,7 +176,7 @@ struct memory_block {
 	struct mutex access_mutex;
 };
 
-struct maru_brill_codec_device {
+struct brillcodec_device {
 	struct pci_dev *dev;
 
 	/* I/O and Memory Region */
@@ -213,16 +212,15 @@ struct maru_brill_codec_device {
 
 enum block_size { SMALL, MEDIUM, LARGE };
 
-static struct maru_brill_codec_device *maru_brill_codec;
+static struct brillcodec_device *brillcodec_device;
 static int context_flags[CODEC_CONTEXT_SIZE] = { 0, };
 
 // bottom-half
 static DECLARE_WAIT_QUEUE_HEAD(wait_queue);
 
-static struct workqueue_struct *codec_bh_workqueue;
-static void codec_bh_func(struct work_struct *work);
-static DECLARE_WORK(codec_bh_work, codec_bh_func);
-static void codec_bh(struct maru_brill_codec_device *dev);
+static struct workqueue_struct *bh_workqueue;
+static void bh_func(struct work_struct *work);
+static DECLARE_WORK(bh_work, bh_func);
 
 static void context_add(uint32_t user_pid, uint32_t ctx_id);
 static int invoke_api_and_release_buffer(struct ioctl_data *opaque);
@@ -233,7 +231,7 @@ static void divide_device_memory(void)
 	int offset = 0;
 
 	for (i = 0; i < 3; ++i) {
-		struct memory_block *block = &maru_brill_codec->memory_blocks[i];
+		struct memory_block *block = &brillcodec_device->memory_blocks[i];
 		block->start_offset = offset;
 		for (cnt = 0; cnt < block->n_units; cnt++) {
 			block->units[cnt].mem_offset = offset;
@@ -245,14 +243,14 @@ static void divide_device_memory(void)
 	}
 }
 
-static void codec_bh_func(struct work_struct *work)
+static void bh_func(struct work_struct *work)
 {
 	uint32_t value;
 
 	DEBUG("%s\n", __func__);
 	do {
 		value =
-			readl(maru_brill_codec->ioaddr + DEVICE_CMD_GET_CTX_FROM_QUEUE);
+			readl(brillcodec_device->ioaddr + DEVICE_CMD_GET_CTX_FROM_QUEUE);
 		DEBUG("read a value from device %x.\n", value);
 		if (value) {
 			context_flags[value] = 1;
@@ -262,13 +260,6 @@ static void codec_bh_func(struct work_struct *work)
 		}
 	} while (value);
 }
-
-static void codec_bh(struct maru_brill_codec_device *dev)
-{
-	DEBUG("add bottom-half function to codec_workqueue\n");
-	queue_work(codec_bh_workqueue, &codec_bh_work);
-}
-
 
 static int secure_device_memory(uint32_t ctx_id, uint32_t buf_size,
 		int non_blocking, uint32_t* offset)
@@ -289,7 +280,7 @@ static int secure_device_memory(uint32_t ctx_id, uint32_t buf_size,
 		return -1;
 	}
 
-	block = &maru_brill_codec->memory_blocks[index];
+	block = &brillcodec_device->memory_blocks[index];
 
 	// decrease buffer_semaphore
 	DEBUG("before down buffer_sema: %d\n", block->semaphore.count);
@@ -346,11 +337,11 @@ static int release_device_memory(uint32_t mem_offset)
 
 	struct list_head *pos, *temp;
 
-	if (mem_offset < maru_brill_codec->memory_blocks[0].end_offset)	{
+	if (mem_offset < brillcodec_device->memory_blocks[0].end_offset)	{
 		index = SMALL;
-	} else if (mem_offset < maru_brill_codec->memory_blocks[1].end_offset) {
+	} else if (mem_offset < brillcodec_device->memory_blocks[1].end_offset) {
 		index = MEDIUM;
-	} else if (mem_offset < maru_brill_codec->memory_blocks[2].end_offset) {
+	} else if (mem_offset < brillcodec_device->memory_blocks[2].end_offset) {
 		index = LARGE;
 	} else {
 		// error
@@ -358,7 +349,7 @@ static int release_device_memory(uint32_t mem_offset)
 		return -2;
 	}
 
-	block = &maru_brill_codec->memory_blocks[index];
+	block = &brillcodec_device->memory_blocks[index];
 
 	mutex_lock(&block->access_mutex);
 	if (!list_empty(&block->occupied)) {
@@ -404,7 +395,7 @@ static void dispose_device_memory(uint32_t context_id)
 	struct list_head *pos, *temp;
 
 	for (index = SMALL; index <= LARGE; index++) {
-		block = &maru_brill_codec->memory_blocks[index];
+		block = &brillcodec_device->memory_blocks[index];
 
 		mutex_lock(&block->access_mutex);
 		if (!list_empty(&block->occupied)) {
@@ -421,14 +412,14 @@ static void dispose_device_memory(uint32_t context_id)
 	}
 }
 
-static void maru_brill_codec_info_cache(void)
+static void cache_info(void)
 {
 	void __iomem *memaddr = NULL;
 	void *codec_info = NULL;
 	uint32_t codec_info_len = 0;
 
-	memaddr = ioremap(maru_brill_codec->mem_start,
-						maru_brill_codec->mem_size);
+	memaddr = ioremap(brillcodec_device->mem_start,
+						brillcodec_device->mem_size);
 	if (!memaddr) {
 		ERROR("ioremap failed\n");
 		return;
@@ -446,9 +437,9 @@ static void maru_brill_codec_info_cache(void)
 	memcpy(codec_info, (uint8_t *)memaddr + sizeof(uint32_t), codec_info_len);
 	iounmap(memaddr);
 
-	maru_brill_codec->codec_elem.buf = codec_info;
-	maru_brill_codec->codec_elem.buf_size = codec_info_len;
-	maru_brill_codec->codec_elem_cached = true;
+	brillcodec_device->codec_elem.buf = codec_info;
+	brillcodec_device->codec_elem.buf_size = codec_info_len;
+	brillcodec_device->codec_elem_cached = true;
 }
 
 static long put_data_into_buffer(struct ioctl_data *data) {
@@ -468,9 +459,9 @@ static long put_data_into_buffer(struct ioctl_data *data) {
 
 		ENTER_CRITICAL_SECTION(flags);
 		writel((uint32_t)offset,
-				maru_brill_codec->ioaddr + DEVICE_CMD_DEVICE_MEM_OFFSET);
+				brillcodec_device->ioaddr + DEVICE_CMD_DEVICE_MEM_OFFSET);
 		writel((uint32_t)data->ctx_index,
-				maru_brill_codec->ioaddr + DEVICE_CMD_GET_DATA_FROM_QUEUE);
+				brillcodec_device->ioaddr + DEVICE_CMD_GET_DATA_FROM_QUEUE);
 		LEAVE_CRITICAL_SECTION(flags);
 
 		data->mem_offset = offset;
@@ -499,9 +490,9 @@ static long brillcodec_ioctl(struct file *file,
 	switch (cmd) {
 	case IOCTL_CMD_GET_VERSION:
 	{
-		DEBUG("%s version: %d\n", DEVICE_NAME, maru_brill_codec->version);
+		DEBUG("%s version: %d\n", DEVICE_NAME, brillcodec_device->version);
 
-		if (copy_to_user((void *)arg, &maru_brill_codec->version, sizeof(int))) {
+		if (copy_to_user((void *)arg, &brillcodec_device->version, sizeof(int))) {
 			ERROR("ioctl: failed to copy data to user\n");
 			ret = -EIO;
 		}
@@ -515,15 +506,15 @@ static long brillcodec_ioctl(struct file *file,
 		DEBUG("request a device to get codec elements\n");
 
 		ENTER_CRITICAL_SECTION(flags);
-		if (!maru_brill_codec->codec_elem_cached) {
-			value = readl(maru_brill_codec->ioaddr + DEVICE_CMD_GET_ELEMENT);
+		if (!brillcodec_device->codec_elem_cached) {
+			value = readl(brillcodec_device->ioaddr + DEVICE_CMD_GET_ELEMENT);
 			if (value < 0) {
 				ERROR("ioctl: failed to get elements. %d\n", (int)value);
 				ret = -EINVAL;
 			}
-			maru_brill_codec_info_cache();
+			cache_info();
 		}
-		len = maru_brill_codec->codec_elem.buf_size;
+		len = brillcodec_device->codec_elem.buf_size;
 		LEAVE_CRITICAL_SECTION(flags);
 
 		if (copy_to_user((void *)arg, &len, sizeof(uint32_t))) {
@@ -535,11 +526,11 @@ static long brillcodec_ioctl(struct file *file,
 	case IOCTL_CMD_GET_ELEMENTS:
 	{
 		void *codec_elem = NULL;
-		uint32_t elem_len = maru_brill_codec->codec_elem.buf_size;
+		uint32_t elem_len = brillcodec_device->codec_elem.buf_size;
 
 		DEBUG("request codec elements.\n");
 
-		codec_elem = maru_brill_codec->codec_elem.buf;
+		codec_elem = brillcodec_device->codec_elem.buf;
 		if (!codec_elem) {
 			ERROR("ioctl: codec elements is empty\n");
 			ret = -EIO;
@@ -553,7 +544,7 @@ static long brillcodec_ioctl(struct file *file,
 	{
 		DEBUG("request a device to get an index of codec context \n");
 
-		value = readl(maru_brill_codec->ioaddr + DEVICE_CMD_GET_CONTEXT_INDEX);
+		value = readl(brillcodec_device->ioaddr + DEVICE_CMD_GET_CONTEXT_INDEX);
 		if (value < 1 || value > (CODEC_CONTEXT_SIZE - 1)) {
 			ERROR("ioctl: failed to get proper context. %d\n", (int)value);
 			ret = -EINVAL;
@@ -693,11 +684,11 @@ static int invoke_api_and_release_buffer(struct ioctl_data *data)
 	{
 		ENTER_CRITICAL_SECTION(flags);
 		writel((uint32_t)data->mem_offset,
-				maru_brill_codec->ioaddr + DEVICE_CMD_DEVICE_MEM_OFFSET);
+				brillcodec_device->ioaddr + DEVICE_CMD_DEVICE_MEM_OFFSET);
 		writel((int32_t)data->ctx_index,
-				maru_brill_codec->ioaddr + DEVICE_CMD_CONTEXT_INDEX);
+				brillcodec_device->ioaddr + DEVICE_CMD_CONTEXT_INDEX);
 		writel((int32_t)data->api_index,
-				maru_brill_codec->ioaddr + DEVICE_CMD_API_INDEX);
+				brillcodec_device->ioaddr + DEVICE_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
 
 		ret = release_device_memory(data->mem_offset);
@@ -713,9 +704,9 @@ static int invoke_api_and_release_buffer(struct ioctl_data *data)
 	{
 		ENTER_CRITICAL_SECTION(flags);
 		writel((int32_t)data->ctx_index,
-				maru_brill_codec->ioaddr + DEVICE_CMD_CONTEXT_INDEX);
+				brillcodec_device->ioaddr + DEVICE_CMD_CONTEXT_INDEX);
 		writel((int32_t)data->api_index,
-				maru_brill_codec->ioaddr + DEVICE_CMD_API_INDEX);
+				brillcodec_device->ioaddr + DEVICE_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
 
 		break;
@@ -745,12 +736,12 @@ static int brillcodec_mmap(struct file *file, struct vm_area_struct *vm)
 	int ret = -1;
 
 	size = vm->vm_end - vm->vm_start;
-	if (size > maru_brill_codec->mem_size) {
+	if (size > brillcodec_device->mem_size) {
 		ERROR("over mapping size\n");
 		return -EINVAL;
 	}
 	off = vm->vm_pgoff << PAGE_SHIFT;
-	phys_addr = (PAGE_ALIGN(maru_brill_codec->mem_start) + off) >> PAGE_SHIFT;
+	phys_addr = (PAGE_ALIGN(brillcodec_device->mem_start) + off) >> PAGE_SHIFT;
 
 	/* VM_IO | VM_DONTEXPAND | VM_DONTDUMP are set by remap_pfn_range() */
 	ret = remap_pfn_range(vm, vm->vm_start, phys_addr,
@@ -763,9 +754,9 @@ static int brillcodec_mmap(struct file *file, struct vm_area_struct *vm)
 	return 0;
 }
 
-static irqreturn_t maru_brill_codec_irq_handler(int irq, void *dev_id)
+static irqreturn_t irq_handler(int irq, void *dev_id)
 {
-	struct maru_brill_codec_device *dev = (struct maru_brill_codec_device *)dev_id;
+	struct brillcodec_device *dev = (struct brillcodec_device *)dev_id;
 	unsigned long flags = 0;
 	int val = 0;
 
@@ -774,10 +765,12 @@ static irqreturn_t maru_brill_codec_irq_handler(int irq, void *dev_id)
 		return IRQ_NONE;
 	}
 
+	DEBUG("handle an interrupt from codec device.\n");
+
 	spin_lock_irqsave(&dev->lock, flags);
 
-	DEBUG("handle an interrupt from codec device.\n");
-	codec_bh(dev);
+	DEBUG("add bottom-half function to codec_workqueue\n");
+	queue_work(bh_workqueue, &bh_work);
 
 	spin_unlock_irqrestore(&dev->lock, flags);
 
@@ -797,8 +790,8 @@ static void context_add(uint32_t user_pid, uint32_t ctx_id)
 			user_pid, ctx_id);
 
 	ENTER_CRITICAL_SECTION(flags);
-	if (!list_empty(&maru_brill_codec->user_pid_mgr)) {
-		list_for_each_safe(pos, temp, &maru_brill_codec->user_pid_mgr) {
+	if (!list_empty(&brillcodec_device->user_pid_mgr)) {
+		list_for_each_safe(pos, temp, &brillcodec_device->user_pid_mgr) {
 			pid_elem = list_entry(pos, struct user_process_id, pid_node);
 
 			DEBUG("add context. pid_elem: %p\n", pid_elem);
@@ -830,7 +823,7 @@ static void context_add(uint32_t user_pid, uint32_t ctx_id)
 	DEBUG("leave: %s\n", __func__);
 }
 
-static void maru_brill_codec_context_remove(struct user_process_id *pid_elem)
+static void brillcodec_context_remove(struct user_process_id *pid_elem)
 {
 	struct list_head *pos, *temp;
 	struct context_id *cid_elem = NULL;
@@ -844,7 +837,7 @@ static void maru_brill_codec_context_remove(struct user_process_id *pid_elem)
 				if (cid_elem->id > 0 && cid_elem->id < CODEC_CONTEXT_SIZE) {
 					DEBUG("remove context. ctx_id: %d\n", cid_elem->id);
 					writel(cid_elem->id,
-							maru_brill_codec->ioaddr + DEVICE_CMD_RELEASE_CONTEXT);
+							brillcodec_device->ioaddr + DEVICE_CMD_RELEASE_CONTEXT);
 					dispose_device_memory(cid_elem->id);
 				}
 
@@ -862,7 +855,7 @@ static void maru_brill_codec_context_remove(struct user_process_id *pid_elem)
 	DEBUG("leave: %s\n", __func__);
 }
 
-static void maru_brill_codec_task_add(uint32_t user_pid)
+static void task_add(uint32_t user_pid)
 {
 	struct user_process_id *pid_elem = NULL;
 	unsigned long flags;
@@ -882,13 +875,13 @@ static void maru_brill_codec_task_add(uint32_t user_pid)
 	DEBUG("add task. user_pid: %x, pid_elem: %p, pid_node: %p\n",
 		user_pid, pid_elem, &pid_elem->pid_node);
 	pid_elem->id = user_pid;
-	list_add_tail(&pid_elem->pid_node, &maru_brill_codec->user_pid_mgr);
+	list_add_tail(&pid_elem->pid_node, &brillcodec_device->user_pid_mgr);
 	LEAVE_CRITICAL_SECTION(flags);
 
 	DEBUG("leave: %s\n", __func__);
 }
 
-static void maru_brill_codec_task_remove(uint32_t user_pid)
+static void task_remove(uint32_t user_pid)
 {
 	struct list_head *pos, *temp;
 	struct user_process_id *pid_elem = NULL;
@@ -897,15 +890,15 @@ static void maru_brill_codec_task_remove(uint32_t user_pid)
 	DEBUG("enter: %s\n", __func__);
 
 	ENTER_CRITICAL_SECTION(flags);
-	if (!list_empty(&maru_brill_codec->user_pid_mgr)) {
-		list_for_each_safe(pos, temp, &maru_brill_codec->user_pid_mgr) {
+	if (!list_empty(&brillcodec_device->user_pid_mgr)) {
+		list_for_each_safe(pos, temp, &brillcodec_device->user_pid_mgr) {
 			pid_elem = list_entry(pos, struct user_process_id, pid_node);
 			if (pid_elem) {
 				if (pid_elem->id == user_pid) {
 					// remove task and codec contexts that is running in the task.
 					DEBUG("remove task. user_pid: %x, pid_elem: %p\n",
 							user_pid, pid_elem);
-					maru_brill_codec_context_remove(pid_elem);
+					brillcodec_context_remove(pid_elem);
 				}
 
 				DEBUG("move pid_node from user_pid_mgr. %p\n", &pid_elem->pid_node);
@@ -930,13 +923,13 @@ static int brillcodec_open(struct inode *inode, struct file *file)
 	DEBUG("open! struct file: %p\n", file);
 
 	/* register interrupt handler */
-	if (request_irq(maru_brill_codec->dev->irq, maru_brill_codec_irq_handler,
-		IRQF_SHARED, DEVICE_NAME, maru_brill_codec)) {
+	if (request_irq(brillcodec_device->dev->irq, irq_handler,
+		IRQF_SHARED, DEVICE_NAME, brillcodec_device)) {
 		ERROR("failed to register irq handle\n");
 		return -EBUSY;
 	}
 
-	maru_brill_codec_task_add((uint32_t)file);
+	task_add((uint32_t)file);
 
 	try_module_get(THIS_MODULE);
 
@@ -948,14 +941,14 @@ static int brillcodec_release(struct inode *inode, struct file *file)
 	DEBUG("close! struct file: %p\n", file);
 
 	/* free irq */
-	if (maru_brill_codec->dev->irq) {
+	if (brillcodec_device->dev->irq) {
 		DEBUG("free registered irq\n");
-		free_irq(maru_brill_codec->dev->irq, maru_brill_codec);
+		free_irq(brillcodec_device->dev->irq, brillcodec_device);
 	}
 
 	DEBUG("before removing task: %x\n", (uint32_t)file);
 	/* free resource */
-	maru_brill_codec_task_remove((uint32_t)file);
+	task_remove((uint32_t)file);
 
 	module_put(THIS_MODULE);
 
@@ -963,7 +956,7 @@ static int brillcodec_release(struct inode *inode, struct file *file)
 }
 
 /* define file opertion for CODEC */
-const struct file_operations maru_brill_codec_fops = {
+const struct file_operations brillcodec_fops = {
 	.owner			 = THIS_MODULE,
 	.unlocked_ioctl	 = brillcodec_ioctl,
 	.open			 = brillcodec_open,
@@ -974,48 +967,55 @@ const struct file_operations maru_brill_codec_fops = {
 static struct miscdevice codec_dev = {
 	.minor			= MISC_DYNAMIC_MINOR,
 	.name			= DEVICE_NAME,
-	.fops			= &maru_brill_codec_fops,
+	.fops			= &brillcodec_fops,
 	.mode			= S_IRUGO | S_IWUGO,
 };
 
-static void maru_brill_codec_get_device_version(void)
+static bool get_device_version(void)
 {
-	maru_brill_codec->version =
-		readl(maru_brill_codec->ioaddr + DEVICE_CMD_GET_VERSION);
+	// we have only version information for now...
+	brillcodec_device->version =
+		readl(brillcodec_device->ioaddr + DEVICE_CMD_GET_DEVICE_INFO);
 
 	printk(KERN_INFO "%s: device version: %d\n",
-		DEVICE_NAME, maru_brill_codec->version);
+		DEVICE_NAME, brillcodec_device->version);
+
+	if (brillcodec_device->version != DRIVER_VERSION) {
+		ERROR("Version mismatch. driver version [%d], device version [%d].\n",
+				brillcodec_device->version, DRIVER_VERSION);
+		return false;
+	}
+
+	return true;
 }
 
-static int maru_brill_codec_probe(struct pci_dev *pci_dev,
+static int brillcodec_probe(struct pci_dev *pci_dev,
 	const struct pci_device_id *pci_id)
 {
 	int ret = 0;
 	int index = 0;
 
-	printk(KERN_INFO "%s: driver is probed.\n", DEVICE_NAME);
-
-	maru_brill_codec =
-		kzalloc(sizeof(struct maru_brill_codec_device), GFP_KERNEL);
-	if (!maru_brill_codec) {
+	brillcodec_device =
+		kzalloc(sizeof(struct brillcodec_device), GFP_KERNEL);
+	if (!brillcodec_device) {
 		ERROR("Failed to allocate memory for codec.\n");
 		return -ENOMEM;
 	}
 
-	maru_brill_codec->dev = pci_dev;
+	brillcodec_device->dev = pci_dev;
 
-	INIT_LIST_HEAD(&maru_brill_codec->user_pid_mgr);
+	INIT_LIST_HEAD(&brillcodec_device->user_pid_mgr);
 
 	// initialize memory block structures
-	maru_brill_codec->memory_blocks[0].unit_size = CODEC_S_DEVICE_MEM_SIZE;
-	maru_brill_codec->memory_blocks[0].n_units = CODEC_S_DEVICE_MEM_COUNT;
-	maru_brill_codec->memory_blocks[1].unit_size = CODEC_M_DEVICE_MEM_SIZE;
-	maru_brill_codec->memory_blocks[1].n_units = CODEC_M_DEVICE_MEM_COUNT;
-	maru_brill_codec->memory_blocks[2].unit_size = CODEC_L_DEVICE_MEM_SIZE;
-	maru_brill_codec->memory_blocks[2].n_units = CODEC_L_DEVICE_MEM_COUNT;
+	brillcodec_device->memory_blocks[0].unit_size = CODEC_S_DEVICE_MEM_SIZE;
+	brillcodec_device->memory_blocks[0].n_units = CODEC_S_DEVICE_MEM_COUNT;
+	brillcodec_device->memory_blocks[1].unit_size = CODEC_M_DEVICE_MEM_SIZE;
+	brillcodec_device->memory_blocks[1].n_units = CODEC_M_DEVICE_MEM_COUNT;
+	brillcodec_device->memory_blocks[2].unit_size = CODEC_L_DEVICE_MEM_SIZE;
+	brillcodec_device->memory_blocks[2].n_units = CODEC_L_DEVICE_MEM_COUNT;
 
 	for (index = 0; index < 3; ++index) {
-		struct memory_block *block = &maru_brill_codec->memory_blocks[index];
+		struct memory_block *block = &brillcodec_device->memory_blocks[index];
 		block->units =
 			kzalloc(sizeof(struct device_mem) * block->n_units, GFP_KERNEL);
 
@@ -1030,7 +1030,7 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 
 	divide_device_memory();
 
-	spin_lock_init(&maru_brill_codec->lock);
+	spin_lock_init(&brillcodec_device->lock);
 
 	if ((ret = pci_enable_device(pci_dev))) {
 		ERROR("pci_enable_device failed\n");
@@ -1038,105 +1038,110 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	}
 	pci_set_master(pci_dev);
 
-	maru_brill_codec->mem_start = pci_resource_start(pci_dev, 0);
-	maru_brill_codec->mem_size = pci_resource_len(pci_dev, 0);
-	if (!maru_brill_codec->mem_start) {
+	brillcodec_device->mem_start = pci_resource_start(pci_dev, 0);
+	brillcodec_device->mem_size = pci_resource_len(pci_dev, 0);
+	if (!brillcodec_device->mem_start) {
 		ERROR("pci_resource_start failed\n");
 		pci_disable_device(pci_dev);
 		return -ENODEV;
 	}
 
-	if (!request_mem_region(maru_brill_codec->mem_start,
-				maru_brill_codec->mem_size,
+	if (!request_mem_region(brillcodec_device->mem_start,
+				brillcodec_device->mem_size,
 				DEVICE_NAME)) {
 		ERROR("request_mem_region failed\n");
 		pci_disable_device(pci_dev);
 		return -EINVAL;
 	}
 
-	maru_brill_codec->io_start = pci_resource_start(pci_dev, 1);
-	maru_brill_codec->io_size = pci_resource_len(pci_dev, 1);
-	if (!maru_brill_codec->io_start) {
+	brillcodec_device->io_start = pci_resource_start(pci_dev, 1);
+	brillcodec_device->io_size = pci_resource_len(pci_dev, 1);
+	if (!brillcodec_device->io_start) {
 		ERROR("pci_resource_start failed\n");
-		release_mem_region(maru_brill_codec->mem_start, maru_brill_codec->mem_size);
+		release_mem_region(brillcodec_device->mem_start, brillcodec_device->mem_size);
 		pci_disable_device(pci_dev);
 		return -ENODEV;
 	}
 
-	if (!request_mem_region(maru_brill_codec->io_start,
-				maru_brill_codec->io_size,
+	if (!request_mem_region(brillcodec_device->io_start,
+				brillcodec_device->io_size,
 				DEVICE_NAME)) {
 		ERROR("request_io_region failed\n");
-		release_mem_region(maru_brill_codec->mem_start, maru_brill_codec->mem_size);
+		release_mem_region(brillcodec_device->mem_start, brillcodec_device->mem_size);
 		pci_disable_device(pci_dev);
 		return -EINVAL;
 	}
 
-	maru_brill_codec->ioaddr =
-		ioremap_nocache(maru_brill_codec->io_start, maru_brill_codec->io_size);
-	if (!maru_brill_codec->ioaddr) {
+	brillcodec_device->ioaddr =
+		ioremap_nocache(brillcodec_device->io_start, brillcodec_device->io_size);
+	if (!brillcodec_device->ioaddr) {
 		ERROR("ioremap failed\n");
-		release_mem_region(maru_brill_codec->io_start, maru_brill_codec->io_size);
-		release_mem_region(maru_brill_codec->mem_start, maru_brill_codec->mem_size);
+		release_mem_region(brillcodec_device->io_start, brillcodec_device->io_size);
+		release_mem_region(brillcodec_device->mem_start, brillcodec_device->mem_size);
 		pci_disable_device(pci_dev);
 		return -EINVAL;
 	}
 
-	maru_brill_codec_get_device_version();
+	if (!get_device_version()) {
+		return -EINVAL;
+	}
 
 	if ((ret = misc_register(&codec_dev))) {
 		ERROR("cannot register codec as misc\n");
-		iounmap(maru_brill_codec->ioaddr);
-		release_mem_region(maru_brill_codec->io_start, maru_brill_codec->io_size);
-		release_mem_region(maru_brill_codec->mem_start, maru_brill_codec->mem_size);
+		iounmap(brillcodec_device->ioaddr);
+		release_mem_region(brillcodec_device->io_start, brillcodec_device->io_size);
+		release_mem_region(brillcodec_device->mem_start, brillcodec_device->mem_size);
 		pci_disable_device(pci_dev);
 		return ret;
 	}
 
+	printk(KERN_INFO "%s: driver is probed. driver version [%d], device version [%d]\n",
+				DEVICE_NAME, DRIVER_VERSION, brillcodec_device->version);
+
 	return 0;
 }
 
-static void maru_brill_codec_remove(struct pci_dev *pci_dev)
+static void brillcodec_remove(struct pci_dev *pci_dev)
 {
-	if (maru_brill_codec) {
-		if (maru_brill_codec->ioaddr) {
-			iounmap(maru_brill_codec->ioaddr);
-			maru_brill_codec->ioaddr = NULL;
+	if (brillcodec_device) {
+		if (brillcodec_device->ioaddr) {
+			iounmap(brillcodec_device->ioaddr);
+			brillcodec_device->ioaddr = NULL;
 		}
 
-		if (maru_brill_codec->io_start) {
-			release_mem_region(maru_brill_codec->io_start,
-					maru_brill_codec->io_size);
-			maru_brill_codec->io_start = 0;
+		if (brillcodec_device->io_start) {
+			release_mem_region(brillcodec_device->io_start,
+					brillcodec_device->io_size);
+			brillcodec_device->io_start = 0;
 		}
 
-		if (maru_brill_codec->mem_start) {
-			release_mem_region(maru_brill_codec->mem_start,
-					maru_brill_codec->mem_size);
-			maru_brill_codec->mem_start = 0;
+		if (brillcodec_device->mem_start) {
+			release_mem_region(brillcodec_device->mem_start,
+					brillcodec_device->mem_size);
+			brillcodec_device->mem_start = 0;
 		}
 
 /*
-		if (maru_brill_codec->units) {
+		if (brillcodec_device->units) {
 // FIXME
-//			kfree(maru_brill_codec->elem);
-			maru_brill_codec->units= NULL;
+//			kfree(brillcodec_device->elem);
+			brillcodec_device->units= NULL;
 		}
 */
 
-		if (maru_brill_codec->codec_elem.buf) {
-			kfree(maru_brill_codec->codec_elem.buf);
-			maru_brill_codec->codec_elem.buf = NULL;
+		if (brillcodec_device->codec_elem.buf) {
+			kfree(brillcodec_device->codec_elem.buf);
+			brillcodec_device->codec_elem.buf = NULL;
 		}
 
-		kfree(maru_brill_codec);
+		kfree(brillcodec_device);
 	}
 
 	misc_deregister(&codec_dev);
 	pci_disable_device(pci_dev);
 }
 
-static struct pci_device_id maru_brill_codec_pci_table[] = {
+static struct pci_device_id brillcodec_pci_table[] = {
 	{
 		.vendor		= PCI_VENDOR_ID_TIZEN_EMUL,
 		.device		= PCI_DEVICE_ID_VIRTUAL_BRILL_CODEC,
@@ -1145,21 +1150,21 @@ static struct pci_device_id maru_brill_codec_pci_table[] = {
 	},
 	{},
 };
-MODULE_DEVICE_TABLE(pci, maru_brill_codec_pci_table);
+MODULE_DEVICE_TABLE(pci, brillcodec_pci_table);
 
 static struct pci_driver driver = {
 	.name		= DEVICE_NAME,
-	.id_table	= maru_brill_codec_pci_table,
-	.probe		= maru_brill_codec_probe,
-	.remove		= maru_brill_codec_remove,
+	.id_table	= brillcodec_pci_table,
+	.probe		= brillcodec_probe,
+	.remove		= brillcodec_remove,
 };
 
-static int __init maru_brill_codec_init(void)
+static int __init brillcodec_init(void)
 {
 	printk(KERN_INFO "%s: driver is initialized.\n", DEVICE_NAME);
 
-	codec_bh_workqueue = create_workqueue ("maru_brill_codec");
-	if (!codec_bh_workqueue) {
+	bh_workqueue = create_workqueue ("maru_brillcodec");
+	if (!bh_workqueue) {
 		ERROR("failed to allocate workqueue\n");
 		return -ENOMEM;
 	}
@@ -1167,15 +1172,15 @@ static int __init maru_brill_codec_init(void)
 	return pci_register_driver(&driver);
 }
 
-static void __exit maru_brill_codec_exit(void)
+static void __exit brillcodec_exit(void)
 {
 	printk(KERN_INFO "%s: driver is finalized.\n", DEVICE_NAME);
 
-	if (codec_bh_workqueue) {
-		destroy_workqueue (codec_bh_workqueue);
-		codec_bh_workqueue = NULL;
+	if (bh_workqueue) {
+		destroy_workqueue (bh_workqueue);
+		bh_workqueue = NULL;
 	}
 	pci_unregister_driver(&driver);
 }
-module_init(maru_brill_codec_init);
-module_exit(maru_brill_codec_exit);
+module_init(brillcodec_init);
+module_exit(brillcodec_exit);
