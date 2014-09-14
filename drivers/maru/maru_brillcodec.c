@@ -74,6 +74,9 @@ MODULE_LICENSE("GPL2");
 #define ERROR(fmt, ...) \
 	printk(KERN_ERR "[%s][ERROR][%d]: " fmt, DEVICE_NAME, __LINE__, ##__VA_ARGS__)
 
+// support memory monopolizing
+#define SUPPORT_MEMORY_MONOPOLIZING
+
 /* vendor, device value for pci.*/
 #define PCI_VENDOR_ID_TIZEN_EMUL			0xC9B5
 #define PCI_DEVICE_ID_VIRTUAL_BRILL_CODEC	0x1040
@@ -113,15 +116,15 @@ enum ioctl_cmd {							// plugin and driver
 };
 
 enum codec_api_index {
-	CODEC_INIT = 0,
-	CODEC_DECODE_VIDEO,
-	CODEC_ENCODE_VIDEO,
-	CODEC_DECODE_AUDIO,
-	CODEC_ENCODE_AUDIO,
-	CODEC_PICTURE_COPY,
-	CODEC_DEINIT,
-	CODEC_FLUSH_BUFFERS,
-	CODEC_DECODE_VIDEO_AND_PICTURE_COPY, // version 3
+	INIT = 0,
+	DECODE_VIDEO,
+	ENCODE_VIDEO,
+	DECODE_AUDIO,
+	ENCODE_AUDIO,
+	PICTURE_COPY,
+	DEINIT,
+	FLUSH_BUFFERS,
+	DECODE_VIDEO_AND_PICTURE_COPY, // version 3
 };
 
 struct ioctl_data {
@@ -194,7 +197,9 @@ struct brillcodec_device {
 
 	spinlock_t lock;
 
-	int version;
+	uint32_t major_version;
+	uint8_t minor_version;
+	uint16_t memory_monopolizing;
 	bool codec_elem_cached;
 	struct codec_element codec_elem;
 };
@@ -412,6 +417,16 @@ static void dispose_device_memory(uint32_t context_id)
 	}
 }
 
+static inline bool is_memory_monopolizing_api(int api_index) {
+#ifdef SUPPORT_MEMORY_MONOPOLIZING
+    if (brillcodec_device->memory_monopolizing & (1 << api_index)) {
+		DEBUG("API [%d] monopolize memory slot\n", api_index);
+        return true;
+    }
+#endif
+    return false;
+}
+
 static void cache_info(void)
 {
 	void __iomem *memaddr = NULL;
@@ -444,12 +459,13 @@ static void cache_info(void)
 
 static long put_data_into_buffer(struct ioctl_data *data) {
 	long value = 0, ret = 0;
-	uint32_t offset = 0;
 	unsigned long flags;
 
-	DEBUG("read data into small buffer\n");
+	DEBUG("read data into buffer\n");
 
-    value = secure_device_memory(data->ctx_index, data->buffer_size, 0, &offset);
+    if (!is_memory_monopolizing_api(data->api_index)) {
+        value = secure_device_memory(data->ctx_index, data->buffer_size, 0, &data->mem_offset);
+	}
 
 	if (value < 0) {
 		DEBUG("failed to get available memory\n");
@@ -458,13 +474,11 @@ static long put_data_into_buffer(struct ioctl_data *data) {
 		DEBUG("send a request to pop data from device. %d\n", data->ctx_index);
 
 		ENTER_CRITICAL_SECTION(flags);
-		writel((uint32_t)offset,
+		writel((uint32_t)data->mem_offset,
 				brillcodec_device->ioaddr + DEVICE_CMD_DEVICE_MEM_OFFSET);
 		writel((uint32_t)data->ctx_index,
 				brillcodec_device->ioaddr + DEVICE_CMD_GET_DATA_FROM_QUEUE);
 		LEAVE_CRITICAL_SECTION(flags);
-
-		data->mem_offset = offset;
 	}
 
 	/* 1 means that only an available buffer is left at the moment.
@@ -490,9 +504,9 @@ static long brillcodec_ioctl(struct file *file,
 	switch (cmd) {
 	case IOCTL_CMD_GET_VERSION:
 	{
-		DEBUG("%s version: %d\n", DEVICE_NAME, brillcodec_device->version);
+		DEBUG("%s version: %d\n", DEVICE_NAME, brillcodec_device->major_version);
 
-		if (copy_to_user((void *)arg, &brillcodec_device->version, sizeof(int))) {
+		if (copy_to_user((void *)arg, &brillcodec_device->major_version, sizeof(int))) {
 			ERROR("ioctl: failed to copy data to user\n");
 			ret = -EIO;
 		}
@@ -675,12 +689,12 @@ static int invoke_api_and_release_buffer(struct ioctl_data *data)
 	ctx_index = data->ctx_index;
 
 	switch (api_index) {
-	case CODEC_INIT:
-	case CODEC_DECODE_VIDEO:
-	case CODEC_ENCODE_VIDEO:
-	case CODEC_DECODE_AUDIO:
-	case CODEC_ENCODE_AUDIO:
-	case CODEC_DECODE_VIDEO_AND_PICTURE_COPY:
+	case INIT:
+	case DECODE_VIDEO:
+	case ENCODE_VIDEO:
+	case DECODE_AUDIO:
+	case ENCODE_AUDIO:
+	case DECODE_VIDEO_AND_PICTURE_COPY:
 	{
 		ENTER_CRITICAL_SECTION(flags);
 		writel((uint32_t)data->mem_offset,
@@ -691,16 +705,19 @@ static int invoke_api_and_release_buffer(struct ioctl_data *data)
 				brillcodec_device->ioaddr + DEVICE_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
 
-		ret = release_device_memory(data->mem_offset);
+        if (!is_memory_monopolizing_api(api_index)) {
+		    ret = release_device_memory(data->mem_offset);
+		}
+
 		if (ret < 0) {
 			ERROR("failed to release device memory\n");
 		}
 
 		break;
 	}
-	case CODEC_PICTURE_COPY:
-	case CODEC_DEINIT:
-	case CODEC_FLUSH_BUFFERS:
+	case PICTURE_COPY:
+	case DEINIT:
+	case FLUSH_BUFFERS:
 	{
 		ENTER_CRITICAL_SECTION(flags);
 		writel((int32_t)data->ctx_index,
@@ -719,7 +736,7 @@ static int invoke_api_and_release_buffer(struct ioctl_data *data)
 	wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
 	context_flags[ctx_index] = 0;
 
-	if (api_index == CODEC_DEINIT) {
+	if (api_index == DEINIT) {
 		dispose_device_memory(data->ctx_index);
 	}
 
@@ -971,20 +988,22 @@ static struct miscdevice codec_dev = {
 	.mode			= S_IRUGO | S_IWUGO,
 };
 
-static bool get_device_version(void)
+static bool get_device_info(void)
 {
-	// we have only version information for now...
-	brillcodec_device->version =
-		readl(brillcodec_device->ioaddr + DEVICE_CMD_GET_DEVICE_INFO);
+    uint32_t info = readl(brillcodec_device->ioaddr + DEVICE_CMD_GET_DEVICE_INFO);
 
-	printk(KERN_INFO "%s: device version: %d\n",
-		DEVICE_NAME, brillcodec_device->version);
+	brillcodec_device->major_version = (uint32_t)((info & 0x0000FF00) >> 8);
+	brillcodec_device->minor_version = (uint8_t)(info & 0x000000FF);
 
-	if (brillcodec_device->version != DRIVER_VERSION) {
-		ERROR("Version mismatch. driver version [%d], device version [%d].\n",
-				brillcodec_device->version, DRIVER_VERSION);
+	if (brillcodec_device->major_version != DRIVER_VERSION) {
+		ERROR("Version mismatch. driver version [%d], device version [%d.%d].\n",
+				DRIVER_VERSION, brillcodec_device->major_version,
+								brillcodec_device->minor_version);
 		return false;
 	}
+
+	// check memory monopolizing API
+	brillcodec_device->memory_monopolizing = (info & 0xFFFF0000) >> 16;
 
 	return true;
 }
@@ -1082,7 +1101,7 @@ static int brillcodec_probe(struct pci_dev *pci_dev,
 		return -EINVAL;
 	}
 
-	if (!get_device_version()) {
+	if (!get_device_info()) {
 		return -EINVAL;
 	}
 
@@ -1095,8 +1114,9 @@ static int brillcodec_probe(struct pci_dev *pci_dev,
 		return ret;
 	}
 
-	printk(KERN_INFO "%s: driver is probed. driver version [%d], device version [%d]\n",
-				DEVICE_NAME, DRIVER_VERSION, brillcodec_device->version);
+	printk(KERN_INFO "%s: driver is probed. driver version [%d], device version [%d.%d]\n",
+				DEVICE_NAME, DRIVER_VERSION, brillcodec_device->major_version,
+				brillcodec_device->minor_version);
 
 	return 0;
 }
