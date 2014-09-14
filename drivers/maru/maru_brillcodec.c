@@ -58,6 +58,7 @@ MODULE_LICENSE("GPL2");
 
 // DEBUG
 //#define CODEC_DEBUG
+//#define VIDEO_ENCODE_MONOPOLIZE_MEMORY
 
 #ifdef CODEC_DEBUG
 #define DEBUG(fmt, ...) \
@@ -113,15 +114,15 @@ enum ioctl_cmd {							// plugin and driver
 };
 
 enum codec_api_index {
-	CODEC_INIT = 0,
-	CODEC_DECODE_VIDEO,
-	CODEC_ENCODE_VIDEO,
-	CODEC_DECODE_AUDIO,
-	CODEC_ENCODE_AUDIO,
-	CODEC_PICTURE_COPY,
-	CODEC_DEINIT,
-	CODEC_FLUSH_BUFFERS,
-	CODEC_DECODE_VIDEO_AND_PICTURE_COPY, // version 3
+	INIT = 0,
+	DECODE_VIDEO,
+	ENCODE_VIDEO,
+	DECODE_AUDIO,
+	ENCODE_AUDIO,
+	PICTURE_COPY,
+	DEINIT,
+	FLUSH_BUFFERS,
+	DECODE_VIDEO_AND_PICTURE_COPY, // version 3
 };
 
 struct ioctl_data {
@@ -442,14 +443,15 @@ static void cache_info(void)
 	brillcodec_device->codec_elem_cached = true;
 }
 
-static long put_data_into_buffer(struct ioctl_data *data) {
+static long put_data_into_buffer(struct ioctl_data *data, bool need_to_secure_memory) {
 	long value = 0, ret = 0;
-	uint32_t offset = 0;
 	unsigned long flags;
 
 	DEBUG("read data into small buffer\n");
 
-    value = secure_device_memory(data->ctx_index, data->buffer_size, 0, &offset);
+    if (need_to_secure_memory) {
+        value = secure_device_memory(data->ctx_index, data->buffer_size, 0, &data->mem_offset);
+    }
 
 	if (value < 0) {
 		DEBUG("failed to get available memory\n");
@@ -458,13 +460,11 @@ static long put_data_into_buffer(struct ioctl_data *data) {
 		DEBUG("send a request to pop data from device. %d\n", data->ctx_index);
 
 		ENTER_CRITICAL_SECTION(flags);
-		writel((uint32_t)offset,
+		writel((uint32_t)data->mem_offset,
 				brillcodec_device->ioaddr + DEVICE_CMD_DEVICE_MEM_OFFSET);
 		writel((uint32_t)data->ctx_index,
 				brillcodec_device->ioaddr + DEVICE_CMD_GET_DATA_FROM_QUEUE);
 		LEAVE_CRITICAL_SECTION(flags);
-
-		data->mem_offset = offset;
 	}
 
 	/* 1 means that only an available buffer is left at the moment.
@@ -641,7 +641,11 @@ static long brillcodec_ioctl(struct file *file,
 		}
 
 		if (opaque.buffer_size != -1) {
-			ret = put_data_into_buffer(&opaque);
+#ifdef VIDEO_ENCODE_MONOPOLIZE_MEMORY
+			ret = put_data_into_buffer(&opaque, opaque.api_index != ENCODE_VIDEO);
+#else
+			ret = put_data_into_buffer(&opaque, true);
+#endif
 			if (ret < 0) {
 				ret = -EIO;
 				break;
@@ -675,12 +679,12 @@ static int invoke_api_and_release_buffer(struct ioctl_data *data)
 	ctx_index = data->ctx_index;
 
 	switch (api_index) {
-	case CODEC_INIT:
-	case CODEC_DECODE_VIDEO:
-	case CODEC_ENCODE_VIDEO:
-	case CODEC_DECODE_AUDIO:
-	case CODEC_ENCODE_AUDIO:
-	case CODEC_DECODE_VIDEO_AND_PICTURE_COPY:
+	case INIT:
+	case DECODE_VIDEO:
+	case ENCODE_VIDEO:
+	case DECODE_AUDIO:
+	case ENCODE_AUDIO:
+	case DECODE_VIDEO_AND_PICTURE_COPY:
 	{
 		ENTER_CRITICAL_SECTION(flags);
 		writel((uint32_t)data->mem_offset,
@@ -691,16 +695,22 @@ static int invoke_api_and_release_buffer(struct ioctl_data *data)
 				brillcodec_device->ioaddr + DEVICE_CMD_API_INDEX);
 		LEAVE_CRITICAL_SECTION(flags);
 
+#ifdef VIDEO_ENCODE_MONOPOLIZE_MEMORY
+        if (api_index != ENCODE_VIDEO) {
+		    ret = release_device_memory(data->mem_offset);
+        }
+#else
 		ret = release_device_memory(data->mem_offset);
+#endif
 		if (ret < 0) {
 			ERROR("failed to release device memory\n");
 		}
 
 		break;
 	}
-	case CODEC_PICTURE_COPY:
-	case CODEC_DEINIT:
-	case CODEC_FLUSH_BUFFERS:
+	case PICTURE_COPY:
+	case DEINIT:
+	case FLUSH_BUFFERS:
 	{
 		ENTER_CRITICAL_SECTION(flags);
 		writel((int32_t)data->ctx_index,
@@ -719,7 +729,7 @@ static int invoke_api_and_release_buffer(struct ioctl_data *data)
 	wait_event_interruptible(wait_queue, context_flags[ctx_index] != 0);
 	context_flags[ctx_index] = 0;
 
-	if (api_index == CODEC_DEINIT) {
+	if (api_index == DEINIT) {
 		dispose_device_memory(data->ctx_index);
 	}
 
