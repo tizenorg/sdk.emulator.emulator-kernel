@@ -28,14 +28,6 @@
 #define DRM_VIGS_DP_FB_Y 2
 #define DRM_VIGS_DP_FB_C 3
 
-/*
- * Rotations.
- */
-#define DRM_VIGS_ROTATION_0   0
-#define DRM_VIGS_ROTATION_90  1
-#define DRM_VIGS_ROTATION_180 2
-#define DRM_VIGS_ROTATION_270 3
-
 struct drm_vigs_get_protocol_version
 {
     uint32_t version;
