@@ -1,0 +1,8 @@
+Code-Review+1: Kitae Kim <kt920.kim@samsung.com>
+Verified+1: SeokYeon Hwang <syeon.hwang@samsung.com>
+Code-Review+2: Sangho Park <sangho1206.park@samsung.com>
+Submitted-by: Sangho Park <sangho1206.park@samsung.com>
+Submitted-at: Wed, 17 Sep 2014 02:42:57 -0700
+Reviewed-on: https://review.tizen.org/gerrit/27473
+Project: sdk/emulator/emulator-kernel
+Branch: refs/heads/features/brillcodec_2i
