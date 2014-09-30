@@ -2,12 +2,11 @@
 # Spec written for Tizen Mobile, some bits and pieces originate
 # from MeeGo/Moblin/Fedora
 #
+%bcond_with emulator
 
 %define upstream_version 3.12.18
 
-%if !0%{?_with_emulator}
-ExclusiveArch:
-%else
+%if %{with emulator}
 %define platform emulator
 %endif
 
@@ -37,7 +36,7 @@ ExclusiveArch:
 %define kernel_arch i386
 %define kernel_arch_subdir arch/x86
 %define defconfig %{profile}_x86_defconfig
-%if %platform == emulator
+%if "%{platform}" == "emulator"
 %define defconfig %{kernel_arch}_tizen_emul_defconfig
 %define trace_supported 0
 %endif
@@ -58,7 +57,7 @@ ExclusiveArch:
 %endif
 
 
-Name: kernel-%{platform}
+Name: kernel-emulator
 Summary: Tizen kernel
 Group: System/Kernel
 License: GPL-2.0
@@ -93,9 +92,13 @@ BuildRequires: python-devel
 BuildRequires: u-boot-tools
 %endif
 
+%if %{with emulator}
 ExclusiveArch: %{arch_32bits} x86_64 armv7l
+%else
+ExclusiveArch:
+%endif
 
-Source0: %{name}-%{version}.tar.bz2
+Source0: emulator-kernel-%{version}.tar.bz2
 
 %description
 This package contains the Linux kernel for Tizen.
@@ -185,8 +188,8 @@ sed -i "s/^EXTRAVERSION.*/EXTRAVERSION = -%{release}-%{variant}/" Makefile
 
 # Build perf
 %if %trace_supported
-#make -s -C tools/lib/traceevent ARCH=%{kernel_arch} %{?_smp_mflags}
-#make -s -C tools/perf WERROR=0 ARCH=%{kernel_arch}
+make -s -C tools/lib/traceevent ARCH=%{kernel_arch} %{?_smp_mflags}
+make -s -C tools/perf WERROR=0 ARCH=%{kernel_arch}
 %endif
 
 
