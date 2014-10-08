@@ -1,0 +1,10 @@
+Code-Review+2: SeokYeon Hwang <syeon.hwang@samsung.com>
+Verified+1: SeokYeon Hwang <syeon.hwang@samsung.com>
+Verified+1: Chanho Park
+Code-Review+1: Sangho Park <sangho1206.park@samsung.com>
+Code-Review+1: Yury Usishchev <y.usishchev@samsung.com>
+Submitted-by: SeokYeon Hwang <syeon.hwang@samsung.com>
+Submitted-at: Tue, 07 Oct 2014 21:45:39 -0700
+Reviewed-on: https://review.tizen.org/gerrit/28447
+Project: sdk/emulator/emulator-kernel
+Branch: refs/heads/tizen
