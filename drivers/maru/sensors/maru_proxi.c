@@ -74,11 +74,14 @@ static void maru_proxi_input_work_func(struct work_struct *work) {
 		mutex_unlock(&data->data_mutex);
 		if (!ret) {
 			sscanf(sensor_data, "%d", &proxi);
-			if (proxi)
+			if (!proxi)
 				proxi = 1;
+			else
+				proxi = 0;
+
 			LOG(1, "proxi_set %d", proxi);
 
-			input_report_rel(data->input_data, ABS_DISTANCE, proxi);
+			input_report_abs(data->input_data, ABS_DISTANCE, proxi);
 			input_sync(data->input_data);
 		}
 	}
@@ -298,10 +301,12 @@ static int create_input_device(struct maru_proxi_data *data)
 	}
 
 	input_data->name = SENSOR_PROXI_INPUT_NAME;
-	input_data->id.bustype = BUS_I2C;
+
+	input_set_drvdata(input_data, data);
 
 	set_bit(EV_ABS, input_data->evbit);
 	input_set_capability(input_data, EV_ABS, ABS_DISTANCE);
+	input_set_abs_params(input_data, ABS_DISTANCE, 0, 1, 0, 0);
 
 	data->input_data = input_data;
 
@@ -311,8 +316,6 @@ static int create_input_device(struct maru_proxi_data *data)
 		proxi_clear(data);
 		return ret;
 	}
-
-	input_set_drvdata(input_data, data);
 
 	ret = sysfs_create_group(&input_data->dev.kobj,
 			&maru_proxi_attribute_group);

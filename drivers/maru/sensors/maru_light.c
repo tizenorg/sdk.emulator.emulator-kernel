@@ -76,11 +76,11 @@ static void maru_light_input_work_func(struct work_struct *work) {
 			sscanf(sensor_data, "%d", &light);
 			LOG(1, "light_set %d", light);
 
-			input_report_rel(data->input_data, REL_RX, light);	// LUX
-			input_report_rel(data->input_data, REL_HWHEEL, 0);	// red
-			input_report_rel(data->input_data, REL_DIAL, 0);	// green
-			input_report_rel(data->input_data, REL_WHEEL, 0);	// blue
-			input_report_rel(data->input_data, REL_MISC, 0);	// white
+			input_report_rel(data->input_data, REL_RX, (light + 1));	// LUX
+			input_report_rel(data->input_data, REL_HWHEEL, 0);			// red
+			input_report_rel(data->input_data, REL_DIAL, 0);			// green
+			input_report_rel(data->input_data, REL_WHEEL, 0);			// blue
+			input_report_rel(data->input_data, REL_MISC, 0);			// white
 			input_sync(data->input_data);
 		}
 	}

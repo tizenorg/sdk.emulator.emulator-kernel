@@ -262,10 +262,9 @@ static int set_initial_value(struct maru_gyro_data *data)
 {
 	int delay = 0;
 	int ret = 0;
-	int enable = 0;
 	char sensor_data [__MAX_BUF_SENSOR];
 
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	memset(sensor_data, 0, sizeof(sensor_data));
 
 	ret = get_sensor_data(sensor_type_gyro_delay, sensor_data);
 	if (ret) {
@@ -274,15 +273,6 @@ static int set_initial_value(struct maru_gyro_data *data)
 	}
 
 	delay = sensor_atoi(sensor_data);
-
-	ret = get_sensor_data(sensor_type_gyro_enable, sensor_data);
-	if (ret) {
-		ERR("failed to get initial enable");
-		return ret;
-	}
-
-	enable = sensor_atoi(sensor_data);
-
 	if (delay < 0) {
 		ERR("weird value is set initial delay");
 		return ret;
@@ -290,10 +280,11 @@ static int set_initial_value(struct maru_gyro_data *data)
 
 	atomic_set(&data->poll_delay, delay);
 
-	if (enable) {
-		atomic_set(&data->enable, 1);
-		schedule_delayed_work(&data->work, 0);
-	}
+	memset(sensor_data, 0, sizeof(sensor_data));
+	sensor_data[0] = '0';
+
+	set_sensor_data(sensor_type_gyro_enable, sensor_data);
+	atomic_set(&data->enable, 0);
 
 	return ret;
 }
