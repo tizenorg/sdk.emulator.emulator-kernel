@@ -1,5 +1,5 @@
 /*
- * Maru Virtio Proximity Sensor Device Driver
+ * Maru Virtio Pressure Sensor Device Driver
  *
  * Copyright (c) 2014 Samsung Electronics Co., Ltd. All rights reserved.
  *
@@ -32,7 +32,7 @@
 
 #include "maru_virtio_sensor.h"
 
-struct maru_proxi_data {
+struct maru_pressure_data {
 	struct input_dev *input_data;
 	struct delayed_work work;
 	struct mutex data_mutex;
@@ -43,25 +43,38 @@ struct maru_proxi_data {
 	atomic_t poll_delay;
 };
 
-static struct device *proxi_sensor_device;
+static struct device *pressure_sensor_device;
 
-#ifdef SUPPORT_LEGACY_SENSOR
-static struct device *l_proxi_sensor_device;
-#endif
+#define PRESSURE_ADJUST		193
+static int pressure_convert_data(int number)
+{
+	return number * 10000 / PRESSURE_ADJUST;
+}
 
-static void maru_proxi_input_work_func(struct work_struct *work) {
+#define TEMP_ADJUST		2
+static short temp_convert_data(int number)
+{
+	int temp;
+	temp = number * TEMP_ADJUST;
+	return (short)temp;
+}
+
+static void maru_pressure_input_work_func(struct work_struct *work) {
 
 	int poll_time = 200000000;
 	int enable = 0;
 	int ret = 0;
-	int proxi = 0;
+	int pressure = 0;
+	int temperature = 0;
+	int raw_pressure;
+	short raw_temp;
 	char sensor_data[__MAX_BUF_SENSOR];
-	struct maru_proxi_data *data = container_of((struct delayed_work *)work,
-			struct maru_proxi_data, work);
+	struct maru_pressure_data *data = container_of((struct delayed_work *)work,
+			struct maru_pressure_data, work);
 
-	LOG(1, "maru_proxi_input_work_func starts");
+	LOG(1, "maru_pressure_input_work_func starts");
 
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	memset(sensor_data, 0, sizeof(sensor_data));
 	poll_time = atomic_read(&data->poll_delay);
 
 	mutex_lock(&data->data_mutex);
@@ -70,18 +83,23 @@ static void maru_proxi_input_work_func(struct work_struct *work) {
 
 	if (enable) {
 		mutex_lock(&data->data_mutex);
-		ret = get_sensor_data(sensor_type_proxi, sensor_data);
+		ret = get_sensor_data(sensor_type_pressure, sensor_data);
 		mutex_unlock(&data->data_mutex);
 		if (!ret) {
-			sscanf(sensor_data, "%d", &proxi);
-			if (!proxi)
-				proxi = 1;
-			else
-				proxi = 0;
+			sscanf(sensor_data, "%d, %d", &pressure, &temperature);
+			LOG(1, "pressure_set %d, %d", pressure, temperature);
 
-			LOG(1, "proxi_set %d", proxi);
+			raw_pressure = pressure_convert_data(pressure);
+			if (temperature == 0) {
+				temperature = 1;
+			}
+			raw_temp = temp_convert_data(temperature);
 
-			input_report_abs(data->input_data, ABS_DISTANCE, proxi);
+			LOG(1, "pressure raw pressure %d, temp %d.\n", raw_pressure, raw_temp);
+
+			input_report_rel(data->input_data, REL_HWHEEL, raw_pressure);
+			input_report_rel(data->input_data, REL_DIAL, 101325);
+			input_report_rel(data->input_data, REL_WHEEL, raw_temp);
 			input_sync(data->input_data);
 		}
 	}
@@ -99,13 +117,13 @@ static void maru_proxi_input_work_func(struct work_struct *work) {
 		}
 	}
 
-	LOG(1, "maru_proxi_input_work_func ends");
+	LOG(1, "maru_pressure_input_work_func ends");
 
 }
 
 static ssize_t maru_name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%s", MARU_PROXI_DEVICE_NAME);
+	return sprintf(buf, "%s", MARU_PRESSURE_DEVICE_NAME);
 }
 
 static ssize_t maru_vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -115,19 +133,19 @@ static ssize_t maru_vendor_show(struct device *dev, struct device_attribute *att
 
 static ssize_t maru_enable_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_proxi_enable, buf);
+	return get_data_for_show(sensor_type_pressure_enable, buf);
 }
 
 static ssize_t maru_enable_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct input_dev *input_data = to_input_dev(dev);
-	struct maru_proxi_data *data = input_get_drvdata(input_data);
+	struct maru_pressure_data *data = input_get_drvdata(input_data);
 	int value = simple_strtoul(buf, NULL, 10);
 
 	if (value != 0 && value != 1)
 		return count;
 
-	set_sensor_data(sensor_type_proxi_enable, buf);
+	set_sensor_data(sensor_type_pressure_enable, buf);
 
 	if (value) {
 		if (atomic_read(&data->enable) != 1) {
@@ -147,16 +165,16 @@ static ssize_t maru_enable_store(struct device *dev, struct device_attribute *at
 
 static ssize_t maru_poll_delay_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_proxi_delay, buf);
+	return get_data_for_show(sensor_type_pressure_delay, buf);
 }
 
 static ssize_t maru_poll_delay_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct input_dev *input_data = to_input_dev(dev);
-	struct maru_proxi_data *data = input_get_drvdata(input_data);
+	struct maru_pressure_data *data = input_get_drvdata(input_data);
 	int value = simple_strtoul(buf, NULL, 10);
 
-	set_sensor_data(sensor_type_proxi_delay, buf);
+	set_sensor_data(sensor_type_pressure_delay, buf);
 	atomic_set(&data->poll_delay, value);
 
 	return strnlen(buf, __MAX_BUF_SENSOR);
@@ -168,79 +186,35 @@ static struct device_attribute dev_attr_sensor_name =
 static struct device_attribute dev_attr_sensor_vendor =
 		__ATTR(vendor, S_IRUGO, maru_vendor_show, NULL);
 
-static struct device_attribute *proxi_sensor_attrs [] = {
+static struct device_attribute *pressure_sensor_attrs [] = {
 	&dev_attr_sensor_name,
 	&dev_attr_sensor_vendor,
 	NULL,
 };
 
-#ifdef SUPPORT_LEGACY_SENSOR
-#define PROXI_NAME_STR		"proxi_sim"
-
-static ssize_t proxi_name_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%s", PROXI_NAME_STR);
-}
-
-static ssize_t enable_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return get_data_for_show(sensor_type_proxi_enable, buf);
-}
-
-static ssize_t enable_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-	set_sensor_data(sensor_type_proxi_enable, buf);
-	return strnlen(buf, __MAX_BUF_SENSOR);
-}
-
-static ssize_t vo_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return get_data_for_show(sensor_type_proxi, buf);
-}
-
-static ssize_t vo_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-	set_sensor_data(sensor_type_proxi, buf);
-	return strnlen(buf, __MAX_BUF_SENSOR);
-}
-
-static struct device_attribute dev_attr_l_sensor_name =
-		__ATTR(name, S_IRUGO, proxi_name_show, NULL);
-
-static DEVICE_ATTR(enable, 0644, enable_show, enable_store);
-static DEVICE_ATTR(vo, 0644, vo_show, vo_store);
-
-static struct device_attribute *l_proxi_sensor_attrs [] = {
-	&dev_attr_l_sensor_name,
-	&dev_attr_enable,
-	&dev_attr_vo,
-	NULL,
-};
-#endif
-
-static struct device_attribute attr_proxi [] =
+static struct device_attribute attr_pressure [] =
 {
 	MARU_ATTR_RW(enable),
 	MARU_ATTR_RW(poll_delay),
 };
 
-static struct attribute *maru_proxi_attribute[] = {
-	&attr_proxi[0].attr,
-	&attr_proxi[1].attr,
+static struct attribute *maru_pressure_attribute[] = {
+	&attr_pressure[0].attr,
+	&attr_pressure[1].attr,
 	NULL
 };
 
-static struct attribute_group maru_proxi_attribute_group = {
-	.attrs = maru_proxi_attribute
+static struct attribute_group maru_pressure_attribute_group = {
+	.attrs = maru_pressure_attribute
 };
 
-static void proxi_clear(struct maru_proxi_data *data) {
+static void pressure_clear(struct maru_pressure_data *data) {
 	if (data == NULL)
 		return;
 
 	if (data->input_data) {
 		sysfs_remove_group(&data->input_data->dev.kobj,
-			&maru_proxi_attribute_group);
+			&maru_pressure_attribute_group);
 		input_free_device(data->input_data);
 	}
 
@@ -248,16 +222,16 @@ static void proxi_clear(struct maru_proxi_data *data) {
 	data = NULL;
 }
 
-static int set_initial_value(struct maru_proxi_data *data)
+static int set_initial_value(struct maru_pressure_data *data)
 {
 	int delay = 0;
 	int ret = 0;
 	int enable = 0;
 	char sensor_data [__MAX_BUF_SENSOR];
 
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	memset(sensor_data, 0, sizeof(sensor_data));
 
-	ret = get_sensor_data(sensor_type_proxi_delay, sensor_data);
+	ret = get_sensor_data(sensor_type_pressure_delay, sensor_data);
 	if (ret) {
 		ERR("failed to get initial delay time");
 		return ret;
@@ -265,7 +239,7 @@ static int set_initial_value(struct maru_proxi_data *data)
 
 	delay = sensor_atoi(sensor_data);
 
-	ret = get_sensor_data(sensor_type_proxi_enable, sensor_data);
+	ret = get_sensor_data(sensor_type_pressure_enable, sensor_data);
 	if (ret) {
 		ERR("failed to get initial enable");
 		return ret;
@@ -288,7 +262,7 @@ static int set_initial_value(struct maru_proxi_data *data)
 	return ret;
 }
 
-static int create_input_device(struct maru_proxi_data *data)
+static int create_input_device(struct maru_pressure_data *data)
 {
 	int ret = 0;
 	struct input_dev *input_data = NULL;
@@ -296,31 +270,33 @@ static int create_input_device(struct maru_proxi_data *data)
 	input_data = input_allocate_device();
 	if (input_data == NULL) {
 		ERR("failed initialing input handler");
-		proxi_clear(data);
+		pressure_clear(data);
 		return -ENOMEM;
 	}
 
-	input_data->name = SENSOR_PROXI_INPUT_NAME;
+	input_data->name = SENSOR_PRESSURE_INPUT_NAME;
+	input_data->id.bustype = BUS_I2C;
 
-	input_set_drvdata(input_data, data);
-
-	set_bit(EV_ABS, input_data->evbit);
-	input_set_capability(input_data, EV_ABS, ABS_DISTANCE);
-	input_set_abs_params(input_data, ABS_DISTANCE, 0, 1, 0, 0);
+	set_bit(EV_REL, input_data->evbit);
+	input_set_capability(input_data, EV_REL, REL_HWHEEL);
+	input_set_capability(input_data, EV_REL, REL_DIAL);
+	input_set_capability(input_data, EV_REL, REL_WHEEL);
 
 	data->input_data = input_data;
 
 	ret = input_register_device(input_data);
 	if (ret) {
 		ERR("failed to register input data");
-		proxi_clear(data);
+		pressure_clear(data);
 		return ret;
 	}
 
+	input_set_drvdata(input_data, data);
+
 	ret = sysfs_create_group(&input_data->dev.kobj,
-			&maru_proxi_attribute_group);
+			&maru_pressure_attribute_group);
 	if (ret) {
-		proxi_clear(data);
+		pressure_clear(data);
 		ERR("failed initialing devices");
 		return ret;
 	}
@@ -328,43 +304,33 @@ static int create_input_device(struct maru_proxi_data *data)
 	return ret;
 }
 
-int maru_proxi_init(struct virtio_sensor *vs) {
+int maru_pressure_init(struct virtio_sensor *vs) {
 	int ret = 0;
-	struct maru_proxi_data *data = NULL;
+	struct maru_pressure_data *data = NULL;
 
-	INFO("maru_proxi device init starts.");
+	INFO("maru_pressure device init starts.");
 
-	data = kmalloc(sizeof(struct maru_proxi_data), GFP_KERNEL);
+	data = kmalloc(sizeof(struct maru_pressure_data), GFP_KERNEL);
 	if (data == NULL) {
-		ERR("failed to create proxi data.");
+		ERR("failed to create pressure data.");
 		return -ENOMEM;
 	}
 
-	vs->proxi_handle = data;
+	vs->pressure_handle = data;
 	data->vs = vs;
 
 	mutex_init(&data->data_mutex);
 
-	INIT_DELAYED_WORK(&data->work, maru_proxi_input_work_func);
+	INIT_DELAYED_WORK(&data->work, maru_pressure_input_work_func);
 
 	// create name & vendor
-	ret = register_sensor_device(proxi_sensor_device, vs,
-			proxi_sensor_attrs, DRIVER_PROXI_NAME);
+	ret = register_sensor_device(pressure_sensor_device, vs,
+			pressure_sensor_attrs, DRIVER_PRESSURE_NAME);
 	if (ret) {
-		ERR("failed to register proxi device");
-		proxi_clear(data);
+		ERR("failed to register pressure device");
+		pressure_clear(data);
 		return -1;
 	}
-
-#ifdef SUPPORT_LEGACY_SENSOR
-		ret = l_register_sensor_device(l_proxi_sensor_device, vs,
-			l_proxi_sensor_attrs, DRIVER_PROXI_NAME);
-	if (ret) {
-		ERR("failed to register legacy proxi device");
-		proxi_clear(data);
-		return -1;
-	}
-#endif
 
 	// create input
 	ret = create_input_device(data);
@@ -380,16 +346,16 @@ int maru_proxi_init(struct virtio_sensor *vs) {
 		return ret;
 	}
 
-	INFO("maru_proxi device init ends.");
+	INFO("maru_pressure device init ends.");
 
 	return ret;
 }
 
-int maru_proxi_exit(struct virtio_sensor *vs) {
-	struct maru_proxi_data *data = NULL;
+int maru_pressure_exit(struct virtio_sensor *vs) {
+	struct maru_pressure_data *data = NULL;
 
-	data = (struct maru_proxi_data *)vs->proxi_handle;
-	proxi_clear(data);
-	INFO("maru_proxi device exit ends.");
+	data = (struct maru_pressure_data *)vs->pressure_handle;
+	pressure_clear(data);
+	INFO("maru_pressure device exit ends.");
 	return 0;
 }

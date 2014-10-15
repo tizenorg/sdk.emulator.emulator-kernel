@@ -49,6 +49,10 @@ static struct device *gyro_sensor_device;
 static struct device *l_gyro_sensor_device;
 #endif
 
+static int gyro_adjust_x = 1;
+static int gyro_adjust_y = 1;
+static int gyro_adjust_z = 1;
+
 static void maru_gyro_input_work_func(struct work_struct *work) {
 
 	int poll_time = 200000000;
@@ -74,7 +78,22 @@ static void maru_gyro_input_work_func(struct work_struct *work) {
 		mutex_unlock(&data->data_mutex);
 		if (!ret) {
 			sscanf(sensor_data, "%d,%d,%d", &gyro_x, &gyro_y, &gyro_z);
-			LOG(1, "gyro_set %d, %d, %d", gyro_x, gyro_y, gyro_z);
+			LOG(1, "gyro_set act %d, %d, %d", gyro_x, gyro_y, gyro_z);
+
+			if (gyro_x == 0) {
+				gyro_x = gyro_adjust_x;
+				gyro_adjust_x *= -1;
+			}
+
+			if (gyro_y == 0) {
+				gyro_y = gyro_adjust_y;
+				gyro_adjust_y *= -1;
+			}
+
+			if (gyro_z == 0) {
+				gyro_z = gyro_adjust_z;
+				gyro_adjust_z *= -1;
+			}
 
 			input_report_rel(data->input_data, REL_RX, gyro_x);
 			input_report_rel(data->input_data, REL_RY, gyro_y);
@@ -262,10 +281,9 @@ static int set_initial_value(struct maru_gyro_data *data)
 {
 	int delay = 0;
 	int ret = 0;
-	int enable = 0;
 	char sensor_data [__MAX_BUF_SENSOR];
 
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	memset(sensor_data, 0, sizeof(sensor_data));
 
 	ret = get_sensor_data(sensor_type_gyro_delay, sensor_data);
 	if (ret) {
@@ -274,15 +292,6 @@ static int set_initial_value(struct maru_gyro_data *data)
 	}
 
 	delay = sensor_atoi(sensor_data);
-
-	ret = get_sensor_data(sensor_type_gyro_enable, sensor_data);
-	if (ret) {
-		ERR("failed to get initial enable");
-		return ret;
-	}
-
-	enable = sensor_atoi(sensor_data);
-
 	if (delay < 0) {
 		ERR("weird value is set initial delay");
 		return ret;
@@ -290,10 +299,11 @@ static int set_initial_value(struct maru_gyro_data *data)
 
 	atomic_set(&data->poll_delay, delay);
 
-	if (enable) {
-		atomic_set(&data->enable, 1);
-		schedule_delayed_work(&data->work, 0);
-	}
+	memset(sensor_data, 0, sizeof(sensor_data));
+	sensor_data[0] = '0';
+
+	set_sensor_data(sensor_type_gyro_enable, sensor_data);
+	atomic_set(&data->enable, 0);
 
 	return ret;
 }

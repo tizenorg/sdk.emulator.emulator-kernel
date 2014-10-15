@@ -69,17 +69,31 @@ enum sensor_types {
 	sensor_type_rotation_vector_delay,
 	sensor_type_mag,
 	sensor_type_tilt,
+    sensor_type_pressure,
+    sensor_type_pressure_enable,
+    sensor_type_pressure_delay,
+    sensor_type_uv,
+    sensor_type_uv_enable,
+    sensor_type_uv_delay,
+    sensor_type_hrm,
+    sensor_type_hrm_heart,
+    sensor_type_hrm_rri,
+    sensor_type_hrm_enable,
+    sensor_type_hrm_delay,
 	sensor_type_max
 };
 
 enum sensor_capabilities {
-	sensor_cap_accel 			= 0x01,
-	sensor_cap_geo				= 0x02,
-	sensor_cap_gyro				= 0x04,
-	sensor_cap_light			= 0x08,
-	sensor_cap_proxi			= 0x10,
-	sensor_cap_rotation_vector	= 0x20,
-	sensor_cap_haptic			= 0x40
+	sensor_cap_accel 			= 0x0001,
+	sensor_cap_geo				= 0x0002,
+	sensor_cap_gyro				= 0x0004,
+	sensor_cap_light			= 0x0008,
+	sensor_cap_proxi			= 0x0010,
+	sensor_cap_rotation_vector	= 0x0020,
+	sensor_cap_haptic			= 0x0040,
+	sensor_cap_pressure			= 0x0080,
+	sensor_cap_uv				= 0x0100,
+	sensor_cap_hrm				= 0x0200
 };
 
 #define __MAX_BUF_SIZE			1024
@@ -122,6 +136,9 @@ struct virtio_sensor {
 	void* proxi_handle;
 	void* rotation_vector_handle;
 	void* haptic_handle;
+	void* pressure_handle;
+	void* uv_handle;
+	void* hrm_handle;
 };
 
 #define MARU_DEVICE_ATTR(_name)	\
@@ -181,6 +198,18 @@ int get_sensor_data(int type, char* data);
 
 #define SENSOR_HAPTIC_INPUT_NAME	"haptic_sensor"
 
+#define DRIVER_PRESSURE_NAME		"pressure"
+#define SENSOR_PRESSURE_INPUT_NAME	"pressure_sensor"
+#define MARU_PRESSURE_DEVICE_NAME	"maru_sensor_pressure_1"
+
+#define DRIVER_UV_NAME				"ultraviolet"
+#define SENSOR_UV_INPUT_NAME		"uv_sensor"
+#define MARU_UV_DEVICE_NAME			"maru_sensor_uv_1"
+
+#define DRIVER_HRM_NAME				"hrm"
+#define SENSOR_HRM_INPUT_NAME		"hrm_lib_sensor"
+#define MARU_HRM_DEVICE_NAME		"maru_sensor_hrm_1"
+
 // It locates /sys/module/maru_virtio_sensor/parameters/sensor_driver_debug
 extern int sensor_driver_debug;
 
@@ -238,5 +267,23 @@ int maru_rotation_vector_exit(struct virtio_sensor *vs);
  */
 int maru_haptic_init(struct virtio_sensor *vs);
 int maru_haptic_exit(struct virtio_sensor *vs);
+
+/*
+ * Pressure device
+ */
+int maru_pressure_init(struct virtio_sensor *vs);
+int maru_pressure_exit(struct virtio_sensor *vs);
+
+/*
+ * UV(UltraViolet) device
+ */
+int maru_uv_init(struct virtio_sensor *vs);
+int maru_uv_exit(struct virtio_sensor *vs);
+
+/*
+ * HRM(Heart Beat Rate) device
+ */
+int maru_hrm_init(struct virtio_sensor *vs);
+int maru_hrm_exit(struct virtio_sensor *vs);
 
 #endif
