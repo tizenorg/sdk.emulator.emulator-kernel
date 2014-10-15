@@ -316,6 +316,30 @@ static void device_init(struct virtio_sensor *vs)
 			ERR("failed to init haptic with error %d", ret);
 		}
 	}
+
+	if (vs->sensor_capability & sensor_cap_pressure) {
+		ret = maru_pressure_init(vs);
+		if (ret) {
+			vs->sensor_fail_init |= sensor_cap_pressure;
+			ERR("failed to init pressure with error %d", ret);
+		}
+	}
+
+	if (vs->sensor_capability & sensor_cap_uv) {
+		ret = maru_uv_init(vs);
+		if (ret) {
+			vs->sensor_fail_init |= sensor_cap_uv;
+			ERR("failed to init uv with error %d", ret);
+		}
+	}
+
+	if (vs->sensor_capability & sensor_cap_hrm) {
+		ret = maru_hrm_init(vs);
+		if (ret) {
+			vs->sensor_fail_init |= sensor_cap_hrm;
+			ERR("failed to init hrm with error %d", ret);
+		}
+	}
 }
 
 static void device_exit(struct virtio_sensor *vs)
@@ -353,6 +377,21 @@ static void device_exit(struct virtio_sensor *vs)
 	if (vs->sensor_capability & sensor_cap_haptic &&
 			!(vs->sensor_fail_init & sensor_cap_haptic)) {
 		maru_haptic_exit(vs);
+	}
+
+	if (vs->sensor_capability & sensor_cap_pressure &&
+			!(vs->sensor_fail_init & sensor_cap_pressure)) {
+		maru_pressure_exit(vs);
+	}
+
+	if (vs->sensor_capability & sensor_cap_uv &&
+			!(vs->sensor_fail_init & sensor_cap_uv)) {
+		maru_uv_exit(vs);
+	}
+
+	if (vs->sensor_capability & sensor_cap_hrm &&
+			!(vs->sensor_fail_init & sensor_cap_hrm)) {
+		maru_hrm_exit(vs);
 	}
 }
 

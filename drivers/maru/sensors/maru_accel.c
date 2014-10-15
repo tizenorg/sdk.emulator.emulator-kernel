@@ -29,6 +29,7 @@
 
 #include <linux/kernel.h>
 #include <linux/slab.h>
+#include <linux/limits.h>
 
 #include "maru_virtio_sensor.h"
 
@@ -49,12 +50,23 @@ static struct device *accel_sensor_device;
 static struct device *l_accel_sensor_device;
 #endif
 
+#define GRAVITY_CHANGE_UNIT		15322
+static short sensor_convert_data(int number)
+{
+	int temp;
+	temp = number / 64;
+	temp = temp * (SHRT_MAX / 2);
+	temp = temp / GRAVITY_CHANGE_UNIT;
+	return (short)temp;
+}
+
 static void maru_accel_input_work_func(struct work_struct *work) {
 
 	int poll_time = 200000000;
 	int enable = 0;
 	int ret = 0;
 	int accel_x, accel_y, accel_z;
+	short raw_x, raw_y, raw_z;
 	char sensor_data[__MAX_BUF_SENSOR];
 	struct maru_accel_data *data = container_of((struct delayed_work *)work,
 			struct maru_accel_data, work);
@@ -74,11 +86,27 @@ static void maru_accel_input_work_func(struct work_struct *work) {
 		mutex_unlock(&data->data_mutex);
 		if (!ret) {
 			sscanf(sensor_data, "%d,%d,%d", &accel_x, &accel_y, &accel_z);
-			LOG(1, "accel_set %d, %d, %d", accel_x, accel_y, accel_z);
+			LOG(1, "accel_set act %d, %d, %d", accel_x, accel_y, accel_z);
+			raw_x = sensor_convert_data(accel_x);
+			raw_y = sensor_convert_data(accel_y);
+			raw_z = sensor_convert_data(accel_z);
+			LOG(1, "accel_set raw %d, %d, %d", raw_x, raw_y, raw_z);
 
-			input_report_rel(data->input_data, REL_RX, accel_x);
-			input_report_rel(data->input_data, REL_RY, accel_y);
-			input_report_rel(data->input_data, REL_RZ, accel_z);
+			if (raw_x == 0) {
+				raw_x = 1;
+			}
+
+			if (raw_y == 0) {
+				raw_y = 1;
+			}
+
+			if (raw_z == 0) {
+				raw_z = 1;
+			}
+
+			input_report_rel(data->input_data, REL_X, raw_x);
+			input_report_rel(data->input_data, REL_Y, raw_y);
+			input_report_rel(data->input_data, REL_Z, raw_z);
 			input_sync(data->input_data);
 		}
 	}
@@ -236,10 +264,9 @@ static int set_initial_value(struct maru_accel_data *data)
 {
 	int delay = 0;
 	int ret = 0;
-	int enable = 0;
 	char sensor_data [__MAX_BUF_SENSOR];
 
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	memset(sensor_data, 0, sizeof(sensor_data));
 
 	ret = get_sensor_data(sensor_type_accel_delay, sensor_data);
 	if (ret) {
@@ -248,15 +275,6 @@ static int set_initial_value(struct maru_accel_data *data)
 	}
 
 	delay = sensor_atoi(sensor_data);
-
-	ret = get_sensor_data(sensor_type_accel_enable, sensor_data);
-	if (ret) {
-		ERR("failed to get initial enable");
-		return ret;
-	}
-
-	enable = sensor_atoi(sensor_data);
-
 	if (delay < 0) {
 		ERR("weird value is set initial delay");
 		return ret;
@@ -264,10 +282,11 @@ static int set_initial_value(struct maru_accel_data *data)
 
 	atomic_set(&data->poll_delay, delay);
 
-	if (enable) {
-		atomic_set(&data->enable, 1);
-		schedule_delayed_work(&data->work, 0);
-	}
+	memset(sensor_data, 0, sizeof(sensor_data));
+	sensor_data[0] = '0';
+
+	set_sensor_data(sensor_type_accel_enable, sensor_data);
+	atomic_set(&data->enable, 0);
 
 	return ret;
 }
@@ -289,9 +308,9 @@ static int create_input_device(struct maru_accel_data *data)
 
 	set_bit(EV_REL, input_data->evbit);
 	set_bit(EV_SYN, input_data->evbit);
-	input_set_capability(input_data, EV_REL, REL_RX);
-	input_set_capability(input_data, EV_REL, REL_RY);
-	input_set_capability(input_data, EV_REL, REL_RZ);
+	input_set_capability(input_data, EV_REL, REL_X);
+	input_set_capability(input_data, EV_REL, REL_Y);
+	input_set_capability(input_data, EV_REL, REL_Z);
 
 	data->input_data = input_data;
 
