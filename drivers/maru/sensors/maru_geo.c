@@ -48,20 +48,26 @@ static struct device *geo_sensor_device;
 #ifdef SUPPORT_LEGACY_SENSOR
 static struct device *l_geo_sensor_device;
 #endif
+ 
+static short sensor_convert_data(int number)
+{
+	return (short) ((number * 5) / 3); // divided by 0.6
+}
 
 static void maru_geo_input_work_func(struct work_struct *work) {
 
 	int poll_time = 200000000;
 	int enable = 0;
 	int ret = 0;
-	int geo_x, geo_y, geo_z, hdst;
+	int geo_x, geo_y, geo_z, hdst = 4;
+	short raw_x, raw_y, raw_z;
 	char sensor_data[__MAX_BUF_SENSOR];
 	struct maru_geo_data *data = container_of((struct delayed_work *)work,
 			struct maru_geo_data, work);
 
 	LOG(1, "maru_geo_input_work_func starts");
 
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	memset(sensor_data, 0, sizeof(sensor_data));
 	poll_time = atomic_read(&data->poll_delay);
 
 	mutex_lock(&data->data_mutex);
@@ -70,15 +76,20 @@ static void maru_geo_input_work_func(struct work_struct *work) {
 
 	if (enable) {
 		mutex_lock(&data->data_mutex);
-		ret = get_sensor_data(sensor_type_tilt, sensor_data);
+		ret = get_sensor_data(sensor_type_mag, sensor_data);
 		mutex_unlock(&data->data_mutex);
 		if (!ret) {
-			sscanf(sensor_data, "%d %d %d %d", &geo_x, &geo_y, &geo_z, &hdst);
-			LOG(1, "geo_set %d, %d, %d, %d", geo_x, geo_y, geo_z, hdst);
+			sscanf(sensor_data, "%d %d %d", &geo_x, &geo_y, &geo_z);
+			LOG(1, "geo_set %d, %d, %d, %d", geo_x, geo_y, geo_z);
 
-			input_report_rel(data->input_data, REL_RX, geo_x);
-			input_report_rel(data->input_data, REL_RY, geo_y);
-			input_report_rel(data->input_data, REL_RZ, geo_z);
+			raw_x = sensor_convert_data(geo_x);
+			raw_y = sensor_convert_data(geo_y);
+			raw_z = sensor_convert_data(geo_z);
+			LOG(KERN_DEBUG, "geo_set raw %d, %d, %d, %d", raw_x, raw_y, raw_z, hdst);
+
+			input_report_rel(data->input_data, REL_RX, raw_x);
+			input_report_rel(data->input_data, REL_RY, raw_y);
+			input_report_rel(data->input_data, REL_RZ, raw_z);
 			input_report_rel(data->input_data, REL_HWHEEL, hdst);
 			input_sync(data->input_data);
 		}
@@ -250,10 +261,9 @@ static int set_initial_value(struct maru_geo_data *data)
 {
 	int delay = 0;
 	int ret = 0;
-	int enable = 0;
 	char sensor_data [__MAX_BUF_SENSOR];
 
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	memset(sensor_data, 0, sizeof(sensor_data));
 
 	ret = get_sensor_data(sensor_type_geo_delay, sensor_data);
 	if (ret) {
@@ -262,15 +272,6 @@ static int set_initial_value(struct maru_geo_data *data)
 	}
 
 	delay = sensor_atoi(sensor_data);
-
-	ret = get_sensor_data(sensor_type_geo_enable, sensor_data);
-	if (ret) {
-		ERR("failed to get initial enable");
-		return ret;
-	}
-
-	enable = sensor_atoi(sensor_data);
-
 	if (delay < 0) {
 		ERR("weird value is set initial delay");
 		return ret;
@@ -278,10 +279,10 @@ static int set_initial_value(struct maru_geo_data *data)
 
 	atomic_set(&data->poll_delay, delay);
 
-	if (enable) {
-		atomic_set(&data->enable, 1);
-		schedule_delayed_work(&data->work, 0);
-	}
+	memset(sensor_data, 0, sizeof(sensor_data));
+	sensor_data[0] = '0';
+	set_sensor_data(sensor_type_geo_enable, sensor_data);
+	atomic_set(&data->enable, 0);
 
 	return ret;
 }
