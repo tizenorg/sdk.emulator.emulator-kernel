@@ -1,0 +1,8 @@
+Code-Review+1: Alice Liu <alice.liu@intel.com>
+Code-Review+2: Stéphane Desneux (sdx) <stephane.desneux@open.eurogiciel.org>
+Verified+1: Stéphane Desneux (sdx) <stephane.desneux@open.eurogiciel.org>
+Submitted-by: Stéphane Desneux (sdx) <stephane.desneux@open.eurogiciel.org>
+Submitted-at: Wed, 29 Oct 2014 06:31:58 -0700
+Reviewed-on: https://review.tizen.org/gerrit/29540
+Project: sdk/emulator/emulator-kernel
+Branch: refs/heads/tizen_3.0.2014.q3_common
