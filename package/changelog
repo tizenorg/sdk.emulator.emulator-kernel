@@ -1,3 +1,18 @@
+* 2.0.5
+- packaging: build only for emulator supported target
+- VIGS: Remove rotation definitions
+- packaging: workaround missing v3.12.18 tag from upstream git
+- packaging: makes repo / tarball name matching and other config fixes
+- perf tools: define _DEFAULT_SOURCE for glibc_2.20
+- sensor: added pressure, ultraviolet, and hrm sensor
+- Revert "uname: Add Emulator specific name"
+- remove IVI specific config file
+- config: enable CONFIG_FHANDLE
+== Alice Liu <alice.liu@intel.com> 2014-11-07
+* 2.0.4
+- packaging: Initial packaging on 3.12.18 for Tizen
+- package: Prevent marking "+" at kernel version
+== Alice Liu <alice.liu@intel.com> 2014-11-07
 * 2.0.3
 - VIGS: Implement plane flip/rotate
 - VIGS: Support YUV420 planar format
