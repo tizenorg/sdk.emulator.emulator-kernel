@@ -1,3 +1,7 @@
+* 2.0.6
+- v4l2-core: Modified error code in v4l_enumstd()
+- config: turn SMP on
+== Alice Liu <alice.liu@intel.com> 2014-11-10
 * 2.0.5
 - packaging: build only for emulator supported target
 - VIGS: Remove rotation definitions
