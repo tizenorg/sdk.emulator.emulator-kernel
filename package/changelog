@@ -1,3 +1,6 @@
+* 2.0.6
+- config: turn SMP on
+== Alice Liu <alice.liu@intel.com> 2014-11-10
 * 2.0.5
 - packaging: build only for emulator supported target
 - VIGS: Remove rotation definitions
