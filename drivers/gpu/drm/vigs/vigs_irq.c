@@ -78,7 +78,7 @@ void vigs_disable_vblank(struct drm_device *drm_dev, int crtc)
     writel(value, vigs_dev->io_map->handle + VIGS_REG_CON);
 }
 
-irqreturn_t vigs_irq_handler(DRM_IRQ_ARGS)
+irqreturn_t vigs_irq_handler(int irq, void *arg)
 {
     struct drm_device *drm_dev = (struct drm_device*)arg;
     struct vigs_device *vigs_dev = drm_dev->dev_private;

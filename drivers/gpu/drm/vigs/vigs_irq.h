@@ -7,6 +7,6 @@ int vigs_enable_vblank(struct drm_device *drm_dev, int crtc);
 
 void vigs_disable_vblank(struct drm_device *drm_dev, int crtc);
 
-irqreturn_t vigs_irq_handler(DRM_IRQ_ARGS);
+irqreturn_t vigs_irq_handler(int irq, void *arg);
 
 #endif
