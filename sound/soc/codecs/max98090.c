@@ -255,6 +255,7 @@ static struct reg_default max98090_reg[] = {
 static bool max98090_volatile_register(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
+	case M98090_REG_SOFTWARE_RESET:
 	case M98090_REG_DEVICE_STATUS:
 	case M98090_REG_JACK_STATUS:
 	case M98090_REG_REVISION_ID:
@@ -1841,8 +1842,8 @@ static int max98090_dai_hw_params(struct snd_pcm_substream *substream,
 
 	max98090->lrclk = params_rate(params);
 
-	switch (params_format(params)) {
-	case SNDRV_PCM_FORMAT_S16_LE:
+	switch (params_width(params)) {
+	case 16:
 		snd_soc_update_bits(codec, M98090_REG_INTERFACE_FORMAT,
 			M98090_WS_MASK, 0);
 		break;
@@ -2249,7 +2250,7 @@ static int max98090_probe(struct snd_soc_codec *codec)
 	/* Register for interrupts */
 	dev_dbg(codec->dev, "irq = %d\n", max98090->irq);
 
-	ret = request_threaded_irq(max98090->irq, NULL,
+	ret = devm_request_threaded_irq(codec->dev, max98090->irq, NULL,
 		max98090_interrupt, IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 		"max98090_interrupt", codec);
 	if (ret < 0) {
@@ -2359,6 +2360,8 @@ static int max98090_runtime_resume(struct device *dev)
 	struct max98090_priv *max98090 = dev_get_drvdata(dev);
 
 	regcache_cache_only(max98090->regmap, false);
+
+	max98090_reset(max98090);
 
 	regcache_sync(max98090->regmap);
 

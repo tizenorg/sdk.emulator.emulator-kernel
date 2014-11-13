@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Michael Krufky (mkrufky@kernellabs.com)
+ * Copyright (C) 2010-2014 Michael Krufky (mkrufky@linuxtv.org)
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the Free
@@ -266,7 +266,7 @@ static int mxl111sf_adap_fe_init(struct dvb_frontend *fe)
 	struct mxl111sf_adap_state *adap_state = &state->adap_state[fe->id];
 	int err;
 
-	/* exit if we didnt initialize the driver yet */
+	/* exit if we didn't initialize the driver yet */
 	if (!state->chip_id) {
 		mxl_debug("driver not yet initialized, exit.");
 		goto fail;
@@ -322,7 +322,7 @@ static int mxl111sf_adap_fe_sleep(struct dvb_frontend *fe)
 	struct mxl111sf_adap_state *adap_state = &state->adap_state[fe->id];
 	int err;
 
-	/* exit if we didnt initialize the driver yet */
+	/* exit if we didn't initialize the driver yet */
 	if (!state->chip_id) {
 		mxl_debug("driver not yet initialized, exit.");
 		goto fail;
@@ -1421,7 +1421,7 @@ static struct usb_driver mxl111sf_usb_driver = {
 
 module_usb_driver(mxl111sf_usb_driver);
 
-MODULE_AUTHOR("Michael Krufky <mkrufky@kernellabs.com>");
+MODULE_AUTHOR("Michael Krufky <mkrufky@linuxtv.org>");
 MODULE_DESCRIPTION("Driver for MaxLinear MxL111SF");
 MODULE_VERSION("1.0");
 MODULE_LICENSE("GPL");

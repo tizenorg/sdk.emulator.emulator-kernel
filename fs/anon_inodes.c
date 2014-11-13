@@ -41,19 +41,8 @@ static const struct dentry_operations anon_inodefs_dentry_operations = {
 static struct dentry *anon_inodefs_mount(struct file_system_type *fs_type,
 				int flags, const char *dev_name, void *data)
 {
-	struct dentry *root;
-	root = mount_pseudo(fs_type, "anon_inode:", NULL,
+	return mount_pseudo(fs_type, "anon_inode:", NULL,
 			&anon_inodefs_dentry_operations, ANON_INODE_FS_MAGIC);
-	if (!IS_ERR(root)) {
-		struct super_block *s = root->d_sb;
-		anon_inode_inode = alloc_anon_inode(s);
-		if (IS_ERR(anon_inode_inode)) {
-			dput(root);
-			deactivate_locked_super(s);
-			root = ERR_CAST(anon_inode_inode);
-		}
-	}
-	return root;
 }
 
 static struct file_system_type anon_inode_fs_type = {
@@ -61,72 +50,6 @@ static struct file_system_type anon_inode_fs_type = {
 	.mount		= anon_inodefs_mount,
 	.kill_sb	= kill_anon_super,
 };
-
-/**
- * anon_inode_getfile_private - creates a new file instance by hooking it up to an
- *                      anonymous inode, and a dentry that describe the "class"
- *                      of the file
- *
- * @name:    [in]    name of the "class" of the new file
- * @fops:    [in]    file operations for the new file
- * @priv:    [in]    private data for the new file (will be file's private_data)
- * @flags:   [in]    flags
- *
- *
- * Similar to anon_inode_getfile, but each file holds a single inode.
- *
- */
-struct file *anon_inode_getfile_private(const char *name,
-					const struct file_operations *fops,
-					void *priv, int flags)
-{
-	struct qstr this;
-	struct path path;
-	struct file *file;
-	struct inode *inode;
-
-	if (fops->owner && !try_module_get(fops->owner))
-		return ERR_PTR(-ENOENT);
-
-	inode = alloc_anon_inode(anon_inode_mnt->mnt_sb);
-	if (IS_ERR(inode)) {
-		file = ERR_PTR(-ENOMEM);
-		goto err_module;
-	}
-
-	/*
-	 * Link the inode to a directory entry by creating a unique name
-	 * using the inode sequence number.
-	 */
-	file = ERR_PTR(-ENOMEM);
-	this.name = name;
-	this.len = strlen(name);
-	this.hash = 0;
-	path.dentry = d_alloc_pseudo(anon_inode_mnt->mnt_sb, &this);
-	if (!path.dentry)
-		goto err_module;
-
-	path.mnt = mntget(anon_inode_mnt);
-
-	d_instantiate(path.dentry, inode);
-
-	file = alloc_file(&path, OPEN_FMODE(flags), fops);
-	if (IS_ERR(file))
-		goto err_dput;
-
-	file->f_mapping = inode->i_mapping;
-	file->f_flags = flags & (O_ACCMODE | O_NONBLOCK);
-	file->private_data = priv;
-
-	return file;
-
-err_dput:
-	path_put(&path);
-err_module:
-	module_put(fops->owner);
-	return file;
-}
-EXPORT_SYMBOL_GPL(anon_inode_getfile_private);
 
 /**
  * anon_inode_getfile - creates a new file instance by hooking it up to an
@@ -241,22 +164,15 @@ EXPORT_SYMBOL_GPL(anon_inode_getfd);
 
 static int __init anon_inode_init(void)
 {
-	int error;
-
-	error = register_filesystem(&anon_inode_fs_type);
-	if (error)
-		goto err_exit;
 	anon_inode_mnt = kern_mount(&anon_inode_fs_type);
-	if (IS_ERR(anon_inode_mnt)) {
-		error = PTR_ERR(anon_inode_mnt);
-		goto err_unregister_filesystem;
-	}
-	return 0;
+	if (IS_ERR(anon_inode_mnt))
+		panic("anon_inode_init() kernel mount failed (%ld)\n", PTR_ERR(anon_inode_mnt));
 
-err_unregister_filesystem:
-	unregister_filesystem(&anon_inode_fs_type);
-err_exit:
-	panic(KERN_ERR "anon_inode_init() failed (%d)\n", error);
+	anon_inode_inode = alloc_anon_inode(anon_inode_mnt->mnt_sb);
+	if (IS_ERR(anon_inode_inode))
+		panic("anon_inode_init() inode allocation failed (%ld)\n", PTR_ERR(anon_inode_inode));
+
+	return 0;
 }
 
 fs_initcall(anon_inode_init);
