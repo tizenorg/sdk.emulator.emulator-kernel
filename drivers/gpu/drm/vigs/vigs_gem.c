@@ -285,11 +285,6 @@ void vigs_gem_free_object(struct drm_gem_object *gem)
     vigs_gem_cleanup(vigs_gem);
 }
 
-int vigs_gem_init_object(struct drm_gem_object *gem)
-{
-    return 0;
-}
-
 int vigs_gem_open_object(struct drm_gem_object *gem,
                          struct drm_file *file_priv)
 {

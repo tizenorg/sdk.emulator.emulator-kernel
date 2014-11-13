@@ -215,7 +215,6 @@ static struct drm_driver vigs_drm_driver =
     .enable_vblank = vigs_enable_vblank,
     .disable_vblank = vigs_disable_vblank,
     .irq_handler = vigs_irq_handler,
-    .gem_init_object = vigs_gem_init_object,
     .gem_free_object = vigs_gem_free_object,
     .gem_open_object = vigs_gem_open_object,
     .gem_close_object = vigs_gem_close_object,
