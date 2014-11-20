@@ -1,0 +1,8 @@
+Code-Review+1: Alice Liu <alice.liu@intel.com>
+Code-Review+2: SeokYeon Hwang <syeon.hwang@samsung.com>
+Verified+1: SeokYeon Hwang <syeon.hwang@samsung.com>
+Submitted-by: SeokYeon Hwang <syeon.hwang@samsung.com>
+Submitted-at: Thu, 20 Nov 2014 03:28:55 -0800
+Reviewed-on: https://review.tizen.org/gerrit/30518
+Project: sdk/emulator/emulator-kernel
+Branch: refs/heads/tizen_next
