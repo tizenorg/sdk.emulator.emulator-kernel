@@ -1,0 +1,8 @@
+Code-Review+1: José Bollo <jose.bollo@open.eurogiciel.org>
+Verified+1: José Bollo <jose.bollo@open.eurogiciel.org>
+Code-Review+2: Casey Schaufler <casey.schaufler@intel.com>
+Submitted-by: Casey Schaufler <casey.schaufler@intel.com>
+Submitted-at: Mon, 01 Dec 2014 11:25:30 -0800
+Reviewed-on: https://review.tizen.org/gerrit/31089
+Project: sdk/emulator/emulator-kernel
+Branch: refs/heads/tizen_next_linux_3.14
