@@ -101,6 +101,7 @@ enum device_cmd {							// driver and device
 	DEVICE_CMD_GET_ELEMENT,
 	DEVICE_CMD_GET_CONTEXT_INDEX,
 	DEVICE_CMD_GET_DEVICE_INFO,
+	DEVICE_CMD_GET_PROFILE_STATUS,
 };
 
 /* Define i/o and api values.  */
@@ -113,6 +114,7 @@ enum ioctl_cmd {							// plugin and driver
 	IOCTL_CMD_TRY_SECURE_BUFFER,
 	IOCTL_CMD_RELEASE_BUFFER,
 	IOCTL_CMD_INVOKE_API_AND_GET_DATA,
+	IOCTL_CMD_GET_PROFILE_STATUS,
 };
 
 enum codec_api_index {
@@ -200,6 +202,7 @@ struct brillcodec_device {
 	uint32_t major_version;
 	uint8_t minor_version;
 	uint16_t memory_monopolizing;
+	uint8_t enable_profile;
 	bool codec_elem_cached;
 	struct codec_element codec_elem;
 };
@@ -668,6 +671,16 @@ static long brillcodec_ioctl(struct file *file,
 		}
 		break;
 	}
+	case IOCTL_CMD_GET_PROFILE_STATUS:
+	{
+		DEBUG("%s profile status: %d\n", DEVICE_NAME, brillcodec_device->enable_profile);
+
+		if (copy_to_user((void *)arg, &brillcodec_device->enable_profile, sizeof(uint8_t))) {
+			ERROR("ioctl: failed to copy data to user\n");
+			ret = -EIO;
+		}
+		break;
+	}
 	default:
 		DEBUG("no available command.");
 		ret = -EINVAL;
@@ -1005,6 +1018,10 @@ static bool get_device_info(void)
 	// check memory monopolizing API
 	brillcodec_device->memory_monopolizing = (info & 0xFFFF0000) >> 16;
 
+	// check profile status
+	info = readl(brillcodec_device->ioaddr + DEVICE_CMD_GET_PROFILE_STATUS);
+	brillcodec_device->enable_profile = (uint8_t)info;
+
 	return true;
 }
 
@@ -1117,6 +1134,10 @@ static int brillcodec_probe(struct pci_dev *pci_dev,
 	printk(KERN_INFO "%s: driver is probed. driver version [%d], device version [%d.%d]\n",
 				DEVICE_NAME, DRIVER_VERSION, brillcodec_device->major_version,
 				brillcodec_device->minor_version);
+
+	if (brillcodec_device->enable_profile) {
+		printk(KERN_INFO "%s: profile enabled\n", DEVICE_NAME);
+	}
 
 	return 0;
 }
