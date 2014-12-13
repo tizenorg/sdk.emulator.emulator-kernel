@@ -265,6 +265,7 @@ int smack_privileged(int cap);
 /*
  * Shared data.
  */
+extern int smack_enabled;
 extern int smack_cipso_direct;
 extern int smack_cipso_mapped;
 extern struct smack_known *smack_net_ambient;
