@@ -87,6 +87,8 @@ static unsigned int index = 0;
 static void vq_hwkey_callback(struct virtqueue *vq)
 {
     struct EmulHwkeyEvent hwkey_event;
+    unsigned int len = 0;
+    void *token = NULL;
 #if 0
     printk(KERN_INFO "vq hwkey callback\n");
 #endif
@@ -95,20 +97,24 @@ static void vq_hwkey_callback(struct virtqueue *vq)
         if (hwkey_event.event_type == 0) {
             break;
         }
-        printk(KERN_ERR "keycode: %d, event_type: %d, vqidx: %d\n", hwkey_event.keycode, hwkey_event.event_type, vqidx);
+        printk(KERN_INFO "keycode: %d, event_type: %d, vqidx: %d\n", hwkey_event.keycode, hwkey_event.event_type, vqidx);
         if (hwkey_event.event_type == KEY_PRESSED) {
-          input_event(vh->idev, EV_KEY, hwkey_event.keycode, true);
+            input_event(vh->idev, EV_KEY, hwkey_event.keycode, true);
         }
         else if (hwkey_event.event_type == KEY_RELEASED) {
-          input_event(vh->idev, EV_KEY, hwkey_event.keycode, false);
+            input_event(vh->idev, EV_KEY, hwkey_event.keycode, false);
         }
         else {
-          printk(KERN_ERR "Unknown event type\n");
-          return;
+            printk(KERN_ERR "Unknown event type\n");
         }
 
         input_sync(vh->idev);
         memset(&vh->vbuf[vqidx], 0x00, sizeof(hwkey_event));
+        token = virtqueue_get_buf(vh->vq, &len);
+        if (len > 0) {
+            err = virtqueue_add_inbuf(vh->vq, vh->sg, MAX_BUF_COUNT, token, GFP_ATOMIC);
+        }
+
         vqidx++;
         if (vqidx == MAX_BUF_COUNT) {
             vqidx = 0;
