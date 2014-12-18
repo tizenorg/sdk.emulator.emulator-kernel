@@ -88,8 +88,8 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 		return;
 	}
 
-        VKBD_LOG(KERN_DEBUG, "vqidx: %d\n", vqidx);
-        while (1) {
+	VKBD_LOG(KERN_DEBUG, "vqidx: %d\n", vqidx);
+	while (1) {
 		memcpy(&kbdevent, &vkbd->kbdevt[vqidx], sizeof(kbdevent));
 #if 1
 		if (kbdevent.code == 0) {
