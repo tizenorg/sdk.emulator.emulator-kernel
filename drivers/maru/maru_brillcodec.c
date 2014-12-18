@@ -422,12 +422,12 @@ static void dispose_device_memory(uint32_t context_id)
 
 static inline bool is_memory_monopolizing_api(int api_index) {
 #ifdef SUPPORT_MEMORY_MONOPOLIZING
-    if (brillcodec_device->memory_monopolizing & (1 << api_index)) {
+	if (brillcodec_device->memory_monopolizing & (1 << api_index)) {
 		DEBUG("API [%d] monopolize memory slot\n", api_index);
-        return true;
-    }
+		return true;
+	}
 #endif
-    return false;
+	return false;
 }
 
 static void cache_info(void)
