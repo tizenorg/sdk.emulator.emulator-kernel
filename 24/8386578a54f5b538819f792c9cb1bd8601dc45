@@ -1,0 +1,7 @@
+Code-Review+2: SeokYeon Hwang <syeon.hwang@samsung.com>
+Verified+1: SeokYeon Hwang <syeon.hwang@samsung.com>
+Submitted-by: SeokYeon Hwang <syeon.hwang@samsung.com>
+Submitted-at: Thu, 18 Dec 2014 18:29:38 -0800
+Reviewed-on: https://review.tizen.org/gerrit/32560
+Project: sdk/emulator/emulator-kernel
+Branch: refs/heads/tizen_next_linux_3.14
