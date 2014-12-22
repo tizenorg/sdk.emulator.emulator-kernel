@@ -145,6 +145,55 @@
 static DEFINE_MUTEX(proto_list_mutex);
 static LIST_HEAD(proto_list);
 
+/**
+ * sk_ns_capable - General socket capability test
+ * @sk: Socket to use a capability on or through
+ * @user_ns: The user namespace of the capability to use
+ * @cap: The capability to use
+ *
+ * Test to see if the opener of the socket had when the socket was
+ * created and the current process has the capability @cap in the user
+ * namespace @user_ns.
+ */
+bool sk_ns_capable(const struct sock *sk,
+		   struct user_namespace *user_ns, int cap)
+{
+	return file_ns_capable(sk->sk_socket->file, user_ns, cap) &&
+		ns_capable(user_ns, cap);
+}
+EXPORT_SYMBOL(sk_ns_capable);
+
+/**
+ * sk_capable - Socket global capability test
+ * @sk: Socket to use a capability on or through
+ * @cap: The global capbility to use
+ *
+ * Test to see if the opener of the socket had when the socket was
+ * created and the current process has the capability @cap in all user
+ * namespaces.
+ */
+bool sk_capable(const struct sock *sk, int cap)
+{
+	return sk_ns_capable(sk, &init_user_ns, cap);
+}
+EXPORT_SYMBOL(sk_capable);
+
+/**
+ * sk_net_capable - Network namespace socket capability test
+ * @sk: Socket to use a capability on or through
+ * @cap: The capability to use
+ *
+ * Test to see if the opener of the socket had when the socke was created
+ * and the current process has the capability @cap over the network namespace
+ * the socket is a member of.
+ */
+bool sk_net_capable(const struct sock *sk, int cap)
+{
+	return sk_ns_capable(sk, sock_net(sk)->user_ns, cap);
+}
+EXPORT_SYMBOL(sk_net_capable);
+
+
 #ifdef CONFIG_MEMCG_KMEM
 int mem_cgroup_sockets_init(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
 {
@@ -474,12 +523,6 @@ discard_and_relse:
 	goto out;
 }
 EXPORT_SYMBOL(sk_receive_skb);
-
-void sk_reset_txq(struct sock *sk)
-{
-	sk_tx_queue_clear(sk);
-}
-EXPORT_SYMBOL(sk_reset_txq);
 
 struct dst_entry *__sk_dst_check(struct sock *sk, u32 cookie)
 {
@@ -914,6 +957,13 @@ set_rcvbuf:
 		}
 		break;
 #endif
+
+	case SO_MAX_PACING_RATE:
+		sk->sk_max_pacing_rate = val;
+		sk->sk_pacing_rate = min(sk->sk_pacing_rate,
+					 sk->sk_max_pacing_rate);
+		break;
+
 	default:
 		ret = -ENOPROTOOPT;
 		break;
@@ -924,8 +974,8 @@ set_rcvbuf:
 EXPORT_SYMBOL(sock_setsockopt);
 
 
-void cred_to_ucred(struct pid *pid, const struct cred *cred,
-		   struct ucred *ucred)
+static void cred_to_ucred(struct pid *pid, const struct cred *cred,
+			  struct ucred *ucred)
 {
 	ucred->pid = pid_vnr(pid);
 	ucred->uid = ucred->gid = -1;
@@ -936,7 +986,6 @@ void cred_to_ucred(struct pid *pid, const struct cred *cred,
 		ucred->gid = from_kgid_munged(current_ns, cred->egid);
 	}
 }
-EXPORT_SYMBOL_GPL(cred_to_ucred);
 
 int sock_getsockopt(struct socket *sock, int level, int optname,
 		    char __user *optval, int __user *optlen)
@@ -1167,6 +1216,10 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 		v.val = sock_flag(sk, SOCK_FILTER_LOCKED);
 		break;
 
+	case SO_BPF_EXTENSIONS:
+		v.val = bpf_tell_extensions();
+		break;
+
 	case SO_SELECT_ERR_QUEUE:
 		v.val = sock_flag(sk, SOCK_SELECT_ERR_QUEUE);
 		break;
@@ -1176,6 +1229,10 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 		v.val = sk->sk_ll_usec;
 		break;
 #endif
+
+	case SO_MAX_PACING_RATE:
+		v.val = sk->sk_max_pacing_rate;
+		break;
 
 	default:
 		return -ENOPROTOOPT;
@@ -1303,19 +1360,7 @@ static void sk_prot_free(struct proto *prot, struct sock *sk)
 	module_put(owner);
 }
 
-#if IS_ENABLED(CONFIG_NET_CLS_CGROUP)
-void sock_update_classid(struct sock *sk)
-{
-	u32 classid;
-
-	classid = task_cls_classid(current);
-	if (classid != sk->sk_classid)
-		sk->sk_classid = classid;
-}
-EXPORT_SYMBOL(sock_update_classid);
-#endif
-
-#if IS_ENABLED(CONFIG_NETPRIO_CGROUP)
+#if IS_ENABLED(CONFIG_CGROUP_NET_PRIO)
 void sock_update_netprioidx(struct sock *sk)
 {
 	if (in_interrupt())
@@ -1661,22 +1706,6 @@ struct sk_buff *sock_wmalloc(struct sock *sk, unsigned long size, int force,
 EXPORT_SYMBOL(sock_wmalloc);
 
 /*
- * Allocate a skb from the socket's receive buffer.
- */
-struct sk_buff *sock_rmalloc(struct sock *sk, unsigned long size, int force,
-			     gfp_t priority)
-{
-	if (force || atomic_read(&sk->sk_rmem_alloc) < sk->sk_rcvbuf) {
-		struct sk_buff *skb = alloc_skb(size, priority);
-		if (skb) {
-			skb_set_owner_r(skb, sk);
-			return skb;
-		}
-	}
-	return NULL;
-}
-
-/*
  * Allocate a memory block from the socket's option memory buffer.
  */
 void *sock_kmalloc(struct sock *sk, int size, gfp_t priority)
@@ -1838,7 +1867,17 @@ EXPORT_SYMBOL(sock_alloc_send_skb);
 /* On 32bit arches, an skb frag is limited to 2^15 */
 #define SKB_FRAG_PAGE_ORDER	get_order(32768)
 
-bool sk_page_frag_refill(struct sock *sk, struct page_frag *pfrag)
+/**
+ * skb_page_frag_refill - check that a page_frag contains enough room
+ * @sz: minimum size of the fragment we want to get
+ * @pfrag: pointer to page_frag
+ * @prio: priority for memory allocation
+ *
+ * Note: While this allocator tries to use high order pages, there is
+ * no guarantee that allocations succeed. Therefore, @sz MUST be
+ * less or equal than PAGE_SIZE.
+ */
+bool skb_page_frag_refill(unsigned int sz, struct page_frag *pfrag, gfp_t prio)
 {
 	int order;
 
@@ -1847,16 +1886,14 @@ bool sk_page_frag_refill(struct sock *sk, struct page_frag *pfrag)
 			pfrag->offset = 0;
 			return true;
 		}
-		if (pfrag->offset < pfrag->size)
+		if (pfrag->offset + sz <= pfrag->size)
 			return true;
 		put_page(pfrag->page);
 	}
 
-	/* We restrict high order allocations to users that can afford to wait */
-	order = (sk->sk_allocation & __GFP_WAIT) ? SKB_FRAG_PAGE_ORDER : 0;
-
+	order = SKB_FRAG_PAGE_ORDER;
 	do {
-		gfp_t gfp = sk->sk_allocation;
+		gfp_t gfp = prio;
 
 		if (order)
 			gfp |= __GFP_COMP | __GFP_NOWARN | __GFP_NORETRY;
@@ -1867,6 +1904,15 @@ bool sk_page_frag_refill(struct sock *sk, struct page_frag *pfrag)
 			return true;
 		}
 	} while (--order >= 0);
+
+	return false;
+}
+EXPORT_SYMBOL(skb_page_frag_refill);
+
+bool sk_page_frag_refill(struct sock *sk, struct page_frag *pfrag)
+{
+	if (likely(skb_page_frag_refill(32U, pfrag, sk->sk_allocation)))
+		return true;
 
 	sk_enter_memory_pressure(sk);
 	sk_stream_moderate_sndbuf(sk);
@@ -2321,6 +2367,7 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 	sk->sk_ll_usec		=	sysctl_net_busy_read;
 #endif
 
+	sk->sk_max_pacing_rate = ~0U;
 	sk->sk_pacing_rate = ~0U;
 	/*
 	 * Before updating sk_refcnt, we must commit prior changes to memory

@@ -690,7 +690,7 @@ static void max310x_handle_tx(struct uart_port *port)
 			max310x_port_write(port, MAX310X_THR_REG,
 					   xmit->buf[xmit->tail]);
 			xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
-		};
+		}
 	}
 
 	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
@@ -842,7 +842,7 @@ static void max310x_set_termios(struct uart_port *port,
 	if (termios->c_iflag & INPCK)
 		port->read_status_mask |= MAX310X_LSR_RXPAR_BIT |
 					  MAX310X_LSR_FRERR_BIT;
-	if (termios->c_iflag & (BRKINT | PARMRK))
+	if (termios->c_iflag & (IGNBRK | BRKINT | PARMRK))
 		port->read_status_mask |= MAX310X_LSR_RXBRK_BIT;
 
 	/* Set status ignore mask */

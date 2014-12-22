@@ -153,6 +153,70 @@ u32 rs600_page_flip(struct radeon_device *rdev, int crtc_id, u64 crtc_base)
 	return RREG32(AVIVO_D1GRPH_UPDATE + radeon_crtc->crtc_offset) & AVIVO_D1GRPH_SURFACE_UPDATE_PENDING;
 }
 
+void avivo_program_fmt(struct drm_encoder *encoder)
+{
+	struct drm_device *dev = encoder->dev;
+	struct radeon_device *rdev = dev->dev_private;
+	struct radeon_encoder *radeon_encoder = to_radeon_encoder(encoder);
+	struct drm_connector *connector = radeon_get_connector_for_encoder(encoder);
+	int bpc = 0;
+	u32 tmp = 0;
+	enum radeon_connector_dither dither = RADEON_FMT_DITHER_DISABLE;
+
+	if (connector) {
+		struct radeon_connector *radeon_connector = to_radeon_connector(connector);
+		bpc = radeon_get_monitor_bpc(connector);
+		dither = radeon_connector->dither;
+	}
+
+	/* LVDS FMT is set up by atom */
+	if (radeon_encoder->devices & ATOM_DEVICE_LCD_SUPPORT)
+		return;
+
+	if (bpc == 0)
+		return;
+
+	switch (bpc) {
+	case 6:
+		if (dither == RADEON_FMT_DITHER_ENABLE)
+			/* XXX sort out optimal dither settings */
+			tmp |= AVIVO_TMDS_BIT_DEPTH_CONTROL_SPATIAL_DITHER_EN;
+		else
+			tmp |= AVIVO_TMDS_BIT_DEPTH_CONTROL_TRUNCATE_EN;
+		break;
+	case 8:
+		if (dither == RADEON_FMT_DITHER_ENABLE)
+			/* XXX sort out optimal dither settings */
+			tmp |= (AVIVO_TMDS_BIT_DEPTH_CONTROL_SPATIAL_DITHER_EN |
+				AVIVO_TMDS_BIT_DEPTH_CONTROL_SPATIAL_DITHER_DEPTH);
+		else
+			tmp |= (AVIVO_TMDS_BIT_DEPTH_CONTROL_TRUNCATE_EN |
+				AVIVO_TMDS_BIT_DEPTH_CONTROL_TRUNCATE_DEPTH);
+		break;
+	case 10:
+	default:
+		/* not needed */
+		break;
+	}
+
+	switch (radeon_encoder->encoder_id) {
+	case ENCODER_OBJECT_ID_INTERNAL_KLDSCP_TMDS1:
+		WREG32(AVIVO_TMDSA_BIT_DEPTH_CONTROL, tmp);
+		break;
+	case ENCODER_OBJECT_ID_INTERNAL_LVTM1:
+		WREG32(AVIVO_LVTMA_BIT_DEPTH_CONTROL, tmp);
+		break;
+	case ENCODER_OBJECT_ID_INTERNAL_KLDSCP_DVO1:
+		WREG32(AVIVO_DVOA_BIT_DEPTH_CONTROL, tmp);
+		break;
+	case ENCODER_OBJECT_ID_INTERNAL_DDI:
+		WREG32(AVIVO_DDIA_BIT_DEPTH_CONTROL, tmp);
+		break;
+	default:
+		break;
+	}
+}
+
 void rs600_pm_misc(struct radeon_device *rdev)
 {
 	int requested_index = rdev->pm.requested_power_state_index;
@@ -582,8 +646,10 @@ int rs600_gart_set_page(struct radeon_device *rdev, int i, uint64_t addr)
 		return -EINVAL;
 	}
 	addr = addr & 0xFFFFFFFFFFFFF000ULL;
-	addr |= R600_PTE_VALID | R600_PTE_SYSTEM | R600_PTE_SNOOPED;
-	addr |= R600_PTE_READABLE | R600_PTE_WRITEABLE;
+	if (addr != rdev->dummy_page.addr)
+		addr |= R600_PTE_VALID | R600_PTE_READABLE |
+			R600_PTE_WRITEABLE;
+	addr |= R600_PTE_SYSTEM | R600_PTE_SNOOPED;
 	writeq(addr, ptr + (i * 8));
 	return 0;
 }
@@ -824,6 +890,9 @@ void rs600_bandwidth_update(struct radeon_device *rdev)
 	u32 d1mode_priority_a_cnt, d2mode_priority_a_cnt;
 	/* FIXME: implement full support */
 
+	if (!rdev->mode_info.mode_config_initialized)
+		return;
+
 	radeon_update_display_priority(rdev);
 
 	if (rdev->mode_info.crtcs[0]->base.enabled)
@@ -994,6 +1063,7 @@ int rs600_resume(struct radeon_device *rdev)
 
 int rs600_suspend(struct radeon_device *rdev)
 {
+	radeon_pm_suspend(rdev);
 	r600_audio_fini(rdev);
 	r100_cp_disable(rdev);
 	radeon_wb_disable(rdev);
@@ -1004,6 +1074,7 @@ int rs600_suspend(struct radeon_device *rdev)
 
 void rs600_fini(struct radeon_device *rdev)
 {
+	radeon_pm_fini(rdev);
 	r600_audio_fini(rdev);
 	r100_cp_fini(rdev);
 	radeon_wb_fini(rdev);
@@ -1071,6 +1142,9 @@ int rs600_init(struct radeon_device *rdev)
 	if (r)
 		return r;
 	rs600_set_safe_registers(rdev);
+
+	/* Initialize power management */
+	radeon_pm_init(rdev);
 
 	rdev->accel_working = true;
 	r = rs600_startup(rdev);

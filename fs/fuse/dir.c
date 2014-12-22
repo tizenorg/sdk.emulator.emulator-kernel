@@ -112,6 +112,16 @@ void fuse_invalidate_attr(struct inode *inode)
 	get_fuse_inode(inode)->i_time = 0;
 }
 
+/**
+ * Mark the attributes as stale due to an atime change.  Avoid the invalidate if
+ * atime is not used.
+ */
+void fuse_invalidate_atime(struct inode *inode)
+{
+	if (!IS_RDONLY(inode))
+		fuse_invalidate_attr(inode);
+}
+
 /*
  * Just mark the entry as stale, so that a next attempt to look it up
  * will result in a new lookup call to userspace
@@ -188,7 +198,8 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 	inode = ACCESS_ONCE(entry->d_inode);
 	if (inode && is_bad_inode(inode))
 		goto invalid;
-	else if (fuse_dentry_time(entry) < get_jiffies_64()) {
+	else if (time_before64(fuse_dentry_time(entry), get_jiffies_64()) ||
+		 (flags & LOOKUP_REVAL)) {
 		int err;
 		struct fuse_entry_out outarg;
 		struct fuse_req *req;
@@ -342,24 +353,6 @@ int fuse_lookup_name(struct super_block *sb, u64 nodeid, struct qstr *name,
 	return err;
 }
 
-static struct dentry *fuse_materialise_dentry(struct dentry *dentry,
-					      struct inode *inode)
-{
-	struct dentry *newent;
-
-	if (inode && S_ISDIR(inode->i_mode)) {
-		struct fuse_conn *fc = get_fuse_conn(inode);
-
-		mutex_lock(&fc->inst_mutex);
-		newent = d_materialise_unique(dentry, inode);
-		mutex_unlock(&fc->inst_mutex);
-	} else {
-		newent = d_materialise_unique(dentry, inode);
-	}
-
-	return newent;
-}
-
 static struct dentry *fuse_lookup(struct inode *dir, struct dentry *entry,
 				  unsigned int flags)
 {
@@ -382,7 +375,7 @@ static struct dentry *fuse_lookup(struct inode *dir, struct dentry *entry,
 	if (inode && get_node_id(inode) == FUSE_ROOT_ID)
 		goto out_iput;
 
-	newent = fuse_materialise_dentry(entry, inode);
+	newent = d_materialise_unique(entry, inode);
 	err = PTR_ERR(newent);
 	if (IS_ERR(newent))
 		goto out_err;
@@ -601,21 +594,9 @@ static int create_new_entry(struct fuse_conn *fc, struct fuse_req *req,
 	}
 	kfree(forget);
 
-	if (S_ISDIR(inode->i_mode)) {
-		struct dentry *alias;
-		mutex_lock(&fc->inst_mutex);
-		alias = d_find_alias(inode);
-		if (alias) {
-			/* New directory must have moved since mkdir */
-			mutex_unlock(&fc->inst_mutex);
-			dput(alias);
-			iput(inode);
-			return -EBUSY;
-		}
-		d_instantiate(entry, inode);
-		mutex_unlock(&fc->inst_mutex);
-	} else
-		d_instantiate(entry, inode);
+	err = d_instantiate_no_diralias(entry, inode);
+	if (err)
+		return err;
 
 	fuse_change_entry_timeout(entry, &outarg);
 	fuse_invalidate_attr(dir);
@@ -945,7 +926,7 @@ int fuse_update_attributes(struct inode *inode, struct kstat *stat,
 	int err;
 	bool r;
 
-	if (fi->i_time < get_jiffies_64()) {
+	if (time_before64(fi->i_time, get_jiffies_64())) {
 		r = true;
 		err = fuse_do_getattr(inode, stat, file);
 	} else {
@@ -1131,7 +1112,7 @@ static int fuse_permission(struct inode *inode, int mask)
 	    ((mask & MAY_EXEC) && S_ISREG(inode->i_mode))) {
 		struct fuse_inode *fi = get_fuse_inode(inode);
 
-		if (fi->i_time < get_jiffies_64()) {
+		if (time_before64(fi->i_time, get_jiffies_64())) {
 			refreshed = true;
 
 			err = fuse_perm_getattr(inode, mask);
@@ -1284,7 +1265,7 @@ static int fuse_direntplus_link(struct file *file,
 	if (!inode)
 		goto out;
 
-	alias = fuse_materialise_dentry(dentry, inode);
+	alias = d_materialise_unique(dentry, inode);
 	err = PTR_ERR(alias);
 	if (IS_ERR(alias))
 		goto out;
@@ -1401,7 +1382,7 @@ static int fuse_readdir(struct file *file, struct dir_context *ctx)
 	}
 
 	__free_page(page);
-	fuse_invalidate_attr(inode); /* atime changed */
+	fuse_invalidate_atime(inode);
 	return err;
 }
 
@@ -1434,7 +1415,7 @@ static char *read_link(struct dentry *dentry)
 		link[req->out.args[0].size] = '\0';
  out:
 	fuse_put_request(fc, req);
-	fuse_invalidate_attr(inode); /* atime changed */
+	fuse_invalidate_atime(inode);
 	return link;
 }
 

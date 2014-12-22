@@ -375,7 +375,7 @@ void netpoll_send_skb_on_dev(struct netpoll *np, struct sk_buff *skb,
 	if (skb_queue_len(&npinfo->txq) == 0 && !netpoll_owner_active(dev)) {
 		struct netdev_queue *txq;
 
-		txq = netdev_pick_tx(dev, skb);
+		txq = netdev_pick_tx(dev, skb, NULL);
 
 		/* try until next clock tick */
 		for (tries = jiffies_to_usecs(1)/USEC_PER_POLL;
@@ -520,8 +520,8 @@ void netpoll_send_udp(struct netpoll *np, const char *msg, int len)
 		skb->protocol = eth->h_proto = htons(ETH_P_IP);
 	}
 
-	memcpy(eth->h_source, np->dev->dev_addr, ETH_ALEN);
-	memcpy(eth->h_dest, np->remote_mac, ETH_ALEN);
+	ether_addr_copy(eth->h_source, np->dev->dev_addr);
+	ether_addr_copy(eth->h_dest, np->remote_mac);
 
 	skb->dev = np->dev;
 
@@ -643,8 +643,9 @@ static void netpoll_neigh_reply(struct sk_buff *skb, struct netpoll_info *npinfo
 
 			netpoll_send_skb(np, send_skb);
 
-			/* If there are several rx_hooks for the same address,
-			   we're fine by sending a single reply */
+			/* If there are several rx_skb_hooks for the same
+			 * address we're fine by sending a single reply
+			 */
 			break;
 		}
 		spin_unlock_irqrestore(&npinfo->rx_lock, flags);
@@ -726,8 +727,9 @@ static void netpoll_neigh_reply(struct sk_buff *skb, struct netpoll_info *npinfo
 
 			netpoll_send_skb(np, send_skb);
 
-			/* If there are several rx_hooks for the same address,
-			   we're fine by sending a single reply */
+			/* If there are several rx_skb_hooks for the same
+			 * address, we're fine by sending a single reply
+			 */
 			break;
 		}
 		spin_unlock_irqrestore(&npinfo->rx_lock, flags);
@@ -763,11 +765,12 @@ static bool pkt_is_ns(struct sk_buff *skb)
 
 int __netpoll_rx(struct sk_buff *skb, struct netpoll_info *npinfo)
 {
-	int proto, len, ulen;
-	int hits = 0;
+	int proto, len, ulen, data_len;
+	int hits = 0, offset;
 	const struct iphdr *iph;
 	struct udphdr *uh;
 	struct netpoll *np, *tmp;
+	uint16_t source;
 
 	if (list_empty(&npinfo->rx_np))
 		goto out;
@@ -785,7 +788,7 @@ int __netpoll_rx(struct sk_buff *skb, struct netpoll_info *npinfo)
 	}
 
 	if (skb->protocol == cpu_to_be16(ETH_P_8021Q)) {
-		skb = vlan_untag(skb);
+		skb = skb_vlan_untag(skb);
 		if (unlikely(!skb))
 			goto out;
 	}
@@ -827,7 +830,10 @@ int __netpoll_rx(struct sk_buff *skb, struct netpoll_info *npinfo)
 
 		len -= iph->ihl*4;
 		uh = (struct udphdr *)(((char *)iph) + iph->ihl*4);
+		offset = (unsigned char *)(uh + 1) - skb->data;
 		ulen = ntohs(uh->len);
+		data_len = skb->len - offset;
+		source = ntohs(uh->source);
 
 		if (ulen != len)
 			goto out;
@@ -841,9 +847,7 @@ int __netpoll_rx(struct sk_buff *skb, struct netpoll_info *npinfo)
 			if (np->local_port && np->local_port != ntohs(uh->dest))
 				continue;
 
-			np->rx_hook(np, ntohs(uh->source),
-				       (char *)(uh+1),
-				       ulen - sizeof(struct udphdr));
+			np->rx_skb_hook(np, source, skb, offset, data_len);
 			hits++;
 		}
 	} else {
@@ -866,7 +870,10 @@ int __netpoll_rx(struct sk_buff *skb, struct netpoll_info *npinfo)
 		if (!pskb_may_pull(skb, sizeof(struct udphdr)))
 			goto out;
 		uh = udp_hdr(skb);
+		offset = (unsigned char *)(uh + 1) - skb->data;
 		ulen = ntohs(uh->len);
+		data_len = skb->len - offset;
+		source = ntohs(uh->source);
 		if (ulen != skb->len)
 			goto out;
 		if (udp6_csum_init(skb, uh, IPPROTO_UDP))
@@ -879,9 +886,7 @@ int __netpoll_rx(struct sk_buff *skb, struct netpoll_info *npinfo)
 			if (np->local_port && np->local_port != ntohs(uh->dest))
 				continue;
 
-			np->rx_hook(np, ntohs(uh->source),
-				       (char *)(uh+1),
-				       ulen - sizeof(struct udphdr));
+			np->rx_skb_hook(np, source, skb, offset, data_len);
 			hits++;
 		}
 #endif
@@ -1071,7 +1076,7 @@ int __netpoll_setup(struct netpoll *np, struct net_device *ndev, gfp_t gfp)
 
 	npinfo->netpoll = np;
 
-	if (np->rx_hook) {
+	if (np->rx_skb_hook) {
 		spin_lock_irqsave(&npinfo->rx_lock, flags);
 		npinfo->rx_flags |= NETPOLL_RX_ENABLED;
 		list_add_tail(&np->rx, &npinfo->rx_np);

@@ -123,10 +123,11 @@ void smp_callin(void)
 		rmb();
 
 	set_cpu_online(cpuid, true);
-	local_irq_enable();
 
 	/* idle thread is expected to have preempt disabled */
 	preempt_disable();
+
+	local_irq_enable();
 
 	cpu_startup_entry(CPUHP_ONLINE);
 }
@@ -150,7 +151,7 @@ void cpu_panic(void)
 #define NUM_ROUNDS	64	/* magic value */
 #define NUM_ITERS	5	/* likewise */
 
-static DEFINE_SPINLOCK(itc_sync_lock);
+static DEFINE_RAW_SPINLOCK(itc_sync_lock);
 static unsigned long go[SLAVE + 1];
 
 #define DEBUG_TICK_SYNC	0
@@ -258,7 +259,7 @@ static void smp_synchronize_one_tick(int cpu)
 	go[MASTER] = 0;
 	membar_safe("#StoreLoad");
 
-	spin_lock_irqsave(&itc_sync_lock, flags);
+	raw_spin_lock_irqsave(&itc_sync_lock, flags);
 	{
 		for (i = 0; i < NUM_ROUNDS*NUM_ITERS; i++) {
 			while (!go[MASTER])
@@ -269,7 +270,7 @@ static void smp_synchronize_one_tick(int cpu)
 			membar_safe("#StoreLoad");
 		}
 	}
-	spin_unlock_irqrestore(&itc_sync_lock, flags);
+	raw_spin_unlock_irqrestore(&itc_sync_lock, flags);
 }
 
 #if defined(CONFIG_SUN_LDOMS) && defined(CONFIG_HOTPLUG_CPU)
@@ -822,13 +823,17 @@ void arch_send_call_function_single_ipi(int cpu)
 void __irq_entry smp_call_function_client(int irq, struct pt_regs *regs)
 {
 	clear_softint(1 << irq);
+	irq_enter();
 	generic_smp_call_function_interrupt();
+	irq_exit();
 }
 
 void __irq_entry smp_call_function_single_client(int irq, struct pt_regs *regs)
 {
 	clear_softint(1 << irq);
+	irq_enter();
 	generic_smp_call_function_single_interrupt();
+	irq_exit();
 }
 
 static void tsb_sync(void *info)
@@ -1394,13 +1399,17 @@ void __cpu_die(unsigned int cpu)
 
 void __init smp_cpus_done(unsigned int max_cpus)
 {
-	pcr_arch_init();
 }
 
 void smp_send_reschedule(int cpu)
 {
-	xcall_deliver((u64) &xcall_receive_signal, 0, 0,
-		      cpumask_of(cpu));
+	if (cpu == smp_processor_id()) {
+		WARN_ON_ONCE(preemptible());
+		set_softint(1 << PIL_SMP_RECEIVE_SIGNAL);
+	} else {
+		xcall_deliver((u64) &xcall_receive_signal,
+			      0, 0, cpumask_of(cpu));
+	}
 }
 
 void __irq_entry smp_receive_signal_client(int irq, struct pt_regs *regs)
@@ -1473,6 +1482,13 @@ static void __init pcpu_populate_pte(unsigned long addr)
 	pgd_t *pgd = pgd_offset_k(addr);
 	pud_t *pud;
 	pmd_t *pmd;
+
+	if (pgd_none(*pgd)) {
+		pud_t *new;
+
+		new = __alloc_bootmem(PAGE_SIZE, PAGE_SIZE, PAGE_SIZE);
+		pgd_populate(&init_mm, pgd, new);
+	}
 
 	pud = pud_offset(pgd, addr);
 	if (pud_none(*pud)) {

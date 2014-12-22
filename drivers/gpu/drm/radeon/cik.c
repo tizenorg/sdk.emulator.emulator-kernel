@@ -38,9 +38,19 @@ MODULE_FIRMWARE("radeon/BONAIRE_me.bin");
 MODULE_FIRMWARE("radeon/BONAIRE_ce.bin");
 MODULE_FIRMWARE("radeon/BONAIRE_mec.bin");
 MODULE_FIRMWARE("radeon/BONAIRE_mc.bin");
+MODULE_FIRMWARE("radeon/BONAIRE_mc2.bin");
 MODULE_FIRMWARE("radeon/BONAIRE_rlc.bin");
 MODULE_FIRMWARE("radeon/BONAIRE_sdma.bin");
 MODULE_FIRMWARE("radeon/BONAIRE_smc.bin");
+MODULE_FIRMWARE("radeon/HAWAII_pfp.bin");
+MODULE_FIRMWARE("radeon/HAWAII_me.bin");
+MODULE_FIRMWARE("radeon/HAWAII_ce.bin");
+MODULE_FIRMWARE("radeon/HAWAII_mec.bin");
+MODULE_FIRMWARE("radeon/HAWAII_mc.bin");
+MODULE_FIRMWARE("radeon/HAWAII_mc2.bin");
+MODULE_FIRMWARE("radeon/HAWAII_rlc.bin");
+MODULE_FIRMWARE("radeon/HAWAII_sdma.bin");
+MODULE_FIRMWARE("radeon/HAWAII_smc.bin");
 MODULE_FIRMWARE("radeon/KAVERI_pfp.bin");
 MODULE_FIRMWARE("radeon/KAVERI_me.bin");
 MODULE_FIRMWARE("radeon/KAVERI_ce.bin");
@@ -67,11 +77,6 @@ extern void si_init_uvd_internal_cg(struct radeon_device *rdev);
 extern int cik_sdma_resume(struct radeon_device *rdev);
 extern void cik_sdma_enable(struct radeon_device *rdev, bool enable);
 extern void cik_sdma_fini(struct radeon_device *rdev);
-extern void cik_sdma_vm_set_page(struct radeon_device *rdev,
-				 struct radeon_ib *ib,
-				 uint64_t pe,
-				 uint64_t addr, unsigned count,
-				 uint32_t incr, uint32_t flags);
 static void cik_rlc_stop(struct radeon_device *rdev);
 static void cik_pcie_gen3_enable(struct radeon_device *rdev);
 static void cik_program_aspm(struct radeon_device *rdev);
@@ -1092,7 +1097,7 @@ static const u32 spectre_golden_registers[] =
 	0x8a14, 0xf000003f, 0x00000007,
 	0x8b24, 0xffffffff, 0x00ffffff,
 	0x28350, 0x3f3f3fff, 0x00000082,
-	0x28355, 0x0000003f, 0x00000000,
+	0x28354, 0x0000003f, 0x00000000,
 	0x3e78, 0x00000001, 0x00000002,
 	0x913c, 0xffff03df, 0x00000004,
 	0xc768, 0x00000008, 0x00000008,
@@ -1302,6 +1307,171 @@ static const u32 kalindi_mgcg_cgcg_init[] =
 	0xd80c, 0xff000ff0, 0x00000100
 };
 
+static const u32 hawaii_golden_spm_registers[] =
+{
+	0x30800, 0xe0ffffff, 0xe0000000
+};
+
+static const u32 hawaii_golden_common_registers[] =
+{
+	0x30800, 0xffffffff, 0xe0000000,
+	0x28350, 0xffffffff, 0x3a00161a,
+	0x28354, 0xffffffff, 0x0000002e,
+	0x9a10, 0xffffffff, 0x00018208,
+	0x98f8, 0xffffffff, 0x12011003
+};
+
+static const u32 hawaii_golden_registers[] =
+{
+	0x3354, 0x00000333, 0x00000333,
+	0x9a10, 0x00010000, 0x00058208,
+	0x9830, 0xffffffff, 0x00000000,
+	0x9834, 0xf00fffff, 0x00000400,
+	0x9838, 0x0002021c, 0x00020200,
+	0xc78, 0x00000080, 0x00000000,
+	0x5bb0, 0x000000f0, 0x00000070,
+	0x5bc0, 0xf0311fff, 0x80300000,
+	0x350c, 0x00810000, 0x408af000,
+	0x7030, 0x31000111, 0x00000011,
+	0x2f48, 0x73773777, 0x12010001,
+	0x2120, 0x0000007f, 0x0000001b,
+	0x21dc, 0x00007fb6, 0x00002191,
+	0x3628, 0x0000003f, 0x0000000a,
+	0x362c, 0x0000003f, 0x0000000a,
+	0x2ae4, 0x00073ffe, 0x000022a2,
+	0x240c, 0x000007ff, 0x00000000,
+	0x8bf0, 0x00002001, 0x00000001,
+	0x8b24, 0xffffffff, 0x00ffffff,
+	0x30a04, 0x0000ff0f, 0x00000000,
+	0x28a4c, 0x07ffffff, 0x06000000,
+	0x3e78, 0x00000001, 0x00000002,
+	0xc768, 0x00000008, 0x00000008,
+	0xc770, 0x00000f00, 0x00000800,
+	0xc774, 0x00000f00, 0x00000800,
+	0xc798, 0x00ffffff, 0x00ff7fbf,
+	0xc79c, 0x00ffffff, 0x00ff7faf,
+	0x8c00, 0x000000ff, 0x00000800,
+	0xe40, 0x00001fff, 0x00001fff,
+	0x9060, 0x0000007f, 0x00000020,
+	0x9508, 0x00010000, 0x00010000,
+	0xae00, 0x00100000, 0x000ff07c,
+	0xac14, 0x000003ff, 0x0000000f,
+	0xac10, 0xffffffff, 0x7564fdec,
+	0xac0c, 0xffffffff, 0x3120b9a8,
+	0xac08, 0x20000000, 0x0f9c0000
+};
+
+static const u32 hawaii_mgcg_cgcg_init[] =
+{
+	0xc420, 0xffffffff, 0xfffffffd,
+	0x30800, 0xffffffff, 0xe0000000,
+	0x3c2a0, 0xffffffff, 0x00000100,
+	0x3c208, 0xffffffff, 0x00000100,
+	0x3c2c0, 0xffffffff, 0x00000100,
+	0x3c2c8, 0xffffffff, 0x00000100,
+	0x3c2c4, 0xffffffff, 0x00000100,
+	0x55e4, 0xffffffff, 0x00200100,
+	0x3c280, 0xffffffff, 0x00000100,
+	0x3c214, 0xffffffff, 0x06000100,
+	0x3c220, 0xffffffff, 0x00000100,
+	0x3c218, 0xffffffff, 0x06000100,
+	0x3c204, 0xffffffff, 0x00000100,
+	0x3c2e0, 0xffffffff, 0x00000100,
+	0x3c224, 0xffffffff, 0x00000100,
+	0x3c200, 0xffffffff, 0x00000100,
+	0x3c230, 0xffffffff, 0x00000100,
+	0x3c234, 0xffffffff, 0x00000100,
+	0x3c250, 0xffffffff, 0x00000100,
+	0x3c254, 0xffffffff, 0x00000100,
+	0x3c258, 0xffffffff, 0x00000100,
+	0x3c25c, 0xffffffff, 0x00000100,
+	0x3c260, 0xffffffff, 0x00000100,
+	0x3c27c, 0xffffffff, 0x00000100,
+	0x3c278, 0xffffffff, 0x00000100,
+	0x3c210, 0xffffffff, 0x06000100,
+	0x3c290, 0xffffffff, 0x00000100,
+	0x3c274, 0xffffffff, 0x00000100,
+	0x3c2b4, 0xffffffff, 0x00000100,
+	0x3c2b0, 0xffffffff, 0x00000100,
+	0x3c270, 0xffffffff, 0x00000100,
+	0x30800, 0xffffffff, 0xe0000000,
+	0x3c020, 0xffffffff, 0x00010000,
+	0x3c024, 0xffffffff, 0x00030002,
+	0x3c028, 0xffffffff, 0x00040007,
+	0x3c02c, 0xffffffff, 0x00060005,
+	0x3c030, 0xffffffff, 0x00090008,
+	0x3c034, 0xffffffff, 0x00010000,
+	0x3c038, 0xffffffff, 0x00030002,
+	0x3c03c, 0xffffffff, 0x00040007,
+	0x3c040, 0xffffffff, 0x00060005,
+	0x3c044, 0xffffffff, 0x00090008,
+	0x3c048, 0xffffffff, 0x00010000,
+	0x3c04c, 0xffffffff, 0x00030002,
+	0x3c050, 0xffffffff, 0x00040007,
+	0x3c054, 0xffffffff, 0x00060005,
+	0x3c058, 0xffffffff, 0x00090008,
+	0x3c05c, 0xffffffff, 0x00010000,
+	0x3c060, 0xffffffff, 0x00030002,
+	0x3c064, 0xffffffff, 0x00040007,
+	0x3c068, 0xffffffff, 0x00060005,
+	0x3c06c, 0xffffffff, 0x00090008,
+	0x3c070, 0xffffffff, 0x00010000,
+	0x3c074, 0xffffffff, 0x00030002,
+	0x3c078, 0xffffffff, 0x00040007,
+	0x3c07c, 0xffffffff, 0x00060005,
+	0x3c080, 0xffffffff, 0x00090008,
+	0x3c084, 0xffffffff, 0x00010000,
+	0x3c088, 0xffffffff, 0x00030002,
+	0x3c08c, 0xffffffff, 0x00040007,
+	0x3c090, 0xffffffff, 0x00060005,
+	0x3c094, 0xffffffff, 0x00090008,
+	0x3c098, 0xffffffff, 0x00010000,
+	0x3c09c, 0xffffffff, 0x00030002,
+	0x3c0a0, 0xffffffff, 0x00040007,
+	0x3c0a4, 0xffffffff, 0x00060005,
+	0x3c0a8, 0xffffffff, 0x00090008,
+	0x3c0ac, 0xffffffff, 0x00010000,
+	0x3c0b0, 0xffffffff, 0x00030002,
+	0x3c0b4, 0xffffffff, 0x00040007,
+	0x3c0b8, 0xffffffff, 0x00060005,
+	0x3c0bc, 0xffffffff, 0x00090008,
+	0x3c0c0, 0xffffffff, 0x00010000,
+	0x3c0c4, 0xffffffff, 0x00030002,
+	0x3c0c8, 0xffffffff, 0x00040007,
+	0x3c0cc, 0xffffffff, 0x00060005,
+	0x3c0d0, 0xffffffff, 0x00090008,
+	0x3c0d4, 0xffffffff, 0x00010000,
+	0x3c0d8, 0xffffffff, 0x00030002,
+	0x3c0dc, 0xffffffff, 0x00040007,
+	0x3c0e0, 0xffffffff, 0x00060005,
+	0x3c0e4, 0xffffffff, 0x00090008,
+	0x3c0e8, 0xffffffff, 0x00010000,
+	0x3c0ec, 0xffffffff, 0x00030002,
+	0x3c0f0, 0xffffffff, 0x00040007,
+	0x3c0f4, 0xffffffff, 0x00060005,
+	0x3c0f8, 0xffffffff, 0x00090008,
+	0xc318, 0xffffffff, 0x00020200,
+	0x3350, 0xffffffff, 0x00000200,
+	0x15c0, 0xffffffff, 0x00000400,
+	0x55e8, 0xffffffff, 0x00000000,
+	0x2f50, 0xffffffff, 0x00000902,
+	0x3c000, 0xffffffff, 0x96940200,
+	0x8708, 0xffffffff, 0x00900100,
+	0xc424, 0xffffffff, 0x0020003f,
+	0x38, 0xffffffff, 0x0140001c,
+	0x3c, 0x000f0000, 0x000f0000,
+	0x220, 0xffffffff, 0xc060000c,
+	0x224, 0xc0000fff, 0x00000100,
+	0xf90, 0xffffffff, 0x00000100,
+	0xf98, 0x00000101, 0x00000000,
+	0x20a8, 0xffffffff, 0x00000104,
+	0x55e4, 0xff000fff, 0x00000100,
+	0x30cc, 0xc0000fff, 0x00000104,
+	0xc1e4, 0x00000001, 0x00000001,
+	0xd00c, 0xff000ff0, 0x00000100,
+	0xd80c, 0xff000ff0, 0x00000100
+};
+
 static void cik_init_golden_registers(struct radeon_device *rdev)
 {
 	switch (rdev->family) {
@@ -1347,6 +1517,20 @@ static void cik_init_golden_registers(struct radeon_device *rdev)
 						 spectre_golden_spm_registers,
 						 (const u32)ARRAY_SIZE(spectre_golden_spm_registers));
 		break;
+	case CHIP_HAWAII:
+		radeon_program_register_sequence(rdev,
+						 hawaii_mgcg_cgcg_init,
+						 (const u32)ARRAY_SIZE(hawaii_mgcg_cgcg_init));
+		radeon_program_register_sequence(rdev,
+						 hawaii_golden_registers,
+						 (const u32)ARRAY_SIZE(hawaii_golden_registers));
+		radeon_program_register_sequence(rdev,
+						 hawaii_golden_common_registers,
+						 (const u32)ARRAY_SIZE(hawaii_golden_common_registers));
+		radeon_program_register_sequence(rdev,
+						 hawaii_golden_spm_registers,
+						 (const u32)ARRAY_SIZE(hawaii_golden_spm_registers));
+		break;
 	default:
 		break;
 	}
@@ -1378,17 +1562,17 @@ u32 cik_get_xclk(struct radeon_device *rdev)
  * cik_mm_rdoorbell - read a doorbell dword
  *
  * @rdev: radeon_device pointer
- * @offset: byte offset into the aperture
+ * @index: doorbell index
  *
  * Returns the value in the doorbell aperture at the
- * requested offset (CIK).
+ * requested doorbell index (CIK).
  */
-u32 cik_mm_rdoorbell(struct radeon_device *rdev, u32 offset)
+u32 cik_mm_rdoorbell(struct radeon_device *rdev, u32 index)
 {
-	if (offset < rdev->doorbell.size) {
-		return readl(((void __iomem *)rdev->doorbell.ptr) + offset);
+	if (index < rdev->doorbell.num_doorbells) {
+		return readl(rdev->doorbell.ptr + index);
 	} else {
-		DRM_ERROR("reading beyond doorbell aperture: 0x%08x!\n", offset);
+		DRM_ERROR("reading beyond doorbell aperture: 0x%08x!\n", index);
 		return 0;
 	}
 }
@@ -1397,18 +1581,18 @@ u32 cik_mm_rdoorbell(struct radeon_device *rdev, u32 offset)
  * cik_mm_wdoorbell - write a doorbell dword
  *
  * @rdev: radeon_device pointer
- * @offset: byte offset into the aperture
+ * @index: doorbell index
  * @v: value to write
  *
  * Writes @v to the doorbell aperture at the
- * requested offset (CIK).
+ * requested doorbell index (CIK).
  */
-void cik_mm_wdoorbell(struct radeon_device *rdev, u32 offset, u32 v)
+void cik_mm_wdoorbell(struct radeon_device *rdev, u32 index, u32 v)
 {
-	if (offset < rdev->doorbell.size) {
-		writel(v, ((void __iomem *)rdev->doorbell.ptr) + offset);
+	if (index < rdev->doorbell.num_doorbells) {
+		writel(v, rdev->doorbell.ptr + index);
 	} else {
-		DRM_ERROR("writing beyond doorbell aperture: 0x%08x!\n", offset);
+		DRM_ERROR("writing beyond doorbell aperture: 0x%08x!\n", index);
 	}
 }
 
@@ -1454,6 +1638,35 @@ static const u32 bonaire_io_mc_regs[BONAIRE_IO_MC_REGS_SIZE][2] =
 	{0x0000009f, 0x00b48000}
 };
 
+#define HAWAII_IO_MC_REGS_SIZE 22
+
+static const u32 hawaii_io_mc_regs[HAWAII_IO_MC_REGS_SIZE][2] =
+{
+	{0x0000007d, 0x40000000},
+	{0x0000007e, 0x40180304},
+	{0x0000007f, 0x0000ff00},
+	{0x00000081, 0x00000000},
+	{0x00000083, 0x00000800},
+	{0x00000086, 0x00000000},
+	{0x00000087, 0x00000100},
+	{0x00000088, 0x00020100},
+	{0x00000089, 0x00000000},
+	{0x0000008b, 0x00040000},
+	{0x0000008c, 0x00000100},
+	{0x0000008e, 0xff010000},
+	{0x00000090, 0xffffefff},
+	{0x00000091, 0xfff3efff},
+	{0x00000092, 0xfff3efbf},
+	{0x00000093, 0xf7ffffff},
+	{0x00000094, 0xffffff7f},
+	{0x00000095, 0x00000fff},
+	{0x00000096, 0x00116fff},
+	{0x00000097, 0x60010000},
+	{0x00000098, 0x10010000},
+	{0x0000009f, 0x00c79000}
+};
+
+
 /**
  * cik_srbm_select - select specific register instances
  *
@@ -1486,23 +1699,29 @@ static void cik_srbm_select(struct radeon_device *rdev,
  * Load the GDDR MC ucode into the hw (CIK).
  * Returns 0 on success, error on failure.
  */
-static int ci_mc_load_microcode(struct radeon_device *rdev)
+int ci_mc_load_microcode(struct radeon_device *rdev)
 {
 	const __be32 *fw_data;
 	u32 running, blackout = 0;
 	u32 *io_mc_regs;
-	int i, ucode_size, regs_size;
+	int i, regs_size, ucode_size;
 
 	if (!rdev->mc_fw)
 		return -EINVAL;
 
+	ucode_size = rdev->mc_fw->size / 4;
+
 	switch (rdev->family) {
 	case CHIP_BONAIRE:
-	default:
 		io_mc_regs = (u32 *)&bonaire_io_mc_regs;
-		ucode_size = CIK_MC_UCODE_SIZE;
 		regs_size = BONAIRE_IO_MC_REGS_SIZE;
 		break;
+	case CHIP_HAWAII:
+		io_mc_regs = (u32 *)&hawaii_io_mc_regs;
+		regs_size = HAWAII_IO_MC_REGS_SIZE;
+		break;
+	default:
+		return -EINVAL;
 	}
 
 	running = RREG32(MC_SEQ_SUP_CNTL) & RUN_MASK;
@@ -1564,8 +1783,8 @@ static int cik_init_microcode(struct radeon_device *rdev)
 {
 	const char *chip_name;
 	size_t pfp_req_size, me_req_size, ce_req_size,
-		mec_req_size, rlc_req_size, mc_req_size,
-		sdma_req_size, smc_req_size;
+		mec_req_size, rlc_req_size, mc_req_size = 0,
+		sdma_req_size, smc_req_size = 0, mc2_req_size = 0;
 	char fw_name[30];
 	int err;
 
@@ -1579,9 +1798,22 @@ static int cik_init_microcode(struct radeon_device *rdev)
 		ce_req_size = CIK_CE_UCODE_SIZE * 4;
 		mec_req_size = CIK_MEC_UCODE_SIZE * 4;
 		rlc_req_size = BONAIRE_RLC_UCODE_SIZE * 4;
-		mc_req_size = CIK_MC_UCODE_SIZE * 4;
+		mc_req_size = BONAIRE_MC_UCODE_SIZE * 4;
+		mc2_req_size = BONAIRE_MC2_UCODE_SIZE * 4;
 		sdma_req_size = CIK_SDMA_UCODE_SIZE * 4;
 		smc_req_size = ALIGN(BONAIRE_SMC_UCODE_SIZE, 4);
+		break;
+	case CHIP_HAWAII:
+		chip_name = "HAWAII";
+		pfp_req_size = CIK_PFP_UCODE_SIZE * 4;
+		me_req_size = CIK_ME_UCODE_SIZE * 4;
+		ce_req_size = CIK_CE_UCODE_SIZE * 4;
+		mec_req_size = CIK_MEC_UCODE_SIZE * 4;
+		rlc_req_size = BONAIRE_RLC_UCODE_SIZE * 4;
+		mc_req_size = HAWAII_MC_UCODE_SIZE * 4;
+		mc2_req_size = HAWAII_MC2_UCODE_SIZE * 4;
+		sdma_req_size = CIK_SDMA_UCODE_SIZE * 4;
+		smc_req_size = ALIGN(HAWAII_SMC_UCODE_SIZE, 4);
 		break;
 	case CHIP_KAVERI:
 		chip_name = "KAVERI";
@@ -1675,16 +1907,22 @@ static int cik_init_microcode(struct radeon_device *rdev)
 
 	/* No SMC, MC ucode on APUs */
 	if (!(rdev->flags & RADEON_IS_IGP)) {
-		snprintf(fw_name, sizeof(fw_name), "radeon/%s_mc.bin", chip_name);
+		snprintf(fw_name, sizeof(fw_name), "radeon/%s_mc2.bin", chip_name);
 		err = request_firmware(&rdev->mc_fw, fw_name, rdev->dev);
-		if (err)
-			goto out;
-		if (rdev->mc_fw->size != mc_req_size) {
+		if (err) {
+			snprintf(fw_name, sizeof(fw_name), "radeon/%s_mc.bin", chip_name);
+			err = request_firmware(&rdev->mc_fw, fw_name, rdev->dev);
+			if (err)
+				goto out;
+		}
+		if ((rdev->mc_fw->size != mc_req_size) &&
+		    (rdev->mc_fw->size != mc2_req_size)){
 			printk(KERN_ERR
 			       "cik_mc: Bogus length %zu in firmware \"%s\"\n",
 			       rdev->mc_fw->size, fw_name);
 			err = -EINVAL;
 		}
+		DRM_INFO("%s: %zu bytes\n", fw_name, rdev->mc_fw->size);
 
 		snprintf(fw_name, sizeof(fw_name), "radeon/%s_smc.bin", chip_name);
 		err = request_firmware(&rdev->smc_fw, fw_name, rdev->dev);
@@ -1763,9 +2001,228 @@ static void cik_tiling_mode_table_init(struct radeon_device *rdev)
 
 	num_pipe_configs = rdev->config.cik.max_tile_pipes;
 	if (num_pipe_configs > 8)
-		num_pipe_configs = 8; /* ??? */
+		num_pipe_configs = 16;
 
-	if (num_pipe_configs == 8) {
+	if (num_pipe_configs == 16) {
+		for (reg_offset = 0; reg_offset < num_tile_mode_states; reg_offset++) {
+			switch (reg_offset) {
+			case 0:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DEPTH_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 TILE_SPLIT(ADDR_SURF_TILE_SPLIT_64B));
+				break;
+			case 1:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DEPTH_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 TILE_SPLIT(ADDR_SURF_TILE_SPLIT_128B));
+				break;
+			case 2:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DEPTH_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 TILE_SPLIT(ADDR_SURF_TILE_SPLIT_256B));
+				break;
+			case 3:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DEPTH_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 TILE_SPLIT(ADDR_SURF_TILE_SPLIT_512B));
+				break;
+			case 4:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DEPTH_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 TILE_SPLIT(split_equal_to_row_size));
+				break;
+			case 5:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_1D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DEPTH_MICRO_TILING));
+				break;
+			case 6:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_PRT_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DEPTH_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 TILE_SPLIT(ADDR_SURF_TILE_SPLIT_256B));
+				break;
+			case 7:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_PRT_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DEPTH_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 TILE_SPLIT(split_equal_to_row_size));
+				break;
+			case 8:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_LINEAR_ALIGNED) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16));
+				break;
+			case 9:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_1D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DISPLAY_MICRO_TILING));
+				break;
+			case 10:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DISPLAY_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 SAMPLE_SPLIT(ADDR_SURF_SAMPLE_SPLIT_2));
+				break;
+			case 11:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_PRT_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DISPLAY_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_8x16) |
+						 SAMPLE_SPLIT(ADDR_SURF_SAMPLE_SPLIT_2));
+				break;
+			case 12:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_PRT_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_DISPLAY_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 SAMPLE_SPLIT(ADDR_SURF_SAMPLE_SPLIT_2));
+				break;
+			case 13:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_1D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_THIN_MICRO_TILING));
+				break;
+			case 14:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_THIN_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 SAMPLE_SPLIT(ADDR_SURF_SAMPLE_SPLIT_2));
+				break;
+			case 16:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_PRT_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_THIN_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_8x16) |
+						 SAMPLE_SPLIT(ADDR_SURF_SAMPLE_SPLIT_2));
+				break;
+			case 17:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_PRT_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_THIN_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 SAMPLE_SPLIT(ADDR_SURF_SAMPLE_SPLIT_2));
+				break;
+			case 27:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_1D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_ROTATED_MICRO_TILING));
+				break;
+			case 28:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_ROTATED_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 SAMPLE_SPLIT(ADDR_SURF_SAMPLE_SPLIT_2));
+				break;
+			case 29:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_PRT_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_ROTATED_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_8x16) |
+						 SAMPLE_SPLIT(ADDR_SURF_SAMPLE_SPLIT_2));
+				break;
+			case 30:
+				gb_tile_moden = (ARRAY_MODE(ARRAY_PRT_2D_TILED_THIN1) |
+						 MICRO_TILE_MODE_NEW(ADDR_SURF_ROTATED_MICRO_TILING) |
+						 PIPE_CONFIG(ADDR_SURF_P16_32x32_16x16) |
+						 SAMPLE_SPLIT(ADDR_SURF_SAMPLE_SPLIT_2));
+				break;
+			default:
+				gb_tile_moden = 0;
+				break;
+			}
+			rdev->config.cik.tile_mode_array[reg_offset] = gb_tile_moden;
+			WREG32(GB_TILE_MODE0 + (reg_offset * 4), gb_tile_moden);
+		}
+		for (reg_offset = 0; reg_offset < num_secondary_tile_mode_states; reg_offset++) {
+			switch (reg_offset) {
+			case 0:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_4) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_2) |
+						 NUM_BANKS(ADDR_SURF_16_BANK));
+				break;
+			case 1:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_2) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_2) |
+						 NUM_BANKS(ADDR_SURF_16_BANK));
+				break;
+			case 2:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_1) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_1) |
+						 NUM_BANKS(ADDR_SURF_16_BANK));
+				break;
+			case 3:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_1) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_1) |
+						 NUM_BANKS(ADDR_SURF_16_BANK));
+				break;
+			case 4:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_1) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_1) |
+						 NUM_BANKS(ADDR_SURF_8_BANK));
+				break;
+			case 5:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_1) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_1) |
+						 NUM_BANKS(ADDR_SURF_4_BANK));
+				break;
+			case 6:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_1) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_1) |
+						 NUM_BANKS(ADDR_SURF_2_BANK));
+				break;
+			case 8:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_4) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_2) |
+						 NUM_BANKS(ADDR_SURF_16_BANK));
+				break;
+			case 9:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_2) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_2) |
+						 NUM_BANKS(ADDR_SURF_16_BANK));
+				break;
+			case 10:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_1) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_1) |
+						 NUM_BANKS(ADDR_SURF_16_BANK));
+				break;
+			case 11:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_1) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_1) |
+						 NUM_BANKS(ADDR_SURF_8_BANK));
+				break;
+			case 12:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_1) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_1) |
+						 NUM_BANKS(ADDR_SURF_4_BANK));
+				break;
+			case 13:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_1) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_1) |
+						 NUM_BANKS(ADDR_SURF_2_BANK));
+				break;
+			case 14:
+				gb_tile_moden = (BANK_WIDTH(ADDR_SURF_BANK_WIDTH_1) |
+						 BANK_HEIGHT(ADDR_SURF_BANK_HEIGHT_1) |
+						 MACRO_TILE_ASPECT(ADDR_SURF_MACRO_ASPECT_1) |
+						 NUM_BANKS(ADDR_SURF_2_BANK));
+				break;
+			default:
+				gb_tile_moden = 0;
+				break;
+			}
+			rdev->config.cik.macrotile_mode_array[reg_offset] = gb_tile_moden;
+			WREG32(GB_MACROTILE_MODE0 + (reg_offset * 4), gb_tile_moden);
+		}
+	} else if (num_pipe_configs == 8) {
 		for (reg_offset = 0; reg_offset < num_tile_mode_states; reg_offset++) {
 			switch (reg_offset) {
 			case 0:
@@ -1981,6 +2438,7 @@ static void cik_tiling_mode_table_init(struct radeon_device *rdev)
 				gb_tile_moden = 0;
 				break;
 			}
+			rdev->config.cik.macrotile_mode_array[reg_offset] = gb_tile_moden;
 			WREG32(GB_MACROTILE_MODE0 + (reg_offset * 4), gb_tile_moden);
 		}
 	} else if (num_pipe_configs == 4) {
@@ -2327,6 +2785,7 @@ static void cik_tiling_mode_table_init(struct radeon_device *rdev)
 				gb_tile_moden = 0;
 				break;
 			}
+			rdev->config.cik.macrotile_mode_array[reg_offset] = gb_tile_moden;
 			WREG32(GB_MACROTILE_MODE0 + (reg_offset * 4), gb_tile_moden);
 		}
 	} else if (num_pipe_configs == 2) {
@@ -2544,6 +3003,7 @@ static void cik_tiling_mode_table_init(struct radeon_device *rdev)
 				gb_tile_moden = 0;
 				break;
 			}
+			rdev->config.cik.macrotile_mode_array[reg_offset] = gb_tile_moden;
 			WREG32(GB_MACROTILE_MODE0 + (reg_offset * 4), gb_tile_moden);
 		}
 	} else
@@ -2597,7 +3057,7 @@ static u32 cik_create_bitmask(u32 bit_width)
 }
 
 /**
- * cik_select_se_sh - select which SE, SH to address
+ * cik_get_rb_disabled - computes the mask of disabled RBs
  *
  * @rdev: radeon_device pointer
  * @max_rb_num: max RBs (render backends) for the asic
@@ -2650,7 +3110,10 @@ static void cik_setup_rb(struct radeon_device *rdev,
 		for (j = 0; j < sh_per_se; j++) {
 			cik_select_se_sh(rdev, i, j);
 			data = cik_get_rb_disabled(rdev, max_rb_num_per_se, sh_per_se);
-			disabled_rbs |= data << ((i * sh_per_se + j) * CIK_RB_BITMAP_WIDTH_PER_SH);
+			if (rdev->family == CHIP_HAWAII)
+				disabled_rbs |= data << ((i * sh_per_se + j) * HAWAII_RB_BITMAP_WIDTH_PER_SH);
+			else
+				disabled_rbs |= data << ((i * sh_per_se + j) * CIK_RB_BITMAP_WIDTH_PER_SH);
 		}
 	}
 	cik_select_se_sh(rdev, 0xffffffff, 0xffffffff);
@@ -2669,6 +3132,12 @@ static void cik_setup_rb(struct radeon_device *rdev,
 		data = 0;
 		for (j = 0; j < sh_per_se; j++) {
 			switch (enabled_rbs & 3) {
+			case 0:
+				if (j == 0)
+					data |= PKR_MAP(RASTER_CONFIG_RB_MAP_3);
+				else
+					data |= PKR_MAP(RASTER_CONFIG_RB_MAP_0);
+				break;
 			case 1:
 				data |= (RASTER_CONFIG_RB_MAP_0 << (i * sh_per_se + j) * 2);
 				break;
@@ -2721,6 +3190,23 @@ static void cik_gpu_init(struct radeon_device *rdev)
 		rdev->config.cik.sc_earlyz_tile_fifo_size = 0x130;
 		gb_addr_config = BONAIRE_GB_ADDR_CONFIG_GOLDEN;
 		break;
+	case CHIP_HAWAII:
+		rdev->config.cik.max_shader_engines = 4;
+		rdev->config.cik.max_tile_pipes = 16;
+		rdev->config.cik.max_cu_per_sh = 11;
+		rdev->config.cik.max_sh_per_se = 1;
+		rdev->config.cik.max_backends_per_se = 4;
+		rdev->config.cik.max_texture_channel_caches = 16;
+		rdev->config.cik.max_gprs = 256;
+		rdev->config.cik.max_gs_threads = 32;
+		rdev->config.cik.max_hw_contexts = 8;
+
+		rdev->config.cik.sc_prim_fifo_size_frontend = 0x20;
+		rdev->config.cik.sc_prim_fifo_size_backend = 0x100;
+		rdev->config.cik.sc_hiz_tile_fifo_size = 0x30;
+		rdev->config.cik.sc_earlyz_tile_fifo_size = 0x130;
+		gb_addr_config = HAWAII_GB_ADDR_CONFIG_GOLDEN;
+		break;
 	case CHIP_KAVERI:
 		rdev->config.cik.max_shader_engines = 1;
 		rdev->config.cik.max_tile_pipes = 4;
@@ -2745,6 +3231,7 @@ static void cik_gpu_init(struct radeon_device *rdev)
 			   (rdev->pdev->device == 0x130B) ||
 			   (rdev->pdev->device == 0x130E) ||
 			   (rdev->pdev->device == 0x1315) ||
+			   (rdev->pdev->device == 0x1318) ||
 			   (rdev->pdev->device == 0x131B)) {
 			rdev->config.cik.max_cu_per_sh = 4;
 			rdev->config.cik.max_backends_per_se = 1;
@@ -3012,6 +3499,51 @@ int cik_ring_test(struct radeon_device *rdev, struct radeon_ring *ring)
 }
 
 /**
+ * cik_hdp_flush_cp_ring_emit - emit an hdp flush on the cp
+ *
+ * @rdev: radeon_device pointer
+ * @ridx: radeon ring index
+ *
+ * Emits an hdp flush on the cp.
+ */
+static void cik_hdp_flush_cp_ring_emit(struct radeon_device *rdev,
+				       int ridx)
+{
+	struct radeon_ring *ring = &rdev->ring[ridx];
+	u32 ref_and_mask;
+
+	switch (ring->idx) {
+	case CAYMAN_RING_TYPE_CP1_INDEX:
+	case CAYMAN_RING_TYPE_CP2_INDEX:
+	default:
+		switch (ring->me) {
+		case 0:
+			ref_and_mask = CP2 << ring->pipe;
+			break;
+		case 1:
+			ref_and_mask = CP6 << ring->pipe;
+			break;
+		default:
+			return;
+		}
+		break;
+	case RADEON_RING_TYPE_GFX_INDEX:
+		ref_and_mask = CP0;
+		break;
+	}
+
+	radeon_ring_write(ring, PACKET3(PACKET3_WAIT_REG_MEM, 5));
+	radeon_ring_write(ring, (WAIT_REG_MEM_OPERATION(1) | /* write, wait, write */
+				 WAIT_REG_MEM_FUNCTION(3) |  /* == */
+				 WAIT_REG_MEM_ENGINE(1)));   /* pfp */
+	radeon_ring_write(ring, GPU_HDP_FLUSH_REQ >> 2);
+	radeon_ring_write(ring, GPU_HDP_FLUSH_DONE >> 2);
+	radeon_ring_write(ring, ref_and_mask);
+	radeon_ring_write(ring, ref_and_mask);
+	radeon_ring_write(ring, 0x20); /* poll interval */
+}
+
+/**
  * cik_fence_gfx_ring_emit - emit a fence on the gfx ring
  *
  * @rdev: radeon_device pointer
@@ -3037,15 +3569,7 @@ void cik_fence_gfx_ring_emit(struct radeon_device *rdev,
 	radeon_ring_write(ring, fence->seq);
 	radeon_ring_write(ring, 0);
 	/* HDP flush */
-	/* We should be using the new WAIT_REG_MEM special op packet here
-	 * but it causes the CP to hang
-	 */
-	radeon_ring_write(ring, PACKET3(PACKET3_WRITE_DATA, 3));
-	radeon_ring_write(ring, (WRITE_DATA_ENGINE_SEL(0) |
-				 WRITE_DATA_DST_SEL(0)));
-	radeon_ring_write(ring, HDP_MEM_COHERENCY_FLUSH_CNTL >> 2);
-	radeon_ring_write(ring, 0);
-	radeon_ring_write(ring, 0);
+	cik_hdp_flush_cp_ring_emit(rdev, fence->ring);
 }
 
 /**
@@ -3075,18 +3599,10 @@ void cik_fence_compute_ring_emit(struct radeon_device *rdev,
 	radeon_ring_write(ring, fence->seq);
 	radeon_ring_write(ring, 0);
 	/* HDP flush */
-	/* We should be using the new WAIT_REG_MEM special op packet here
-	 * but it causes the CP to hang
-	 */
-	radeon_ring_write(ring, PACKET3(PACKET3_WRITE_DATA, 3));
-	radeon_ring_write(ring, (WRITE_DATA_ENGINE_SEL(0) |
-				 WRITE_DATA_DST_SEL(0)));
-	radeon_ring_write(ring, HDP_MEM_COHERENCY_FLUSH_CNTL >> 2);
-	radeon_ring_write(ring, 0);
-	radeon_ring_write(ring, 0);
+	cik_hdp_flush_cp_ring_emit(rdev, fence->ring);
 }
 
-void cik_semaphore_ring_emit(struct radeon_device *rdev,
+bool cik_semaphore_ring_emit(struct radeon_device *rdev,
 			     struct radeon_ring *ring,
 			     struct radeon_semaphore *semaphore,
 			     bool emit_wait)
@@ -3097,6 +3613,82 @@ void cik_semaphore_ring_emit(struct radeon_device *rdev,
 	radeon_ring_write(ring, PACKET3(PACKET3_MEM_SEMAPHORE, 1));
 	radeon_ring_write(ring, addr & 0xffffffff);
 	radeon_ring_write(ring, (upper_32_bits(addr) & 0xffff) | sel);
+
+	return true;
+}
+
+/**
+ * cik_copy_cpdma - copy pages using the CP DMA engine
+ *
+ * @rdev: radeon_device pointer
+ * @src_offset: src GPU address
+ * @dst_offset: dst GPU address
+ * @num_gpu_pages: number of GPU pages to xfer
+ * @fence: radeon fence object
+ *
+ * Copy GPU paging using the CP DMA engine (CIK+).
+ * Used by the radeon ttm implementation to move pages if
+ * registered as the asic copy callback.
+ */
+int cik_copy_cpdma(struct radeon_device *rdev,
+		   uint64_t src_offset, uint64_t dst_offset,
+		   unsigned num_gpu_pages,
+		   struct radeon_fence **fence)
+{
+	struct radeon_semaphore *sem = NULL;
+	int ring_index = rdev->asic->copy.blit_ring_index;
+	struct radeon_ring *ring = &rdev->ring[ring_index];
+	u32 size_in_bytes, cur_size_in_bytes, control;
+	int i, num_loops;
+	int r = 0;
+
+	r = radeon_semaphore_create(rdev, &sem);
+	if (r) {
+		DRM_ERROR("radeon: moving bo (%d).\n", r);
+		return r;
+	}
+
+	size_in_bytes = (num_gpu_pages << RADEON_GPU_PAGE_SHIFT);
+	num_loops = DIV_ROUND_UP(size_in_bytes, 0x1fffff);
+	r = radeon_ring_lock(rdev, ring, num_loops * 7 + 18);
+	if (r) {
+		DRM_ERROR("radeon: moving bo (%d).\n", r);
+		radeon_semaphore_free(rdev, &sem, NULL);
+		return r;
+	}
+
+	radeon_semaphore_sync_to(sem, *fence);
+	radeon_semaphore_sync_rings(rdev, sem, ring->idx);
+
+	for (i = 0; i < num_loops; i++) {
+		cur_size_in_bytes = size_in_bytes;
+		if (cur_size_in_bytes > 0x1fffff)
+			cur_size_in_bytes = 0x1fffff;
+		size_in_bytes -= cur_size_in_bytes;
+		control = 0;
+		if (size_in_bytes == 0)
+			control |= PACKET3_DMA_DATA_CP_SYNC;
+		radeon_ring_write(ring, PACKET3(PACKET3_DMA_DATA, 5));
+		radeon_ring_write(ring, control);
+		radeon_ring_write(ring, lower_32_bits(src_offset));
+		radeon_ring_write(ring, upper_32_bits(src_offset));
+		radeon_ring_write(ring, lower_32_bits(dst_offset));
+		radeon_ring_write(ring, upper_32_bits(dst_offset));
+		radeon_ring_write(ring, cur_size_in_bytes);
+		src_offset += cur_size_in_bytes;
+		dst_offset += cur_size_in_bytes;
+	}
+
+	r = radeon_fence_emit(rdev, fence, ring->idx);
+	if (r) {
+		radeon_ring_unlock_undo(rdev, ring);
+		return r;
+	}
+
+	radeon_ring_unlock_commit(rdev, ring);
+	radeon_semaphore_free(rdev, &sem, *fence);
+
+	return r;
 }
 
 /*
@@ -3260,6 +3852,8 @@ static void cik_cp_gfx_enable(struct radeon_device *rdev, bool enable)
 	if (enable)
 		WREG32(CP_ME_CNTL, 0);
 	else {
+		if (rdev->asic->copy.copy_ring_index == RADEON_RING_TYPE_GFX_INDEX)
+			radeon_ttm_set_active_vram_size(rdev, rdev->mc.visible_vram_size);
 		WREG32(CP_ME_CNTL, (CP_ME_HALT | CP_PFP_HALT | CP_CE_HALT));
 		rdev->ring[RADEON_RING_TYPE_GFX_INDEX].ready = false;
 	}
@@ -3342,8 +3936,8 @@ static int cik_cp_gfx_start(struct radeon_device *rdev)
 	/* init the CE partitions.  CE only used for gfx on CIK */
 	radeon_ring_write(ring, PACKET3(PACKET3_SET_BASE, 2));
 	radeon_ring_write(ring, PACKET3_BASE_INDEX(CE_PARTITION_BASE));
-	radeon_ring_write(ring, 0xc000);
-	radeon_ring_write(ring, 0xc000);
+	radeon_ring_write(ring, 0x8000);
+	radeon_ring_write(ring, 0x8000);
 
 	/* setup clear context state */
 	radeon_ring_write(ring, PACKET3(PACKET3_PREAMBLE_CNTL, 0));
@@ -3405,7 +3999,8 @@ static int cik_cp_gfx_resume(struct radeon_device *rdev)
 	int r;
 
 	WREG32(CP_SEM_WAIT_TIMER, 0x0);
-	WREG32(CP_SEM_INCOMPLETE_TIMER_CNTL, 0x0);
+	if (rdev->family != CHIP_HAWAII)
+		WREG32(CP_SEM_INCOMPLETE_TIMER_CNTL, 0x0);
 
 	/* Set the write pointer delay */
 	WREG32(CP_RB_WPTR_DELAY, 0);
@@ -3457,18 +4052,50 @@ static int cik_cp_gfx_resume(struct radeon_device *rdev)
 		rdev->ring[RADEON_RING_TYPE_GFX_INDEX].ready = false;
 		return r;
 	}
+
+	if (rdev->asic->copy.copy_ring_index == RADEON_RING_TYPE_GFX_INDEX)
+		radeon_ttm_set_active_vram_size(rdev, rdev->mc.real_vram_size);
+
 	return 0;
 }
 
-u32 cik_compute_ring_get_rptr(struct radeon_device *rdev,
-			      struct radeon_ring *ring)
+u32 cik_gfx_get_rptr(struct radeon_device *rdev,
+		     struct radeon_ring *ring)
 {
 	u32 rptr;
 
+	if (rdev->wb.enabled)
+		rptr = rdev->wb.wb[ring->rptr_offs/4];
+	else
+		rptr = RREG32(CP_RB0_RPTR);
 
+	return rptr;
+}
+
+u32 cik_gfx_get_wptr(struct radeon_device *rdev,
+		     struct radeon_ring *ring)
+{
+	u32 wptr;
+
+	wptr = RREG32(CP_RB0_WPTR);
+
+	return wptr;
+}
+
+void cik_gfx_set_wptr(struct radeon_device *rdev,
+		      struct radeon_ring *ring)
+{
+	WREG32(CP_RB0_WPTR, ring->wptr);
+	(void)RREG32(CP_RB0_WPTR);
+}
+
+u32 cik_compute_get_rptr(struct radeon_device *rdev,
+			 struct radeon_ring *ring)
+{
+	u32 rptr;
 
 	if (rdev->wb.enabled) {
-		rptr = le32_to_cpu(rdev->wb.wb[ring->rptr_offs/4]);
+		rptr = rdev->wb.wb[ring->rptr_offs/4];
 	} else {
 		mutex_lock(&rdev->srbm_mutex);
 		cik_srbm_select(rdev, ring->me, ring->pipe, ring->queue, 0);
@@ -3480,13 +4107,14 @@ u32 cik_compute_ring_get_rptr(struct radeon_device *rdev,
 	return rptr;
 }
 
-u32 cik_compute_ring_get_wptr(struct radeon_device *rdev,
-			      struct radeon_ring *ring)
+u32 cik_compute_get_wptr(struct radeon_device *rdev,
+			 struct radeon_ring *ring)
 {
 	u32 wptr;
 
 	if (rdev->wb.enabled) {
-		wptr = le32_to_cpu(rdev->wb.wb[ring->wptr_offs/4]);
+		/* XXX check if swapping is necessary on BE */
+		wptr = rdev->wb.wb[ring->wptr_offs/4];
 	} else {
 		mutex_lock(&rdev->srbm_mutex);
 		cik_srbm_select(rdev, ring->me, ring->pipe, ring->queue, 0);
@@ -3498,11 +4126,12 @@ u32 cik_compute_ring_get_wptr(struct radeon_device *rdev,
 	return wptr;
 }
 
-void cik_compute_ring_set_wptr(struct radeon_device *rdev,
-			       struct radeon_ring *ring)
+void cik_compute_set_wptr(struct radeon_device *rdev,
+			  struct radeon_ring *ring)
 {
-	rdev->wb.wb[ring->wptr_offs/4] = cpu_to_le32(ring->wptr);
-	WDOORBELL32(ring->doorbell_offset, ring->wptr);
+	/* XXX check if swapping is necessary on BE */
+	rdev->wb.wb[ring->wptr_offs/4] = ring->wptr;
+	WDOORBELL32(ring->doorbell_index, ring->wptr);
 }
 
 /**
@@ -3763,7 +4392,7 @@ struct bonaire_mqd
  */
 static int cik_cp_compute_resume(struct radeon_device *rdev)
 {
-	int r, i, idx;
+	int r, i, j, idx;
 	u32 tmp;
 	bool use_doorbell = true;
 	u64 hqd_gpu_addr;
@@ -3846,10 +4475,6 @@ static int cik_cp_compute_resume(struct radeon_device *rdev)
 			return r;
 		}
 
-		/* doorbell offset */
-		rdev->ring[idx].doorbell_offset =
-			(rdev->ring[idx].doorbell_page_num * PAGE_SIZE) + 0;
-
 		/* init the mqd struct */
 		memset(buf, 0, sizeof(struct bonaire_mqd));
 
@@ -3886,7 +4511,7 @@ static int cik_cp_compute_resume(struct radeon_device *rdev)
 		mqd->queue_state.cp_hqd_pq_wptr= 0;
 		if (RREG32(CP_HQD_ACTIVE) & 1) {
 			WREG32(CP_HQD_DEQUEUE_REQUEST, 1);
-			for (i = 0; i < rdev->usec_timeout; i++) {
+			for (j = 0; j < rdev->usec_timeout; j++) {
 				if (!(RREG32(CP_HQD_ACTIVE) & 1))
 					break;
 				udelay(1);
@@ -3961,7 +4586,7 @@ static int cik_cp_compute_resume(struct radeon_device *rdev)
 				RREG32(CP_HQD_PQ_DOORBELL_CONTROL);
 			mqd->queue_state.cp_hqd_pq_doorbell_control &= ~DOORBELL_OFFSET_MASK;
 			mqd->queue_state.cp_hqd_pq_doorbell_control |=
-				DOORBELL_OFFSET(rdev->ring[idx].doorbell_offset / 4);
+				DOORBELL_OFFSET(rdev->ring[idx].doorbell_index);
 			mqd->queue_state.cp_hqd_pq_doorbell_control |= DOORBELL_EN;
 			mqd->queue_state.cp_hqd_pq_doorbell_control &=
 				~(DOORBELL_SOURCE | DOORBELL_HIT);
@@ -4302,6 +4927,160 @@ static void cik_gpu_soft_reset(struct radeon_device *rdev, u32 reset_mask)
 	cik_print_gpu_status_regs(rdev);
 }
 
+struct kv_reset_save_regs {
+	u32 gmcon_reng_execute;
+	u32 gmcon_misc;
+	u32 gmcon_misc3;
+};
+
+static void kv_save_regs_for_reset(struct radeon_device *rdev,
+				   struct kv_reset_save_regs *save)
+{
+	save->gmcon_reng_execute = RREG32(GMCON_RENG_EXECUTE);
+	save->gmcon_misc = RREG32(GMCON_MISC);
+	save->gmcon_misc3 = RREG32(GMCON_MISC3);
+
+	WREG32(GMCON_RENG_EXECUTE, save->gmcon_reng_execute & ~RENG_EXECUTE_ON_PWR_UP);
+	WREG32(GMCON_MISC, save->gmcon_misc & ~(RENG_EXECUTE_ON_REG_UPDATE |
+						STCTRL_STUTTER_EN));
+}
+
+static void kv_restore_regs_for_reset(struct radeon_device *rdev,
+				      struct kv_reset_save_regs *save)
+{
+	int i;
+
+	WREG32(GMCON_PGFSM_WRITE, 0);
+	WREG32(GMCON_PGFSM_CONFIG, 0x200010ff);
+
+	for (i = 0; i < 5; i++)
+		WREG32(GMCON_PGFSM_WRITE, 0);
+
+	WREG32(GMCON_PGFSM_WRITE, 0);
+	WREG32(GMCON_PGFSM_CONFIG, 0x300010ff);
+
+	for (i = 0; i < 5; i++)
+		WREG32(GMCON_PGFSM_WRITE, 0);
+
+	WREG32(GMCON_PGFSM_WRITE, 0x210000);
+	WREG32(GMCON_PGFSM_CONFIG, 0xa00010ff);
+
+	for (i = 0; i < 5; i++)
+		WREG32(GMCON_PGFSM_WRITE, 0);
+
+	WREG32(GMCON_PGFSM_WRITE, 0x21003);
+	WREG32(GMCON_PGFSM_CONFIG, 0xb00010ff);
+
+	for (i = 0; i < 5; i++)
+		WREG32(GMCON_PGFSM_WRITE, 0);
+
+	WREG32(GMCON_PGFSM_WRITE, 0x2b00);
+	WREG32(GMCON_PGFSM_CONFIG, 0xc00010ff);
+
+	for (i = 0; i < 5; i++)
+		WREG32(GMCON_PGFSM_WRITE, 0);
+
+	WREG32(GMCON_PGFSM_WRITE, 0);
+	WREG32(GMCON_PGFSM_CONFIG, 0xd00010ff);
+
+	for (i = 0; i < 5; i++)
+		WREG32(GMCON_PGFSM_WRITE, 0);
+
+	WREG32(GMCON_PGFSM_WRITE, 0x420000);
+	WREG32(GMCON_PGFSM_CONFIG, 0x100010ff);
+
+	for (i = 0; i < 5; i++)
+		WREG32(GMCON_PGFSM_WRITE, 0);
+
+	WREG32(GMCON_PGFSM_WRITE, 0x120202);
+	WREG32(GMCON_PGFSM_CONFIG, 0x500010ff);
+
+	for (i = 0; i < 5; i++)
+		WREG32(GMCON_PGFSM_WRITE, 0);
+
+	WREG32(GMCON_PGFSM_WRITE, 0x3e3e36);
+	WREG32(GMCON_PGFSM_CONFIG, 0x600010ff);
+
+	for (i = 0; i < 5; i++)
+		WREG32(GMCON_PGFSM_WRITE, 0);
+
+	WREG32(GMCON_PGFSM_WRITE, 0x373f3e);
+	WREG32(GMCON_PGFSM_CONFIG, 0x700010ff);
+
+	for (i = 0; i < 5; i++)
+		WREG32(GMCON_PGFSM_WRITE, 0);
+
+	WREG32(GMCON_PGFSM_WRITE, 0x3e1332);
+	WREG32(GMCON_PGFSM_CONFIG, 0xe00010ff);
+
+	WREG32(GMCON_MISC3, save->gmcon_misc3);
+	WREG32(GMCON_MISC, save->gmcon_misc);
+	WREG32(GMCON_RENG_EXECUTE, save->gmcon_reng_execute);
+}
+
+static void cik_gpu_pci_config_reset(struct radeon_device *rdev)
+{
+	struct evergreen_mc_save save;
+	struct kv_reset_save_regs kv_save = { 0 };
+	u32 tmp, i;
+
+	dev_info(rdev->dev, "GPU pci config reset\n");
+
+	/* disable dpm? */
+
+	/* disable cg/pg */
+	cik_fini_pg(rdev);
+	cik_fini_cg(rdev);
+
+	/* Disable GFX parsing/prefetching */
+	WREG32(CP_ME_CNTL, CP_ME_HALT | CP_PFP_HALT | CP_CE_HALT);
+
+	/* Disable MEC parsing/prefetching */
+	WREG32(CP_MEC_CNTL, MEC_ME1_HALT | MEC_ME2_HALT);
+
+	/* sdma0 */
+	tmp = RREG32(SDMA0_ME_CNTL + SDMA0_REGISTER_OFFSET);
+	tmp |= SDMA_HALT;
+	WREG32(SDMA0_ME_CNTL + SDMA0_REGISTER_OFFSET, tmp);
+	/* sdma1 */
+	tmp = RREG32(SDMA0_ME_CNTL + SDMA1_REGISTER_OFFSET);
+	tmp |= SDMA_HALT;
+	WREG32(SDMA0_ME_CNTL + SDMA1_REGISTER_OFFSET, tmp);
+	/* XXX other engines? */
+
+	/* halt the rlc, disable cp internal ints */
+	cik_rlc_stop(rdev);
+
+	udelay(50);
+
+	/* disable mem access */
+	evergreen_mc_stop(rdev, &save);
+	if (evergreen_mc_wait_for_idle(rdev)) {
+		dev_warn(rdev->dev, "Wait for MC idle timed out !\n");
+	}
+
+	if (rdev->flags & RADEON_IS_IGP)
+		kv_save_regs_for_reset(rdev, &kv_save);
+
+	/* disable BM */
+	pci_clear_master(rdev->pdev);
+	/* reset */
+	radeon_pci_config_reset(rdev);
+
+	udelay(100);
+
+	/* wait for asic to come out of reset */
+	for (i = 0; i < rdev->usec_timeout; i++) {
+		if (RREG32(CONFIG_MEMSIZE) != 0xffffffff)
+			break;
+		udelay(1);
+	}
+
+	/* does asic init need to be run first??? */
+	if (rdev->flags & RADEON_IS_IGP)
+		kv_restore_regs_for_reset(rdev, &kv_save);
+}
+
 /**
  * cik_asic_reset - soft reset GPU
  *
@@ -4320,7 +5099,14 @@ int cik_asic_reset(struct radeon_device *rdev)
 	if (reset_mask)
 		r600_set_bios_scratch_engine_hung(rdev, true);
 
+	/* try soft reset */
 	cik_gpu_soft_reset(rdev, reset_mask);
+
+	reset_mask = cik_gpu_check_soft_reset(rdev);
+
+	/* try pci config reset */
+	if (reset_mask && radeon_hard_reset)
+		cik_gpu_pci_config_reset(rdev);
 
 	reset_mask = cik_gpu_check_soft_reset(rdev);
 
@@ -4588,20 +5374,6 @@ static int cik_pcie_gart_enable(struct radeon_device *rdev)
 				WRITE_PROTECTION_FAULT_ENABLE_INTERRUPT |
 				WRITE_PROTECTION_FAULT_ENABLE_DEFAULT);
 
-	/* TC cache setup ??? */
-	WREG32(TC_CFG_L1_LOAD_POLICY0, 0);
-	WREG32(TC_CFG_L1_LOAD_POLICY1, 0);
-	WREG32(TC_CFG_L1_STORE_POLICY, 0);
-
-	WREG32(TC_CFG_L2_LOAD_POLICY0, 0);
-	WREG32(TC_CFG_L2_LOAD_POLICY1, 0);
-	WREG32(TC_CFG_L2_STORE_POLICY0, 0);
-	WREG32(TC_CFG_L2_STORE_POLICY1, 0);
-	WREG32(TC_CFG_L2_ATOMIC_POLICY, 0);
-
-	WREG32(TC_CFG_L1_VOLATILE, 0);
-	WREG32(TC_CFG_L2_VOLATILE, 0);
-
 	if (rdev->family == CHIP_KAVERI) {
 		u32 tmp = RREG32(CHUB_CONTROL);
 		tmp &= ~BYPASS_VM;
@@ -4745,11 +5517,16 @@ void cik_vm_fini(struct radeon_device *rdev)
 static void cik_vm_decode_fault(struct radeon_device *rdev,
 				u32 status, u32 addr, u32 mc_client)
 {
-	u32 mc_id = (status & MEMORY_CLIENT_ID_MASK) >> MEMORY_CLIENT_ID_SHIFT;
+	u32 mc_id;
 	u32 vmid = (status & FAULT_VMID_MASK) >> FAULT_VMID_SHIFT;
 	u32 protections = (status & PROTECTIONS_MASK) >> PROTECTIONS_SHIFT;
 	char block[5] = { mc_client >> 24, (mc_client >> 16) & 0xff,
 		(mc_client >> 8) & 0xff, mc_client & 0xff, 0 };
+
+	if (rdev->family == CHIP_HAWAII)
+		mc_id = (status & HAWAII_MEMORY_CLIENT_ID_MASK) >> MEMORY_CLIENT_ID_SHIFT;
+	else
+		mc_id = (status & MEMORY_CLIENT_ID_MASK) >> MEMORY_CLIENT_ID_SHIFT;
 
 	printk("VM fault (0x%02x, vmid %d) at page %u, %s from '%s' (0x%08x) (%d)\n",
 	       protections, vmid, addr,
@@ -4768,12 +5545,13 @@ static void cik_vm_decode_fault(struct radeon_device *rdev,
 void cik_vm_flush(struct radeon_device *rdev, int ridx, struct radeon_vm *vm)
 {
 	struct radeon_ring *ring = &rdev->ring[ridx];
+	int usepfp = (ridx == RADEON_RING_TYPE_GFX_INDEX);
 
 	if (vm == NULL)
 		return;
 
 	radeon_ring_write(ring, PACKET3(PACKET3_WRITE_DATA, 3));
-	radeon_ring_write(ring, (WRITE_DATA_ENGINE_SEL(0) |
+	radeon_ring_write(ring, (WRITE_DATA_ENGINE_SEL(usepfp) |
 				 WRITE_DATA_DST_SEL(0)));
 	if (vm->id < 8) {
 		radeon_ring_write(ring,
@@ -4812,16 +5590,7 @@ void cik_vm_flush(struct radeon_device *rdev, int ridx, struct radeon_vm *vm)
 	radeon_ring_write(ring, VMID(0));
 
 	/* HDP flush */
-	/* We should be using the WAIT_REG_MEM packet here like in
-	 * cik_fence_ring_emit(), but it causes the CP to hang in this
-	 * context...
-	 */
-	radeon_ring_write(ring, PACKET3(PACKET3_WRITE_DATA, 3));
-	radeon_ring_write(ring, (WRITE_DATA_ENGINE_SEL(0) |
-				 WRITE_DATA_DST_SEL(0)));
-	radeon_ring_write(ring, HDP_MEM_COHERENCY_FLUSH_CNTL >> 2);
-	radeon_ring_write(ring, 0);
-	radeon_ring_write(ring, 0);
+	cik_hdp_flush_cp_ring_emit(rdev, ridx);
 
 	/* bits 0-15 are the VM contexts0-15 */
 	radeon_ring_write(ring, PACKET3(PACKET3_WRITE_DATA, 3));
@@ -4832,66 +5601,10 @@ void cik_vm_flush(struct radeon_device *rdev, int ridx, struct radeon_vm *vm)
 	radeon_ring_write(ring, 1 << vm->id);
 
 	/* compute doesn't have PFP */
-	if (ridx == RADEON_RING_TYPE_GFX_INDEX) {
+	if (usepfp) {
 		/* sync PFP to ME, otherwise we might get invalid PFP reads */
 		radeon_ring_write(ring, PACKET3(PACKET3_PFP_SYNC_ME, 0));
 		radeon_ring_write(ring, 0x0);
-	}
-}
-
-/**
- * cik_vm_set_page - update the page tables using sDMA
- *
- * @rdev: radeon_device pointer
- * @ib: indirect buffer to fill with commands
- * @pe: addr of the page entry
- * @addr: dst addr to write into pe
- * @count: number of page entries to update
- * @incr: increase next addr by incr bytes
- * @flags: access flags
- *
- * Update the page tables using CP or sDMA (CIK).
- */
-void cik_vm_set_page(struct radeon_device *rdev,
-		     struct radeon_ib *ib,
-		     uint64_t pe,
-		     uint64_t addr, unsigned count,
-		     uint32_t incr, uint32_t flags)
-{
-	uint32_t r600_flags = cayman_vm_page_flags(rdev, flags);
-	uint64_t value;
-	unsigned ndw;
-
-	if (rdev->asic->vm.pt_ring_index == RADEON_RING_TYPE_GFX_INDEX) {
-		/* CP */
-		while (count) {
-			ndw = 2 + count * 2;
-			if (ndw > 0x3FFE)
-				ndw = 0x3FFE;
-
-			ib->ptr[ib->length_dw++] = PACKET3(PACKET3_WRITE_DATA, ndw);
-			ib->ptr[ib->length_dw++] = (WRITE_DATA_ENGINE_SEL(0) |
-						    WRITE_DATA_DST_SEL(1));
-			ib->ptr[ib->length_dw++] = pe;
-			ib->ptr[ib->length_dw++] = upper_32_bits(pe);
-			for (; ndw > 2; ndw -= 2, --count, pe += 8) {
-				if (flags & RADEON_VM_PAGE_SYSTEM) {
-					value = radeon_vm_map_gart(rdev, addr);
-					value &= 0xFFFFFFFFFFFFF000ULL;
-				} else if (flags & RADEON_VM_PAGE_VALID) {
-					value = addr;
-				} else {
-					value = 0;
-				}
-				addr += incr;
-				value |= r600_flags;
-				ib->ptr[ib->length_dw++] = value;
-				ib->ptr[ib->length_dw++] = upper_32_bits(value);
-			}
-		}
-	} else {
-		/* DMA */
-		cik_sdma_vm_set_page(rdev, ib, pe, addr, count, incr, flags);
 	}
 }
 
@@ -5063,6 +5776,7 @@ static int cik_rlc_resume(struct radeon_device *rdev)
 
 	switch (rdev->family) {
 	case CHIP_BONAIRE:
+	case CHIP_HAWAII:
 	default:
 		size = BONAIRE_RLC_UCODE_SIZE;
 		break;
@@ -5561,7 +6275,7 @@ void cik_init_cp_pg_table(struct radeon_device *rdev)
 		}
 
 		for (i = 0; i < CP_ME_TABLE_SIZE; i ++) {
-			dst_ptr[bo_offset + i] = be32_to_cpu(fw_data[table_offset + i]);
+			dst_ptr[bo_offset + i] = cpu_to_le32(be32_to_cpu(fw_data[table_offset + i]));
 		}
 		bo_offset += CP_ME_TABLE_SIZE;
 	}
@@ -5783,52 +6497,57 @@ void cik_get_csb_buffer(struct radeon_device *rdev, volatile u32 *buffer)
 	if (buffer == NULL)
 		return;
 
-	buffer[count++] = PACKET3(PACKET3_PREAMBLE_CNTL, 0);
-	buffer[count++] = PACKET3_PREAMBLE_BEGIN_CLEAR_STATE;
+	buffer[count++] = cpu_to_le32(PACKET3(PACKET3_PREAMBLE_CNTL, 0));
+	buffer[count++] = cpu_to_le32(PACKET3_PREAMBLE_BEGIN_CLEAR_STATE);
 
-	buffer[count++] = PACKET3(PACKET3_CONTEXT_CONTROL, 1);
-	buffer[count++] = 0x80000000;
-	buffer[count++] = 0x80000000;
+	buffer[count++] = cpu_to_le32(PACKET3(PACKET3_CONTEXT_CONTROL, 1));
+	buffer[count++] = cpu_to_le32(0x80000000);
+	buffer[count++] = cpu_to_le32(0x80000000);
 
 	for (sect = rdev->rlc.cs_data; sect->section != NULL; ++sect) {
 		for (ext = sect->section; ext->extent != NULL; ++ext) {
 			if (sect->id == SECT_CONTEXT) {
-				buffer[count++] = PACKET3(PACKET3_SET_CONTEXT_REG, ext->reg_count);
-				buffer[count++] = ext->reg_index - 0xa000;
+				buffer[count++] =
+					cpu_to_le32(PACKET3(PACKET3_SET_CONTEXT_REG, ext->reg_count));
+				buffer[count++] = cpu_to_le32(ext->reg_index - 0xa000);
 				for (i = 0; i < ext->reg_count; i++)
-					buffer[count++] = ext->extent[i];
+					buffer[count++] = cpu_to_le32(ext->extent[i]);
 			} else {
 				return;
 			}
 		}
 	}
 
-	buffer[count++] = PACKET3(PACKET3_SET_CONTEXT_REG, 2);
-	buffer[count++] = PA_SC_RASTER_CONFIG - PACKET3_SET_CONTEXT_REG_START;
+	buffer[count++] = cpu_to_le32(PACKET3(PACKET3_SET_CONTEXT_REG, 2));
+	buffer[count++] = cpu_to_le32(PA_SC_RASTER_CONFIG - PACKET3_SET_CONTEXT_REG_START);
 	switch (rdev->family) {
 	case CHIP_BONAIRE:
-		buffer[count++] = 0x16000012;
-		buffer[count++] = 0x00000000;
+		buffer[count++] = cpu_to_le32(0x16000012);
+		buffer[count++] = cpu_to_le32(0x00000000);
 		break;
 	case CHIP_KAVERI:
-		buffer[count++] = 0x00000000; /* XXX */
-		buffer[count++] = 0x00000000;
+		buffer[count++] = cpu_to_le32(0x00000000); /* XXX */
+		buffer[count++] = cpu_to_le32(0x00000000);
 		break;
 	case CHIP_KABINI:
-		buffer[count++] = 0x00000000; /* XXX */
-		buffer[count++] = 0x00000000;
+		buffer[count++] = cpu_to_le32(0x00000000); /* XXX */
+		buffer[count++] = cpu_to_le32(0x00000000);
+		break;
+	case CHIP_HAWAII:
+		buffer[count++] = cpu_to_le32(0x3a00161a);
+		buffer[count++] = cpu_to_le32(0x0000002e);
 		break;
 	default:
-		buffer[count++] = 0x00000000;
-		buffer[count++] = 0x00000000;
+		buffer[count++] = cpu_to_le32(0x00000000);
+		buffer[count++] = cpu_to_le32(0x00000000);
 		break;
 	}
 
-	buffer[count++] = PACKET3(PACKET3_PREAMBLE_CNTL, 0);
-	buffer[count++] = PACKET3_PREAMBLE_END_CLEAR_STATE;
+	buffer[count++] = cpu_to_le32(PACKET3(PACKET3_PREAMBLE_CNTL, 0));
+	buffer[count++] = cpu_to_le32(PACKET3_PREAMBLE_END_CLEAR_STATE);
 
-	buffer[count++] = PACKET3(PACKET3_CLEAR_STATE, 0);
-	buffer[count++] = 0;
+	buffer[count++] = cpu_to_le32(PACKET3(PACKET3_CLEAR_STATE, 0));
+	buffer[count++] = cpu_to_le32(0);
 }
 
 static void cik_init_pg(struct radeon_device *rdev)
@@ -5955,6 +6674,19 @@ static void cik_disable_interrupt_state(struct radeon_device *rdev)
 	if (rdev->num_crtc >= 6) {
 		WREG32(LB_INTERRUPT_MASK + EVERGREEN_CRTC4_REGISTER_OFFSET, 0);
 		WREG32(LB_INTERRUPT_MASK + EVERGREEN_CRTC5_REGISTER_OFFSET, 0);
+	}
+	/* pflip */
+	if (rdev->num_crtc >= 2) {
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC0_REGISTER_OFFSET, 0);
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC1_REGISTER_OFFSET, 0);
+	}
+	if (rdev->num_crtc >= 4) {
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC2_REGISTER_OFFSET, 0);
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC3_REGISTER_OFFSET, 0);
+	}
+	if (rdev->num_crtc >= 6) {
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC4_REGISTER_OFFSET, 0);
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC5_REGISTER_OFFSET, 0);
 	}
 
 	/* dac hotplug */
@@ -6312,6 +7044,25 @@ int cik_irq_set(struct radeon_device *rdev)
 		WREG32(LB_INTERRUPT_MASK + EVERGREEN_CRTC5_REGISTER_OFFSET, crtc6);
 	}
 
+	if (rdev->num_crtc >= 2) {
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC0_REGISTER_OFFSET,
+		       GRPH_PFLIP_INT_MASK);
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC1_REGISTER_OFFSET,
+		       GRPH_PFLIP_INT_MASK);
+	}
+	if (rdev->num_crtc >= 4) {
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC2_REGISTER_OFFSET,
+		       GRPH_PFLIP_INT_MASK);
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC3_REGISTER_OFFSET,
+		       GRPH_PFLIP_INT_MASK);
+	}
+	if (rdev->num_crtc >= 6) {
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC4_REGISTER_OFFSET,
+		       GRPH_PFLIP_INT_MASK);
+		WREG32(GRPH_INT_CONTROL + EVERGREEN_CRTC5_REGISTER_OFFSET,
+		       GRPH_PFLIP_INT_MASK);
+	}
+
 	WREG32(DC_HPD1_INT_CONTROL, hpd1);
 	WREG32(DC_HPD2_INT_CONTROL, hpd2);
 	WREG32(DC_HPD3_INT_CONTROL, hpd3);
@@ -6348,6 +7099,29 @@ static inline void cik_irq_ack(struct radeon_device *rdev)
 	rdev->irq.stat_regs.cik.disp_int_cont5 = RREG32(DISP_INTERRUPT_STATUS_CONTINUE5);
 	rdev->irq.stat_regs.cik.disp_int_cont6 = RREG32(DISP_INTERRUPT_STATUS_CONTINUE6);
 
+	rdev->irq.stat_regs.cik.d1grph_int = RREG32(GRPH_INT_STATUS +
+		EVERGREEN_CRTC0_REGISTER_OFFSET);
+	rdev->irq.stat_regs.cik.d2grph_int = RREG32(GRPH_INT_STATUS +
+		EVERGREEN_CRTC1_REGISTER_OFFSET);
+	if (rdev->num_crtc >= 4) {
+		rdev->irq.stat_regs.cik.d3grph_int = RREG32(GRPH_INT_STATUS +
+			EVERGREEN_CRTC2_REGISTER_OFFSET);
+		rdev->irq.stat_regs.cik.d4grph_int = RREG32(GRPH_INT_STATUS +
+			EVERGREEN_CRTC3_REGISTER_OFFSET);
+	}
+	if (rdev->num_crtc >= 6) {
+		rdev->irq.stat_regs.cik.d5grph_int = RREG32(GRPH_INT_STATUS +
+			EVERGREEN_CRTC4_REGISTER_OFFSET);
+		rdev->irq.stat_regs.cik.d6grph_int = RREG32(GRPH_INT_STATUS +
+			EVERGREEN_CRTC5_REGISTER_OFFSET);
+	}
+
+	if (rdev->irq.stat_regs.cik.d1grph_int & GRPH_PFLIP_INT_OCCURRED)
+		WREG32(GRPH_INT_STATUS + EVERGREEN_CRTC0_REGISTER_OFFSET,
+		       GRPH_PFLIP_INT_CLEAR);
+	if (rdev->irq.stat_regs.cik.d2grph_int & GRPH_PFLIP_INT_OCCURRED)
+		WREG32(GRPH_INT_STATUS + EVERGREEN_CRTC1_REGISTER_OFFSET,
+		       GRPH_PFLIP_INT_CLEAR);
 	if (rdev->irq.stat_regs.cik.disp_int & LB_D1_VBLANK_INTERRUPT)
 		WREG32(LB_VBLANK_STATUS + EVERGREEN_CRTC0_REGISTER_OFFSET, VBLANK_ACK);
 	if (rdev->irq.stat_regs.cik.disp_int & LB_D1_VLINE_INTERRUPT)
@@ -6358,6 +7132,12 @@ static inline void cik_irq_ack(struct radeon_device *rdev)
 		WREG32(LB_VLINE_STATUS + EVERGREEN_CRTC1_REGISTER_OFFSET, VLINE_ACK);
 
 	if (rdev->num_crtc >= 4) {
+		if (rdev->irq.stat_regs.cik.d3grph_int & GRPH_PFLIP_INT_OCCURRED)
+			WREG32(GRPH_INT_STATUS + EVERGREEN_CRTC2_REGISTER_OFFSET,
+			       GRPH_PFLIP_INT_CLEAR);
+		if (rdev->irq.stat_regs.cik.d4grph_int & GRPH_PFLIP_INT_OCCURRED)
+			WREG32(GRPH_INT_STATUS + EVERGREEN_CRTC3_REGISTER_OFFSET,
+			       GRPH_PFLIP_INT_CLEAR);
 		if (rdev->irq.stat_regs.cik.disp_int_cont2 & LB_D3_VBLANK_INTERRUPT)
 			WREG32(LB_VBLANK_STATUS + EVERGREEN_CRTC2_REGISTER_OFFSET, VBLANK_ACK);
 		if (rdev->irq.stat_regs.cik.disp_int_cont2 & LB_D3_VLINE_INTERRUPT)
@@ -6369,6 +7149,12 @@ static inline void cik_irq_ack(struct radeon_device *rdev)
 	}
 
 	if (rdev->num_crtc >= 6) {
+		if (rdev->irq.stat_regs.cik.d5grph_int & GRPH_PFLIP_INT_OCCURRED)
+			WREG32(GRPH_INT_STATUS + EVERGREEN_CRTC4_REGISTER_OFFSET,
+			       GRPH_PFLIP_INT_CLEAR);
+		if (rdev->irq.stat_regs.cik.d6grph_int & GRPH_PFLIP_INT_OCCURRED)
+			WREG32(GRPH_INT_STATUS + EVERGREEN_CRTC5_REGISTER_OFFSET,
+			       GRPH_PFLIP_INT_CLEAR);
 		if (rdev->irq.stat_regs.cik.disp_int_cont4 & LB_D5_VBLANK_INTERRUPT)
 			WREG32(LB_VBLANK_STATUS + EVERGREEN_CRTC4_REGISTER_OFFSET, VBLANK_ACK);
 		if (rdev->irq.stat_regs.cik.disp_int_cont4 & LB_D5_VLINE_INTERRUPT)
@@ -6487,6 +7273,7 @@ static inline u32 cik_get_ih_wptr(struct radeon_device *rdev)
 		tmp = RREG32(IH_RB_CNTL);
 		tmp |= IH_WPTR_OVERFLOW_CLEAR;
 		WREG32(IH_RB_CNTL, tmp);
+		wptr &= ~RB_OVERFLOW;
 	}
 	return (wptr & rdev->ih.ptr_mask);
 }
@@ -6719,6 +7506,15 @@ restart_ih:
 				DRM_DEBUG("Unhandled interrupt: %d %d\n", src_id, src_data);
 				break;
 			}
+			break;
+		case 8: /* D1 page flip */
+		case 10: /* D2 page flip */
+		case 12: /* D3 page flip */
+		case 14: /* D4 page flip */
+		case 16: /* D5 page flip */
+		case 18: /* D6 page flip */
+			DRM_DEBUG("IH: D%d flip\n", ((src_id - 8) >> 1) + 1);
+			radeon_crtc_handle_flip(rdev, (src_id - 8) >> 1);
 			break;
 		case 42: /* HPD hotplug */
 			switch (src_data) {
@@ -6984,6 +7780,7 @@ restart_ih:
 static int cik_startup(struct radeon_device *rdev)
 {
 	struct radeon_ring *ring;
+	u32 nop;
 	int r;
 
 	/* enable pcie gen2/3 link */
@@ -6998,7 +7795,7 @@ static int cik_startup(struct radeon_device *rdev)
 
 	cik_mc_program(rdev);
 
-	if (!(rdev->flags & RADEON_IS_IGP)) {
+	if (!(rdev->flags & RADEON_IS_IGP) && !rdev->pm.dpm_enabled) {
 		r = ci_mc_load_microcode(rdev);
 		if (r) {
 			DRM_ERROR("Failed to load MC firmware!\n");
@@ -7101,10 +7898,15 @@ static int cik_startup(struct radeon_device *rdev)
 	}
 	cik_irq_set(rdev);
 
+	if (rdev->family == CHIP_HAWAII) {
+		nop = RADEON_CP_PACKET2;
+	} else {
+		nop = PACKET3(PACKET3_NOP, 0x3FFF);
+	}
+
 	ring = &rdev->ring[RADEON_RING_TYPE_GFX_INDEX];
 	r = radeon_ring_init(rdev, ring, ring->ring_size, RADEON_WB_CP_RPTR_OFFSET,
-			     CP_RB0_RPTR, CP_RB0_WPTR,
-			     RADEON_CP_PACKET2);
+			     nop);
 	if (r)
 		return r;
 
@@ -7112,8 +7914,7 @@ static int cik_startup(struct radeon_device *rdev)
 	/* type-2 packets are deprecated on MEC, use type-3 instead */
 	ring = &rdev->ring[CAYMAN_RING_TYPE_CP1_INDEX];
 	r = radeon_ring_init(rdev, ring, ring->ring_size, RADEON_WB_CP1_RPTR_OFFSET,
-			     CP_HQD_PQ_RPTR, CP_HQD_PQ_WPTR,
-			     PACKET3(PACKET3_NOP, 0x3FFF));
+			     nop);
 	if (r)
 		return r;
 	ring->me = 1; /* first MEC */
@@ -7124,8 +7925,7 @@ static int cik_startup(struct radeon_device *rdev)
 	/* type-2 packets are deprecated on MEC, use type-3 instead */
 	ring = &rdev->ring[CAYMAN_RING_TYPE_CP2_INDEX];
 	r = radeon_ring_init(rdev, ring, ring->ring_size, RADEON_WB_CP2_RPTR_OFFSET,
-			     CP_HQD_PQ_RPTR, CP_HQD_PQ_WPTR,
-			     PACKET3(PACKET3_NOP, 0x3FFF));
+			     nop);
 	if (r)
 		return r;
 	/* dGPU only have 1 MEC */
@@ -7136,16 +7936,12 @@ static int cik_startup(struct radeon_device *rdev)
 
 	ring = &rdev->ring[R600_RING_TYPE_DMA_INDEX];
 	r = radeon_ring_init(rdev, ring, ring->ring_size, R600_WB_DMA_RPTR_OFFSET,
-			     SDMA0_GFX_RB_RPTR + SDMA0_REGISTER_OFFSET,
-			     SDMA0_GFX_RB_WPTR + SDMA0_REGISTER_OFFSET,
 			     SDMA_PACKET(SDMA_OPCODE_NOP, 0, 0));
 	if (r)
 		return r;
 
 	ring = &rdev->ring[CAYMAN_RING_TYPE_DMA1_INDEX];
 	r = radeon_ring_init(rdev, ring, ring->ring_size, CAYMAN_WB_DMA1_RPTR_OFFSET,
-			     SDMA0_GFX_RB_RPTR + SDMA1_REGISTER_OFFSET,
-			     SDMA0_GFX_RB_WPTR + SDMA1_REGISTER_OFFSET,
 			     SDMA_PACKET(SDMA_OPCODE_NOP, 0, 0));
 	if (r)
 		return r;
@@ -7161,7 +7957,6 @@ static int cik_startup(struct radeon_device *rdev)
 	ring = &rdev->ring[R600_RING_TYPE_UVD_INDEX];
 	if (ring->ring_size) {
 		r = radeon_ring_init(rdev, ring, ring->ring_size, 0,
-				     UVD_RBC_RB_RPTR, UVD_RBC_RB_WPTR,
 				     RADEON_CP_PACKET2);
 		if (!r)
 			r = uvd_v1_0_init(rdev);
@@ -7207,6 +8002,9 @@ int cik_resume(struct radeon_device *rdev)
 	/* init golden registers */
 	cik_init_golden_registers(rdev);
 
+	if (rdev->pm.pm_method == PM_METHOD_DPM)
+		radeon_pm_resume(rdev);
+
 	rdev->accel_working = true;
 	r = cik_startup(rdev);
 	if (r) {
@@ -7230,6 +8028,7 @@ int cik_resume(struct radeon_device *rdev)
  */
 int cik_suspend(struct radeon_device *rdev)
 {
+	radeon_pm_suspend(rdev);
 	dce6_audio_fini(rdev);
 	radeon_vm_manager_fini(rdev);
 	cik_cp_enable(rdev, false);
@@ -7332,6 +8131,9 @@ int cik_init(struct radeon_device *rdev)
 		}
 	}
 
+	/* Initialize power management */
+	radeon_pm_init(rdev);
+
 	ring = &rdev->ring[RADEON_RING_TYPE_GFX_INDEX];
 	ring->ring_obj = NULL;
 	r600_ring_init(rdev, ring, 1024 * 1024);
@@ -7339,14 +8141,14 @@ int cik_init(struct radeon_device *rdev)
 	ring = &rdev->ring[CAYMAN_RING_TYPE_CP1_INDEX];
 	ring->ring_obj = NULL;
 	r600_ring_init(rdev, ring, 1024 * 1024);
-	r = radeon_doorbell_get(rdev, &ring->doorbell_page_num);
+	r = radeon_doorbell_get(rdev, &ring->doorbell_index);
 	if (r)
 		return r;
 
 	ring = &rdev->ring[CAYMAN_RING_TYPE_CP2_INDEX];
 	ring->ring_obj = NULL;
 	r600_ring_init(rdev, ring, 1024 * 1024);
-	r = radeon_doorbell_get(rdev, &ring->doorbell_page_num);
+	r = radeon_doorbell_get(rdev, &ring->doorbell_index);
 	if (r)
 		return r;
 
@@ -7412,6 +8214,7 @@ int cik_init(struct radeon_device *rdev)
  */
 void cik_fini(struct radeon_device *rdev)
 {
+	radeon_pm_fini(rdev);
 	cik_cp_fini(rdev);
 	cik_sdma_fini(rdev);
 	cik_fini_pg(rdev);
@@ -7433,6 +8236,70 @@ void cik_fini(struct radeon_device *rdev)
 	radeon_atombios_fini(rdev);
 	kfree(rdev->bios);
 	rdev->bios = NULL;
+}
+
+void dce8_program_fmt(struct drm_encoder *encoder)
+{
+	struct drm_device *dev = encoder->dev;
+	struct radeon_device *rdev = dev->dev_private;
+	struct radeon_encoder *radeon_encoder = to_radeon_encoder(encoder);
+	struct radeon_crtc *radeon_crtc = to_radeon_crtc(encoder->crtc);
+	struct drm_connector *connector = radeon_get_connector_for_encoder(encoder);
+	int bpc = 0;
+	u32 tmp = 0;
+	enum radeon_connector_dither dither = RADEON_FMT_DITHER_DISABLE;
+
+	if (connector) {
+		struct radeon_connector *radeon_connector = to_radeon_connector(connector);
+		bpc = radeon_get_monitor_bpc(connector);
+		dither = radeon_connector->dither;
+	}
+
+	/* LVDS/eDP FMT is set up by atom */
+	if (radeon_encoder->devices & ATOM_DEVICE_LCD_SUPPORT)
+		return;
+
+	/* not needed for analog */
+	if ((radeon_encoder->encoder_id == ENCODER_OBJECT_ID_INTERNAL_KLDSCP_DAC1) ||
+	    (radeon_encoder->encoder_id == ENCODER_OBJECT_ID_INTERNAL_KLDSCP_DAC2))
+		return;
+
+	if (bpc == 0)
+		return;
+
+	switch (bpc) {
+	case 6:
+		if (dither == RADEON_FMT_DITHER_ENABLE)
+			/* XXX sort out optimal dither settings */
+			tmp |= (FMT_FRAME_RANDOM_ENABLE | FMT_HIGHPASS_RANDOM_ENABLE |
+				FMT_SPATIAL_DITHER_EN | FMT_SPATIAL_DITHER_DEPTH(0));
+		else
+			tmp |= (FMT_TRUNCATE_EN | FMT_TRUNCATE_DEPTH(0));
+		break;
+	case 8:
+		if (dither == RADEON_FMT_DITHER_ENABLE)
+			/* XXX sort out optimal dither settings */
+			tmp |= (FMT_FRAME_RANDOM_ENABLE | FMT_HIGHPASS_RANDOM_ENABLE |
+				FMT_RGB_RANDOM_ENABLE |
+				FMT_SPATIAL_DITHER_EN | FMT_SPATIAL_DITHER_DEPTH(1));
+		else
+			tmp |= (FMT_TRUNCATE_EN | FMT_TRUNCATE_DEPTH(1));
+		break;
+	case 10:
+		if (dither == RADEON_FMT_DITHER_ENABLE)
+			/* XXX sort out optimal dither settings */
+			tmp |= (FMT_FRAME_RANDOM_ENABLE | FMT_HIGHPASS_RANDOM_ENABLE |
+				FMT_RGB_RANDOM_ENABLE |
+				FMT_SPATIAL_DITHER_EN | FMT_SPATIAL_DITHER_DEPTH(2));
+		else
+			tmp |= (FMT_TRUNCATE_EN | FMT_TRUNCATE_DEPTH(2));
+		break;
+	default:
+		/* not needed */
+		break;
+	}
+
+	WREG32(FMT_BIT_DEPTH_CONTROL + radeon_crtc->crtc_offset, tmp);
 }
 
 /* display watermark setup */
@@ -8025,6 +8892,9 @@ void dce8_bandwidth_update(struct radeon_device *rdev)
 	struct drm_display_mode *mode = NULL;
 	u32 num_heads = 0, lb_size;
 	int i;
+
+	if (!rdev->mode_info.mode_config_initialized)
+		return;
 
 	radeon_update_display_priority(rdev);
 

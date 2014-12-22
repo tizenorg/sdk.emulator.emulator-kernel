@@ -97,6 +97,11 @@ const struct address_space_operations gfs2_meta_aops = {
 	.releasepage = gfs2_releasepage,
 };
 
+const struct address_space_operations gfs2_rgrp_aops = {
+	.writepage = gfs2_aspace_writepage,
+	.releasepage = gfs2_releasepage,
+};
+
 /**
  * gfs2_getbuf - Get a buffer with a given address space
  * @gl: the glock
@@ -115,6 +120,9 @@ struct buffer_head *gfs2_getbuf(struct gfs2_glock *gl, u64 blkno, int create)
 	unsigned int shift;
 	unsigned long index;
 	unsigned int bufnum;
+
+	if (mapping == NULL)
+		mapping = &sdp->sd_aspace;
 
 	shift = PAGE_CACHE_SHIFT - sdp->sd_sb.sb_bsize_shift;
 	index = blkno >> shift;             /* convert block to page */

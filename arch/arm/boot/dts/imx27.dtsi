@@ -30,6 +30,7 @@
 		spi0 = &cspi1;
 		spi1 = &cspi2;
 		spi2 = &cspi3;
+		ethernet0 = &fec;
 	};
 
 	aitc: aitc-interrupt-controller@e0000000 {
@@ -123,6 +124,7 @@
 			};
 
 			pwm: pwm@10006000 {
+				#pwm-cells = <2>;
 				compatible = "fsl,imx27-pwm";
 				reg = <0x10006000 0x1000>;
 				interrupts = <23>;

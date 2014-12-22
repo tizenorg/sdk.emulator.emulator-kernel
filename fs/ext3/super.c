@@ -1354,13 +1354,6 @@ set_qf_format:
 					"not specified.");
 			return 0;
 		}
-	} else {
-		if (sbi->s_jquota_fmt) {
-			ext3_msg(sb, KERN_ERR, "error: journaled quota format "
-					"specified with no journaling "
-					"enabled.");
-			return 0;
-		}
 	}
 #endif
 	return 1;
@@ -2825,6 +2818,10 @@ static int ext3_statfs (struct dentry * dentry, struct kstatfs * buf)
 		 * bitmap, and an inode table.
 		 */
 		overhead += ngroups * (2 + sbi->s_itb_per_group);
+
+		/* Add the journal blocks as well */
+                overhead += sbi->s_journal->j_maxlen;
+
 		sbi->s_overhead_last = overhead;
 		smp_wmb();
 		sbi->s_blocks_last = le32_to_cpu(es->s_blocks_count);

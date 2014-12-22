@@ -12,7 +12,6 @@
 #include <linux/kconfig.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
-#include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/export.h>
 #include <linux/acpi.h>
@@ -118,7 +117,7 @@ static DEFINE_SPINLOCK(amd_lock);
  *
  * Returns: 1 if it is an AMD chipset, 0 otherwise.
  */
-int amd_chipset_sb_type_init(struct amd_chipset_info *pinfo)
+static int amd_chipset_sb_type_init(struct amd_chipset_info *pinfo)
 {
 	u8 rev = 0;
 	pinfo->sb_type.gen = AMD_CHIPSET_UNKNOWN;
@@ -249,6 +248,18 @@ commit:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(usb_amd_find_chipset_info);
+
+int usb_hcd_amd_remote_wakeup_quirk(struct pci_dev *pdev)
+{
+	/* Make sure amd chipset type has already been initialized */
+	usb_amd_find_chipset_info();
+	if (amd_chipset.sb_type.gen != AMD_CHIPSET_YANGTZE)
+		return 0;
+
+	dev_dbg(&pdev->dev, "QUIRK: Enable AMD remote wakeup fix\n");
+	return 1;
+}
+EXPORT_SYMBOL_GPL(usb_hcd_amd_remote_wakeup_quirk);
 
 bool usb_amd_hang_symptom_quirk(void)
 {
@@ -645,6 +656,14 @@ static const struct dmi_system_id ehci_dmi_nohandoff_table[] = {
 			DMI_MATCH(DMI_BIOS_VERSION, "Lucid-"),
 		},
 	},
+	{
+		/* HASEE E200 */
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "HASEE"),
+			DMI_MATCH(DMI_BOARD_NAME, "E210"),
+			DMI_MATCH(DMI_BIOS_VERSION, "6.00"),
+		},
+	},
 	{ }
 };
 
@@ -654,9 +673,14 @@ static void ehci_bios_handoff(struct pci_dev *pdev,
 {
 	int try_handoff = 1, tried_handoff = 0;
 
-	/* The Pegatron Lucid tablet sporadically waits for 98 seconds trying
-	 * the handoff on its unused controller.  Skip it. */
-	if (pdev->vendor == 0x8086 && pdev->device == 0x283a) {
+	/*
+	 * The Pegatron Lucid tablet sporadically waits for 98 seconds trying
+	 * the handoff on its unused controller.  Skip it.
+	 *
+	 * The HASEE E200 hangs when the semaphore is set (bugzilla #77021).
+	 */
+	if (pdev->vendor == 0x8086 && (pdev->device == 0x283a ||
+			pdev->device == 0x27cc)) {
 		if (dmi_check_system(ehci_dmi_nohandoff_table))
 			try_handoff = 0;
 	}
@@ -835,6 +859,13 @@ void usb_enable_intel_xhci_ports(struct pci_dev *xhci_pdev)
 	u32		ports_available;
 	bool		ehci_found = false;
 	struct pci_dev	*companion = NULL;
+
+	/* Sony VAIO t-series with subsystem device ID 90a8 is not capable of
+	 * switching ports from EHCI to xHCI
+	 */
+	if (xhci_pdev->subsystem_vendor == PCI_VENDOR_ID_SONY &&
+	    xhci_pdev->subsystem_device == 0x90a8)
+		return;
 
 	/* make sure an intel EHCI controller exists */
 	for_each_pci_dev(companion) {

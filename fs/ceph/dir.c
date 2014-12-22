@@ -100,6 +100,14 @@ static unsigned fpos_off(loff_t p)
 	return p & 0xffffffff;
 }
 
+static int fpos_cmp(loff_t l, loff_t r)
+{
+	int v = ceph_frag_compare(fpos_frag(l), fpos_frag(r));
+	if (v)
+		return v;
+	return (int)(fpos_off(l) - fpos_off(r));
+}
+
 /*
  * When possible, we try to satisfy a readdir by peeking at the
  * dcache.  We make this work by carefully ordering dentries on
@@ -156,7 +164,7 @@ more:
 		if (!d_unhashed(dentry) && dentry->d_inode &&
 		    ceph_snap(dentry->d_inode) != CEPH_SNAPDIR &&
 		    ceph_ino(dentry->d_inode) != CEPH_INO_CEPH &&
-		    ctx->pos <= di->offset)
+		    fpos_cmp(ctx->pos, di->offset) <= 0)
 			break;
 		dout(" skipping %p %.*s at %llu (%llu)%s%s\n", dentry,
 		     dentry->d_name.len, dentry->d_name.name, di->offset,
@@ -352,8 +360,18 @@ more:
 		}
 
 		/* note next offset and last dentry name */
+		rinfo = &req->r_reply_info;
+		if (le32_to_cpu(rinfo->dir_dir->frag) != frag) {
+			frag = le32_to_cpu(rinfo->dir_dir->frag);
+			if (ceph_frag_is_leftmost(frag))
+				fi->next_offset = 2;
+			else
+				fi->next_offset = 0;
+			off = fi->next_offset;
+		}
 		fi->offset = fi->next_offset;
 		fi->last_readdir = req;
+		fi->frag = frag;
 
 		if (req->r_reply_info.dir_end) {
 			kfree(fi->last_name);
@@ -363,7 +381,6 @@ more:
 			else
 				fi->next_offset = 0;
 		} else {
-			rinfo = &req->r_reply_info;
 			err = note_last_dentry(fi,
 				       rinfo->dir_dname[rinfo->dir_nr-1],
 				       rinfo->dir_dname_len[rinfo->dir_nr-1]);
@@ -429,7 +446,6 @@ more:
 	if (atomic_read(&ci->i_release_count) == fi->dir_release_count) {
 		dout(" marking %p complete\n", inode);
 		__ceph_dir_set_complete(ci, fi->dir_release_count);
-		ci->i_max_offset = ctx->pos;
 	}
 	spin_unlock(&ci->i_ceph_lock);
 
@@ -684,7 +700,10 @@ static int ceph_mknod(struct inode *dir, struct dentry *dentry,
 	if (!err && !req->r_reply_info.head->is_dentry)
 		err = ceph_handle_notrace_create(dir, dentry);
 	ceph_mdsc_put_request(req);
-	if (err)
+
+	if (!err)
+		ceph_init_acl(dentry, dentry->d_inode, dir);
+	else
 		d_drop(dentry);
 	return err;
 }
@@ -722,7 +741,9 @@ static int ceph_symlink(struct inode *dir, struct dentry *dentry,
 	if (!err && !req->r_reply_info.head->is_dentry)
 		err = ceph_handle_notrace_create(dir, dentry);
 	ceph_mdsc_put_request(req);
-	if (err)
+	if (!err)
+		ceph_init_acl(dentry, dentry->d_inode, dir);
+	else
 		d_drop(dentry);
 	return err;
 }
@@ -763,7 +784,9 @@ static int ceph_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 		err = ceph_handle_notrace_create(dir, dentry);
 	ceph_mdsc_put_request(req);
 out:
-	if (err < 0)
+	if (!err)
+		ceph_init_acl(dentry, dentry->d_inode, dir);
+	else
 		d_drop(dentry);
 	return err;
 }
@@ -908,14 +931,16 @@ static int ceph_rename(struct inode *old_dir, struct dentry *old_dentry,
 		 * to do it here.
 		 */
 
-		/* d_move screws up d_subdirs order */
-		ceph_dir_clear_complete(new_dir);
-
 		d_move(old_dentry, new_dentry);
 
 		/* ensure target dentry is invalidated, despite
 		   rehashing bug in vfs_rename_dir */
 		ceph_invalidate_dentry_lease(new_dentry);
+
+		/* d_move screws up sibling dentries' offsets */
+		ceph_dir_clear_complete(old_dir);
+		ceph_dir_clear_complete(new_dir);
+
 	}
 	ceph_mdsc_put_request(req);
 	return err;
@@ -1028,14 +1053,19 @@ static int ceph_d_revalidate(struct dentry *dentry, unsigned int flags)
 		valid = 1;
 	} else if (dentry_lease_is_valid(dentry) ||
 		   dir_lease_is_valid(dir, dentry)) {
-		valid = 1;
+		if (dentry->d_inode)
+			valid = ceph_is_any_caps(dentry->d_inode);
+		else
+			valid = 1;
 	}
 
 	dout("d_revalidate %p %s\n", dentry, valid ? "valid" : "invalid");
-	if (valid)
+	if (valid) {
 		ceph_dentry_lru_touch(dentry);
-	else
+	} else {
+		ceph_dir_clear_complete(dir);
 		d_drop(dentry);
+	}
 	iput(dir);
 	return valid;
 }
@@ -1284,6 +1314,8 @@ const struct inode_operations ceph_dir_iops = {
 	.getxattr = ceph_getxattr,
 	.listxattr = ceph_listxattr,
 	.removexattr = ceph_removexattr,
+	.get_acl = ceph_get_acl,
+	.set_acl = ceph_set_acl,
 	.mknod = ceph_mknod,
 	.symlink = ceph_symlink,
 	.mkdir = ceph_mkdir,

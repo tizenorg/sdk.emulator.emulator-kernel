@@ -934,7 +934,7 @@ repeat:
 					jbd2_alloc(jh2bh(jh)->b_size,
 							 GFP_NOFS);
 				if (!frozen_buffer) {
-					printk(KERN_EMERG
+					printk(KERN_ERR
 					       "%s: OOM for frozen_buffer\n",
 					       __func__);
 					JBUFFER_TRACE(jh, "oom!");
@@ -1168,7 +1168,7 @@ repeat:
 	if (!jh->b_committed_data) {
 		committed_data = jbd2_alloc(jh2bh(jh)->b_size, GFP_NOFS);
 		if (!committed_data) {
-			printk(KERN_EMERG "%s: No memory for committed data\n",
+			printk(KERN_ERR "%s: No memory for committed data\n",
 				__func__);
 			err = -ENOMEM;
 			goto out;
@@ -1310,7 +1310,7 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 		JBUFFER_TRACE(jh, "fastpath");
 		if (unlikely(jh->b_transaction !=
 			     journal->j_running_transaction)) {
-			printk(KERN_EMERG "JBD: %s: "
+			printk(KERN_ERR "JBD2: %s: "
 			       "jh->b_transaction (%llu, %p, %u) != "
 			       "journal->j_running_transaction (%p, %u)",
 			       journal->j_devname,
@@ -1337,7 +1337,7 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 		JBUFFER_TRACE(jh, "already on other transaction");
 		if (unlikely(jh->b_transaction !=
 			     journal->j_committing_transaction)) {
-			printk(KERN_EMERG "JBD: %s: "
+			printk(KERN_ERR "JBD2: %s: "
 			       "jh->b_transaction (%llu, %p, %u) != "
 			       "journal->j_committing_transaction (%p, %u)",
 			       journal->j_devname,
@@ -1350,7 +1350,7 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 			ret = -EINVAL;
 		}
 		if (unlikely(jh->b_next_transaction != transaction)) {
-			printk(KERN_EMERG "JBD: %s: "
+			printk(KERN_ERR "JBD2: %s: "
 			       "jh->b_next_transaction (%llu, %p, %u) != "
 			       "transaction (%p, %u)",
 			       journal->j_devname,
@@ -1590,9 +1590,12 @@ int jbd2_journal_stop(handle_t *handle)
 	 * to perform a synchronous write.  We do this to detect the
 	 * case where a single process is doing a stream of sync
 	 * writes.  No point in waiting for joiners in that case.
+	 *
+	 * Setting max_batch_time to 0 disables this completely.
 	 */
 	pid = current->pid;
-	if (handle->h_sync && journal->j_last_sync_writer != pid) {
+	if (handle->h_sync && journal->j_last_sync_writer != pid &&
+	    journal->j_max_batch_time) {
 		u64 commit_time, trans_time;
 
 		journal->j_last_sync_writer = pid;
