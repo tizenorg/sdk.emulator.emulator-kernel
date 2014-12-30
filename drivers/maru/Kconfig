@@ -53,3 +53,7 @@ config MARU_BRILLCODEC
 config MARU_VIRTIO_VMODEM
 	tristate "MARU VirtIO Virtual Modem Device Driver"
 	depends on MARU != n
+
+config MARU_VIRTIO_ROTARY
+	tristate "MARU VirtIO Virtual Rotary Device Driver"
+	depends on MARU != n
