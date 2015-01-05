@@ -250,8 +250,6 @@ static int evdi_open(struct inode* inode, struct file* filp)
 
 	evdi_info->guest_connected = true;
 
-	send_guest_connected_msg(true);
-
 	ret = _make_buf_and_kick();
 	if (ret < 0)
 		return ret;
