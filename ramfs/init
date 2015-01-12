@@ -8,6 +8,14 @@ NO_COLOR="\033[0m"
 
 NEW_ROOT="/new_root"
 
+cmdline() {
+    local value
+    value=" $(cat /proc/cmdline) "
+    value="${value##* $1=}"
+    value="${value%% *}"
+    [ "$value" != "" ] && echo "$value"
+}
+
 /bin/busybox mkdir -p /dev
 /bin/busybox mount -t devtmpfs devtmpfs /dev
 
@@ -22,14 +30,26 @@ echo -e "${COLOR_GREEN}Preparing...${NO_COLOR}"
 /bin/busybox mkdir -p /sys
 /bin/busybox mount -t sysfs sys /sys
 
+# for init...
+INIT=$(cmdline init)
+if [ -z $INIT ]; then
+    INIT="/sbin/init"
+fi
+
 # mount root...
 echo -e "${COLOR_GREEN}Mount image...${NO_COLOR}"
-/bin/busybox mount -o rw /dev/vda $NEW_ROOT
+ROOT=$(cmdline root)
+if [ -z $ROOT ]; then
+    echo -e "${COLOR_BLUE}Mount legacy image...${NO_COLOR}"
+    /bin/busybox mount -o rw /dev/vda $NEW_ROOT
+else
+    echo -e "${COLOR_BLUE}Mount ${ROOT}...${NO_COLOR}"
+    /bin/busybox mount -o rw $ROOT $NEW_ROOT
+fi
 
 # clean up...
 /bin/busybox umount /proc
 /bin/busybox umount /sys
 
-# switch root...
 echo -e "${COLOR_GREEN}Switching root...${NO_COLOR}"
-exec /bin/busybox switch_root -c /dev/console $NEW_ROOT /sbin/init
+exec /bin/busybox switch_root -c /dev/console $NEW_ROOT $INIT
