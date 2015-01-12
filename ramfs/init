@@ -1,19 +1,35 @@
-#!/bin/sh
+#!/bin/busybox sh
 # SeokYeon Hwang (syeon.hwang@samsung.com)
 
-COLOR='\033[1;34m' # light blue
-NO_COLOR='\033[0m'
+COLOR_BLUE="\033[1;34m" # light blue
+COLOR_GREEN="\033[1;32m" # light green
+COLOR_RED="\033[1;31m" # light red
+NO_COLOR="\033[0m"
 
-echo -e "${COLOR}Mount proc filesystem${NO_COLOR}"
-mount -t proc proc /proc
+NEW_ROOT="/new_root"
 
-echo -e "${COLOR}Mount emulator image${NO_COLOR}"
-mount -o rw /dev/vda /new_root
+/bin/busybox mkdir -p /dev
+/bin/busybox mount -t devtmpfs devtmpfs /dev
 
-echo -e "${COLOR}Mount dev filesystem${NO_COLOR}"
-/bin/mkdir -p /new_root/dev
-/bin/mount -t devtmpfs devtmpfs /new_root/dev
-/bin/mkdir -p /new_root/sys
+exec &> /dev/console
 
-echo -e "${COLOR}Switching root${NO_COLOR}"
-exec switch_root -c /dev/console /new_root /sbin/init
+# for debugging...
+#/bin/busybox ls -la /dev >> /dev/console
+
+echo -e "${COLOR_GREEN}Preparing...${NO_COLOR}"
+/bin/busybox mkdir -p /proc
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mkdir -p /sys
+/bin/busybox mount -t sysfs sys /sys
+
+# mount root...
+echo -e "${COLOR_GREEN}Mount image...${NO_COLOR}"
+/bin/busybox mount -o rw /dev/vda $NEW_ROOT
+
+# clean up...
+/bin/busybox umount /proc
+/bin/busybox umount /sys
+
+# switch root...
+echo -e "${COLOR_GREEN}Switching root...${NO_COLOR}"
+exec /bin/busybox switch_root -c /dev/console $NEW_ROOT /sbin/init
