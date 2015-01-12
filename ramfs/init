@@ -40,8 +40,22 @@ fi
 echo -e "${COLOR_GREEN}Mount image...${NO_COLOR}"
 ROOT=$(cmdline root)
 if [ -z $ROOT ]; then
-    echo -e "${COLOR_BLUE}Mount legacy image...${NO_COLOR}"
-    /bin/busybox mount -o rw /dev/vda $NEW_ROOT
+    # try to detect attached image...
+    /bin/busybox mkdir -p $NEW_ROOT
+    if [ -e /dev/vda1 ]; then
+        echo -e "${COLOR_BLUE}Mount partitioned image...${NO_COLOR}"
+        /bin/busybox mount -o rw /dev/vda1 $NEW_ROOT
+        /bin/busybox mount -o rw /dev/vda2 $NEW_ROOT/opt
+        /bin/busybox mount -o rw /dev/vda3 $NEW_ROOT/opt/usr
+    else
+        if [ -e /dev/vda ]; then
+            echo -e "${COLOR_BLUE}Mount legacy image...${NO_COLOR}"
+            /bin/busybox mount -o rw /dev/vda $NEW_ROOT
+        else
+            echo -e "${COLOR_RED}Auto mount failed !!!${NO_COLOR}"
+            exit
+        fi
+    fi
 else
     echo -e "${COLOR_BLUE}Mount ${ROOT}...${NO_COLOR}"
     /bin/busybox mount -o rw $ROOT $NEW_ROOT
