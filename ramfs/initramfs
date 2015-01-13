@@ -12,3 +12,6 @@ file /bin/busybox ramfs/busybox 0755 0 0
 dir /sbin 0755 0 0
 file /sbin/v86d ramfs/v86d 0755 0 0
 
+# for initial console
+dir /dev 0755 0 0
+nod /dev/console 0600 0 0 c 5 1
