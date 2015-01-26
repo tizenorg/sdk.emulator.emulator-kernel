@@ -9,9 +9,6 @@ cmdline() {
     [ "$value" != "" ] && echo "$value"
 }
 
-/bin/busybox mkdir -p /dev
-/bin/busybox mount -t devtmpfs devtmpfs /dev
-
 rescue_shell() {
     echo -e "${COLOR_RED}Error !!! Dropping you to a shell.${NO_COLOR}"
     /bin/busybox --install -s /bin
@@ -30,6 +27,9 @@ rescue_shell() {
 mount_fs() {
     /bin/busybox mount -o rw $1 $2 || rescue_shell
 }
+
+/bin/busybox mkdir -p /dev
+/bin/busybox mount -t devtmpfs devtmpfs /dev
 
 exec >/dev/console 2>&1
 
@@ -82,6 +82,12 @@ if [ -z $ROOT ]; then
 else
     echo -e "${COLOR_BLUE}Mount ${ROOT}...${NO_COLOR}"
     mount_fs $ROOT $NEW_ROOT
+fi
+
+# execute prerun scrpits...
+if [ -r $NEW_ROOT/etc/emulator/prerun ]; then
+    echo -e "${COLOR_BLUE}Prerun...${NO_COLOR}"
+    . $NEW_ROOT/etc/emulator/prerun $NEW_ROOT
 fi
 
 # clean up...
