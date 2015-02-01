@@ -12,6 +12,8 @@ clean()
 build()
 {
 	# x86 kernel
+	rm -rf $SRCDIR/.git
+
 	make ARCH=i386 i386_tizen_emul_defconfig
 	make ARCH=i386 -j4
 
@@ -38,7 +40,7 @@ install()
 #	cp arch/arm/boot/zImage $ARM_BIN_DIR/bzImage.arm
 }
 
-[ "$1" = "clean" ] && clean
+#[ "$1" = "clean" ] && clean
 [ "$1" = "build" ] && build
 [ "$1" = "install" ] && install
 

@@ -16,17 +16,15 @@
 /* Chosen so that structs with an unsigned long line up. */
 #define MAX_PARAM_PREFIX_LEN (64 - sizeof(unsigned long))
 
-#define ___module_cat(a,b) __mod_ ## a ## b
-#define __module_cat(a,b) ___module_cat(a,b)
 #ifdef MODULE
 #define __MODULE_INFO(tag, name, info)					  \
-static const char __module_cat(name,__LINE__)[]				  \
+static const char __UNIQUE_ID(name)[]					  \
   __used __attribute__((section(".modinfo"), unused, aligned(1)))	  \
   = __stringify(tag) "=" info
 #else  /* !MODULE */
 /* This struct is here for syntactic coherency, it is not used */
 #define __MODULE_INFO(tag, name, info)					  \
-  struct __module_cat(name,__LINE__) {}
+  struct __UNIQUE_ID(name) {}
 #endif
 #define __MODULE_PARM_TYPE(name, _type)					  \
   __MODULE_INFO(parmtype, name##type, #name ":" _type)
@@ -38,7 +36,18 @@ static const char __module_cat(name,__LINE__)[]				  \
 
 struct kernel_param;
 
+/*
+ * Flags available for kernel_param_ops
+ *
+ * NOARG - the parameter allows for no argument (foo instead of foo=1)
+ */
+enum {
+	KERNEL_PARAM_FL_NOARG = (1 << 0)
+};
+
 struct kernel_param_ops {
+	/* How the ops should behave */
+	unsigned int flags;
 	/* Returns 0, or -errno.  arg is in kp->arg. */
 	int (*set)(const char *val, const struct kernel_param *kp);
 	/* Returns length written or -errno.  Buffer is 4k (ie. be short!) */
@@ -128,7 +137,7 @@ struct kparam_array
  * The ops can have NULL set or get functions.
  */
 #define module_param_cb(name, ops, arg, perm)				      \
-	__module_param_call(MODULE_PARAM_PREFIX, name, ops, arg, perm, 0)
+	__module_param_call(MODULE_PARAM_PREFIX, name, ops, arg, perm, -1)
 
 /**
  * <level>_param_cb - general callback for a module/cmdline parameter
@@ -189,10 +198,10 @@ struct kparam_array
 /* Obsolete - use module_param_cb() */
 #define module_param_call(name, set, get, arg, perm)			\
 	static struct kernel_param_ops __param_ops_##name =		\
-		 { (void *)set, (void *)get };				\
+		{ 0, (void *)set, (void *)get };			\
 	__module_param_call(MODULE_PARAM_PREFIX,			\
 			    name, &__param_ops_##name, arg,		\
-			    (perm) + sizeof(__check_old_set_param(set))*0, 0)
+			    (perm) + sizeof(__check_old_set_param(set))*0, -1)
 
 /* We don't get oldget: it's often a new-style param_get_uint, etc. */
 static inline int
@@ -272,7 +281,7 @@ static inline void __kernel_param_unlock(void)
  */
 #define core_param(name, var, type, perm)				\
 	param_check_##type(name, &(var));				\
-	__module_param_call("", name, &param_ops_##type, &var, perm, 0)
+	__module_param_call("", name, &param_ops_##type, &var, perm, -1)
 #endif /* !MODULE */
 
 /**
@@ -290,7 +299,7 @@ static inline void __kernel_param_unlock(void)
 		= { len, string };					\
 	__module_param_call(MODULE_PARAM_PREFIX, name,			\
 			    &param_ops_string,				\
-			    .str = &__param_string_##name, perm, 0);	\
+			    .str = &__param_string_##name, perm, -1);	\
 	__MODULE_PARM_TYPE(name, "string")
 
 /**
@@ -320,7 +329,8 @@ extern int parse_args(const char *name,
 		      unsigned num,
 		      s16 level_min,
 		      s16 level_max,
-		      int (*unknown)(char *param, char *val));
+		      int (*unknown)(char *param, char *val,
+			      const char *doing));
 
 /* Called by module remove. */
 #ifdef CONFIG_SYSFS
@@ -431,7 +441,7 @@ extern int param_set_bint(const char *val, const struct kernel_param *kp);
 	__module_param_call(MODULE_PARAM_PREFIX, name,			\
 			    &param_array_ops,				\
 			    .arr = &__param_arr_##name,			\
-			    perm, 0);					\
+			    perm, -1);					\
 	__MODULE_PARM_TYPE(name, "array of " #type)
 
 extern struct kernel_param_ops param_array_ops;
@@ -440,7 +450,7 @@ extern struct kernel_param_ops param_ops_string;
 extern int param_set_copystring(const char *val, const struct kernel_param *);
 extern int param_get_string(char *buffer, const struct kernel_param *kp);
 
-/* for exporting parameters in /sys/parameters */
+/* for exporting parameters in /sys/module/.../parameters */
 
 struct module;
 

@@ -8,12 +8,6 @@ struct vigs_device;
 struct vigs_crtc
 {
     struct drm_crtc base;
-
-    /*
-     * A hack to tell if DPMS callback is called from inside
-     * 'fb_blank' or not.
-     */
-    bool in_fb_blank;
 };
 
 static inline struct vigs_crtc *crtc_to_vigs_crtc(struct drm_crtc *crtc)

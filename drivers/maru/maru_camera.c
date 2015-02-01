@@ -1,7 +1,7 @@
 /*
  * MARU Virtual Camera Driver
  *
- * Copyright (c) 2011 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
  * Jinhyung Jo <jinhyung.jo@samsung.com>
@@ -307,7 +307,7 @@ static int __videobuf_mmap_mapper(struct videobuf_queue *q,
 	}
 
 	vma->vm_ops		= &videobuf_vm_ops;
-	vma->vm_flags		|= VM_DONTEXPAND | VM_RESERVED;
+	vma->vm_flags		|= VM_DONTEXPAND | VM_DONTDUMP;
 	vma->vm_private_data	= map;
 
 	videobuf_vm_open(vma);
@@ -724,7 +724,7 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 	return ret;
 }
 
-static int vidioc_s_std(struct file *file, void *priv, v4l2_std_id *i)
+static int vidioc_s_std(struct file *file, void *priv, v4l2_std_id i)
 {
 	return 0;
 }
@@ -1280,7 +1280,7 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 
 	memcpy(dev->vfd, &marucam_video_dev, sizeof(marucam_video_dev));
 
-	dev->vfd->parent = &dev->pdev->dev;
+	dev->vfd->dev_parent = &dev->pdev->dev;
 	dev->vfd->v4l2_dev = &dev->v4l2_dev;
 
 	ret_val = pci_enable_device(dev->pdev);

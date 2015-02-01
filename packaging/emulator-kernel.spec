@@ -11,11 +11,11 @@
 %define abiver 1
 %define build_id %{config_name}.%{abiver}
 
-%undefine _missing_build_ids_terminate_build
+#%undefine _missing_build_ids_terminate_build
 Name: emulator-kernel
 Summary: The Linux Emulator Kernel
-Version: 3.4.0
-Release: 1
+Version: 3.12.18
+Release: 4
 License: GPL-2.0
 Group: System Environment/Kernel
 Vendor: The Linux Community
@@ -24,7 +24,7 @@ Source0:   %{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{PACKAGE_VERSION}-root
 ExclusiveArch: %{ix86}
 
-%define fullVersion %{version}-%{build_id}
+%define fullVersion %{version}
 
 #BuildRequires: linux-glibc-devel
 #BuildRequires: bc
@@ -63,14 +63,14 @@ Prebuilt linux kernel for out-of-tree modules.
 
 %build
 # 1. Compile sources
-make EXTRAVERSION="-%{build_id}" %{config_name}
-make EXTRAVERSION="-%{build_id}" %{?_smp_mflags}
+make %{config_name}
+#make EXTRAVERSION="-%{build_id}" %{?_smp_mflags}
 
 # 2. Build uImage
-make EXTRAVERSION="-%{build_id}" %{imageName} %{?_smp_mflags}
+#make EXTRAVERSION="-%{build_id}" %{imageName} %{?_smp_mflags}
 
 # 3. Build modules
-make EXTRAVERSION="-%{build_id}" modules %{?_smp_mflags}
+make modules %{?_smp_mflags}
 
 # 4. Create tar repo for build directory
 tar cpSf linux-kernel-build-%{fullVersion}.tar .
@@ -84,8 +84,8 @@ mkdir -p %{buildroot}/lib/modules/%{fullVersion}
 mkdir -p %{buildroot}/boot/
 
 # 2. Install uImage, System.map, ...
-install -m 755 arch/%{buildarch}/boot/%{imageName} %{buildroot}/boot/
-install -m 644 System.map %{buildroot}/boot/System.map-%{fullVersion}
+#install -m 755 arch/%{buildarch}/boot/%{imageName} %{buildroot}/boot/
+#install -m 644 System.map %{buildroot}/boot/System.map-%{fullVersion}
 install -m 644 .config %{buildroot}/boot/config-%{fullVersion}
 
 # 3. Install modules
@@ -113,7 +113,7 @@ find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*.cmd" -exec 
 find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*\.ko" -exec rm -f {} \;
 find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*\.o" -exec rm -f {} \;
 find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*\.S" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*\.c" -exec rm -f {} \;
+find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*\.c" -not -path "%{buildroot}/usr/src/linux-kernel-build-%{fullVersion}/scripts/*" -exec rm -f {} \;
 find %{buildroot}/usr/include -name "\.\.install.cmd"  -exec rm -f {} \;
 find %{buildroot}/usr/include -name "\.install"  -exec rm -f {} \;
 find %{buildroot}/usr -name "..install.cmd" -exec rm -f {} \;
@@ -144,11 +144,8 @@ rm -rf %{buildroot}
 
 %files
 #%license COPYING
-/boot/%{imageName}
-/boot/System.map*
+#/boot/%{imageName}
+#/boot/System.map*
 /boot/config*
 /lib/modules/%{fullVersion}/kernel
 /lib/modules/%{fullVersion}/modules.*
-/usr/lib/debug/*
-/usr/lib/debug/.build-id/*
-/usr/src/debug/*

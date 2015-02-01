@@ -27,6 +27,11 @@
  */
 #include "capability_names.h"
 
+struct aa_fs_entry aa_fs_entry_caps[] = {
+	AA_FS_FILE_STRING("mask", AA_FS_CAPS_MASK),
+	{ }
+};
+
 struct audit_cache {
 	struct aa_profile *profile;
 	kernel_cap_t caps;
@@ -65,10 +70,10 @@ static int audit_caps(struct aa_profile *profile, struct task_struct *task,
 	int type = AUDIT_APPARMOR_AUTO;
 	struct common_audit_data sa;
 	struct apparmor_audit_data aad = {0,};
-	COMMON_AUDIT_DATA_INIT(&sa, CAP);
+	sa.type = LSM_AUDIT_DATA_CAP;
 	sa.aad = &aad;
-	sa.tsk = task;
 	sa.u.cap = cap;
+	sa.aad->tsk = task;
 	sa.aad->op = OP_CAPABLE;
 	sa.aad->error = error;
 

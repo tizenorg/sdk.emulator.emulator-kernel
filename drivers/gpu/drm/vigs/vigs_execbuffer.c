@@ -11,6 +11,7 @@ union vigs_request
     struct vigsp_cmd_update_gpu_request *update_gpu;
     struct vigsp_cmd_copy_request *copy;
     struct vigsp_cmd_solid_fill_request *solid_fill;
+    struct vigsp_cmd_ga_copy_request *ga_copy;
     void *data;
 };
 
@@ -30,7 +31,6 @@ static int vigs_execbuffer_validate_buffer(struct vigs_device *vigs_dev,
         return -EINVAL;
     }
 
-    buffer->base.new_sync_obj_arg = NULL;
     buffer->base.bo = &sfc->gem.bo;
     buffer->cmd = cmd;
     buffer->which = which;
@@ -147,6 +147,9 @@ int vigs_execbuffer_validate_buffers(struct vigs_execbuffer *execbuffer,
         case vigsp_cmd_solid_fill:
             *num_buffers += 1;
             break;
+        case vigsp_cmd_ga_copy:
+            *num_buffers += 2;
+            break;
         default:
             break;
         }
@@ -253,6 +256,36 @@ int vigs_execbuffer_validate_buffers(struct vigs_execbuffer *execbuffer,
             ++*num_buffers;
 
             break;
+        case vigsp_cmd_ga_copy:
+            ret = vigs_execbuffer_validate_buffer(vigs_dev,
+                                                  &(*buffers)[*num_buffers],
+                                                  list,
+                                                  request.ga_copy->src_id,
+                                                  request_header->cmd,
+                                                  0,
+                                                  request.data);
+
+            if (ret != 0) {
+                goto fail2;
+            }
+
+            ++*num_buffers;
+
+            ret = vigs_execbuffer_validate_buffer(vigs_dev,
+                                                  &(*buffers)[*num_buffers],
+                                                  list,
+                                                  request.ga_copy->dst_id,
+                                                  request_header->cmd,
+                                                  1,
+                                                  request.data);
+
+            if (ret != 0) {
+                goto fail2;
+            }
+
+            ++*num_buffers;
+
+            break;
         default:
             break;
         }
@@ -280,7 +313,8 @@ fail1:
 
 void vigs_execbuffer_process_buffers(struct vigs_execbuffer *execbuffer,
                                      struct vigs_validate_buffer *buffers,
-                                     int num_buffers)
+                                     int num_buffers,
+                                     bool *sync)
 {
     union vigs_request request;
     struct vigs_gem_object *gem;
@@ -333,6 +367,20 @@ void vigs_execbuffer_process_buffers(struct vigs_execbuffer *execbuffer,
         case vigsp_cmd_solid_fill:
             if (vigs_gem_in_vram(&sfc->gem)) {
                 sfc->is_gpu_dirty = true;
+            }
+            break;
+        case vigsp_cmd_ga_copy:
+            if (buffers[i].which && vigs_gem_in_vram(&sfc->gem)) {
+                sfc->is_gpu_dirty = true;
+            } else if (buffers[i].which == 0) {
+                if (vigs_gem_in_vram(&sfc->gem)) {
+                    request.ga_copy->src_scanout = true;
+                    request.ga_copy->src_offset = vigs_gem_offset(&sfc->gem);
+                    *sync = true;
+                } else {
+                    request.ga_copy->src_scanout = false;
+                    request.ga_copy->src_offset = 0;
+                }
             }
             break;
         default:
@@ -409,6 +457,7 @@ int vigs_execbuffer_exec_ioctl(struct drm_device *drm_dev,
     struct drm_gem_object *gem;
     struct vigs_gem_object *vigs_gem;
     struct vigs_execbuffer *execbuffer;
+    struct ww_acquire_ctx ticket;
     struct list_head list;
     struct vigs_validate_buffer *buffers;
     int num_buffers = 0;
@@ -462,27 +511,26 @@ int vigs_execbuffer_exec_ioctl(struct drm_device *drm_dev,
     if (list_empty(&list)) {
         vigs_comm_exec(vigs_dev->comm, execbuffer);
     } else {
-        ret = ttm_eu_reserve_buffers(&list);
+        ret = ttm_eu_reserve_buffers(&ticket, &list);
 
         if (ret != 0) {
-            ttm_eu_backoff_reservation(&list);
             goto out3;
         }
 
         ret = vigs_fence_create(vigs_dev->fenceman, &fence);
 
         if (ret != 0) {
-            ttm_eu_backoff_reservation(&list);
+            ttm_eu_backoff_reservation(&ticket, &list);
             goto out3;
         }
 
-        vigs_execbuffer_process_buffers(execbuffer, buffers, num_buffers);
+        vigs_execbuffer_process_buffers(execbuffer, buffers, num_buffers, &sync);
 
         vigs_execbuffer_fence(execbuffer, fence);
 
         vigs_comm_exec(vigs_dev->comm, execbuffer);
 
-        ttm_eu_fence_buffer_objects(&list, fence);
+        ttm_eu_fence_buffer_objects(&ticket, &list, fence);
 
         if (sync) {
             vigs_fence_wait(fence, false);

@@ -44,6 +44,7 @@
 #include <linux/sched.h>
 
 #define __MAX_BUF_SIZE		1024
+#define __MAX_BUF_JACK		512
 
 struct msg_info {
 	char buf[__MAX_BUF_SIZE];
@@ -65,8 +66,8 @@ struct virtio_jack {
 };
 
 enum jack_types {
-    jack_type_list = 0,
-    jack_type_charger,
+	jack_type_list = 0,
+	jack_type_charger,
 	jack_type_earjack,
 	jack_type_earkey,
 	jack_type_hdmi,
@@ -75,11 +76,11 @@ enum jack_types {
 };
 
 enum jack_capabilities {
-    jack_cap_charger = 0x01,
-    jack_cap_earjack = 0x02,
-    jack_cap_earkey  = 0x04,
-    jack_cap_hdmi    = 0x08,
-    jack_cap_usb     = 0x10
+	jack_cap_charger = 0x01,
+	jack_cap_earjack = 0x02,
+	jack_cap_earkey  = 0x04,
+	jack_cap_hdmi    = 0x08,
+	jack_cap_usb     = 0x10
 };
 
 enum request_cmd {
@@ -95,7 +96,7 @@ struct jack_data {
 
 struct virtio_jack *v_jack;
 
-static char jack_data [PAGE_SIZE];
+static char jack_data [__MAX_BUF_JACK];
 static int jack_capability = 0;
 
 static DECLARE_WAIT_QUEUE_HEAD(wq);
@@ -116,17 +117,17 @@ static struct virtio_device_id id_table[] = { { VIRTIO_ID_JACK,
 
 static int jack_atoi(const char *name)
 {
-    int val = 0;
+	int val = 0;
 
-    for (;; name++) {
-        switch (*name) {
-            case '0' ... '9':
-                val = 10*val+(*name-'0');
-                break;
-            default:
-                return val;
-        }
-    }
+	for (;; name++) {
+		switch (*name) {
+			case '0' ... '9':
+				val = 10*val+(*name-'0');
+				break;
+			default:
+				return val;
+		}
+	}
 }
 
 static void jack_vq_done(struct virtqueue *vq) {
@@ -139,7 +140,12 @@ static void jack_vq_done(struct virtqueue *vq) {
 		return;
 	}
 
-	if (msg->req != request_answer || msg->buf == NULL) {
+	if (msg->req != request_answer) {
+		DLOG(KERN_DEBUG, "receive queue- not an answer message: %d", msg->req);
+		return;
+	}
+	if (msg->buf == NULL) {
+		DLOG(KERN_ERR, "receive queue- message from host is NULL.");
 		return;
 	}
 
@@ -147,8 +153,7 @@ static void jack_vq_done(struct virtqueue *vq) {
 
 	mutex_lock(&v_jack->lock);
 	strcpy(jack_data, msg->buf);
-	v_jack->flags ++;
-	DLOG(KERN_DEBUG, "flags : %d", v_jack->flags);
+	v_jack->flags = 1;
 	mutex_unlock(&v_jack->lock);
 
 	wake_up_interruptible(&wq);
@@ -169,7 +174,7 @@ static void set_jack_data(int type, const char* buf)
 	}
 
 	mutex_lock(&v_jack->lock);
-	memset(jack_data, 0, PAGE_SIZE);
+	memset(jack_data, 0, sizeof(jack_data));
 	memset(&v_jack->msginfo, 0, sizeof(v_jack->msginfo));
 
 	strcpy(jack_data, buf);
@@ -182,7 +187,7 @@ static void set_jack_data(int type, const char* buf)
 	DLOG(KERN_DEBUG, "set_jack_data type: %d, req: %d, buf: %s",
 			v_jack->msginfo.type, v_jack->msginfo.req, v_jack->msginfo.buf);
 
-	err = virtqueue_add_buf(v_jack->vq, v_jack->sg_vq, 1, 0, &v_jack->msginfo, GFP_ATOMIC);
+	err = virtqueue_add_outbuf(v_jack->vq, v_jack->sg_vq, 1, &v_jack->msginfo, GFP_ATOMIC);
 	if (err < 0) {
 		DLOG(KERN_ERR, "failed to add buffer to virtqueue (err = %d)", err);
 		return;
@@ -191,31 +196,32 @@ static void set_jack_data(int type, const char* buf)
 	virtqueue_kick(v_jack->vq);
 }
 
-static void get_jack_data(int type)
+static int get_jack_data(int type, char* data)
 {
+	struct scatterlist *sgs[2];
 	int err = 0;
 
 	if (v_jack == NULL) {
 		DLOG(KERN_ERR, "Invalid jack handle");
-		return;
+		return -1;
 	}
 
 	mutex_lock(&v_jack->lock);
-	memset(jack_data, 0, PAGE_SIZE);
 	memset(&v_jack->msginfo, 0, sizeof(v_jack->msginfo));
 
 	v_jack->msginfo.req = request_get;
 	v_jack->msginfo.type = type;
-
 	mutex_unlock(&v_jack->lock);
 
 	DLOG(KERN_DEBUG, "get_jack_data type: %d, req: %d",
 			v_jack->msginfo.type, v_jack->msginfo.req);
 
-	err = virtqueue_add_buf(v_jack->vq, v_jack->sg_vq, 1, 1, &v_jack->msginfo, GFP_ATOMIC);
+	sgs[0] = &v_jack->sg_vq[0];
+	sgs[1] = &v_jack->sg_vq[1];
+	err = virtqueue_add_sgs(v_jack->vq, sgs, 1, 1, &v_jack->msginfo, GFP_ATOMIC);
 	if (err < 0) {
 		DLOG(KERN_ERR, "failed to add buffer to virtqueue (err = %d)", err);
-		return;
+		return -1;
 	}
 
 	virtqueue_kick(v_jack->vq);
@@ -223,79 +229,88 @@ static void get_jack_data(int type)
 	wait_event_interruptible(wq, v_jack->flags != 0);
 
 	mutex_lock(&v_jack->lock);
-	v_jack->flags --;
-	DLOG(KERN_DEBUG, "flags : %d", v_jack->flags);
+	v_jack->flags = 0;
+	memcpy(data, jack_data, strlen(jack_data));
 	mutex_unlock(&v_jack->lock);
+
+	return 0;
+}
+
+static int get_data_for_show(int type, char* buf)
+{
+	int ret;
+	char jack_data[__MAX_BUF_JACK];
+	memset(jack_data, 0, sizeof(jack_data));
+	ret = get_jack_data(type, jack_data);
+	if (ret)
+		return 0;
+	return sprintf(buf, "%s", jack_data);
+
 }
 
 static ssize_t show_charger_online(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	get_jack_data(jack_type_charger);
-	return snprintf(buf, PAGE_SIZE, "%s", jack_data);
+	return get_data_for_show(jack_type_charger, buf);
 }
 
 static ssize_t store_charger_online(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	set_jack_data(jack_type_charger, buf);
-	return strnlen(buf, PAGE_SIZE);
+	return strnlen(buf, count);
 }
 
 static ssize_t show_earjack_online(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	get_jack_data(jack_type_earjack);
-	return snprintf(buf, PAGE_SIZE, "%s", jack_data);
+	return get_data_for_show(jack_type_earjack, buf);
 }
 
 static ssize_t store_earjack_online(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	set_jack_data(jack_type_earjack, buf);
-	return strnlen(buf, PAGE_SIZE);
+	return strnlen(buf, count);
 }
 
 static ssize_t show_earkey_online(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	get_jack_data(jack_type_earkey);
-	return snprintf(buf, PAGE_SIZE, "%s", jack_data);
+	return get_data_for_show(jack_type_earkey, buf);
 }
 
 static ssize_t store_earkey_online(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	set_jack_data(jack_type_earkey, buf);
-	return strnlen(buf, PAGE_SIZE);
+	return strnlen(buf, count);
 }
 
 static ssize_t show_hdmi_online(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	get_jack_data(jack_type_hdmi);
-	return snprintf(buf, PAGE_SIZE, "%s", jack_data);
+	return get_data_for_show(jack_type_hdmi, buf);
 }
 
 static ssize_t store_hdmi_online(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	set_jack_data(jack_type_hdmi, buf);
-	return strnlen(buf, PAGE_SIZE);
+	return strnlen(buf, count);
 }
 
 static ssize_t show_usb_online(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	get_jack_data(jack_type_usb);
-	return snprintf(buf, PAGE_SIZE, "%s", jack_data);
+	return get_data_for_show(jack_type_usb, buf);
 }
 
 static ssize_t store_usb_online(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	set_jack_data(jack_type_usb, buf);
-	return strnlen(buf, PAGE_SIZE);
+	return strnlen(buf, count);
 }
 
 static DEVICE_ATTR(charger_online, S_IRUGO | S_IWUSR, show_charger_online, store_charger_online);
@@ -381,6 +396,7 @@ static struct platform_device the_pdev = {
 static int jack_probe(struct virtio_device* dev){
 	int err = 0, index = 0;
 	struct jack_data *data;
+	char jack_data[__MAX_BUF_JACK];
 
 	DLOG(KERN_INFO, "jack_probe\n");
 
@@ -424,7 +440,17 @@ static int jack_probe(struct virtio_device* dev){
 
 	mutex_init(&v_jack->lock);
 
-	get_jack_data(jack_type_list);
+	DLOG(KERN_INFO, "request jack capability");
+
+	memset(jack_data, 0, sizeof(jack_data));
+
+	err = get_jack_data(jack_type_list, jack_data);
+	if (err) {
+		DLOG(KERN_ERR, "Cannot get jack list.\n");
+		kfree(data);
+		platform_device_unregister(&the_pdev);
+	}
+
 	jack_capability = jack_atoi(jack_data);
 	DLOG(KERN_INFO, "jack capability is %02x", jack_capability);
 

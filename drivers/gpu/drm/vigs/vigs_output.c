@@ -140,7 +140,7 @@ static void vigs_encoder_dpms(struct drm_encoder *encoder, int mode)
 }
 
 static bool vigs_encoder_mode_fixup(struct drm_encoder *encoder,
-                                    struct drm_display_mode *mode,
+                                    const struct drm_display_mode *mode,
                                     struct drm_display_mode *adjusted_mode)
 {
     DRM_DEBUG_KMS("enter\n");

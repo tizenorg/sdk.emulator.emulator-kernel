@@ -13,9 +13,9 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 
-#include "../iio.h"
-#include "../sysfs.h"
-#include "../events.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
+#include <linux/iio/events.h>
 /*
  * AD7150 registers definition
  */
@@ -104,7 +104,7 @@ static int ad7150_read_raw(struct iio_dev *indio_dev,
 	struct ad7150_chip_info *chip = iio_priv(indio_dev);
 
 	switch (mask) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		ret = i2c_smbus_read_word_data(chip->client,
 					ad7150_addresses[chan->channel][0]);
 		if (ret < 0)
@@ -156,7 +156,7 @@ static int ad7150_read_event_config(struct iio_dev *indio_dev, u64 event_code)
 			return !adaptive && (threshtype == 0x1);
 		else
 			return !adaptive && (threshtype == 0x0);
-	};
+	}
 	return -EINVAL;
 }
 
@@ -194,7 +194,7 @@ static int ad7150_write_event_params(struct iio_dev *indio_dev, u64 event_code)
 		break;
 	default:
 		return -EINVAL;
-	};
+	}
 	ret = i2c_smbus_write_byte_data(chip->client,
 					ad7150_addresses[chan][4],
 					sens);
@@ -257,7 +257,7 @@ static int ad7150_write_event_config(struct iio_dev *indio_dev,
 	default:
 		ret = -EINVAL;
 		goto error_ret;
-	};
+	}
 
 	cfg |= (!adaptive << 7) | (thresh_type << 5);
 
@@ -327,7 +327,7 @@ static int ad7150_write_event_value(struct iio_dev *indio_dev,
 	default:
 		ret = -EINVAL;
 		goto error_ret;
-	};
+	}
 
 	/* write back if active */
 	ret = ad7150_write_event_params(indio_dev, event_code);
@@ -341,7 +341,7 @@ static ssize_t ad7150_show_timeout(struct device *dev,
 				   struct device_attribute *attr,
 				   char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad7150_chip_info *chip = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	u8 value;
@@ -360,7 +360,7 @@ static ssize_t ad7150_show_timeout(struct device *dev,
 		break;
 	default:
 		return -EINVAL;
-	};
+	}
 
 	return sprintf(buf, "%d\n", value);
 }
@@ -370,7 +370,7 @@ static ssize_t ad7150_store_timeout(struct device *dev,
 		const char *buf,
 		size_t len)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad7150_chip_info *chip = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	int chan = IIO_EVENT_CODE_EXTRACT_CHAN(this_attr->address);
@@ -394,7 +394,7 @@ static ssize_t ad7150_store_timeout(struct device *dev,
 	default:
 		ret = -EINVAL;
 		goto error_ret;
-	};
+	}
 
 	ret = ad7150_write_event_params(indio_dev, this_attr->address);
 error_ret:
@@ -429,7 +429,8 @@ static const struct iio_chan_spec ad7150_channels[] = {
 		.type = IIO_CAPACITANCE,
 		.indexed = 1,
 		.channel = 0,
-		.info_mask = IIO_CHAN_INFO_AVERAGE_RAW_SEPARATE_BIT,
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |
+		BIT(IIO_CHAN_INFO_AVERAGE_RAW),
 		.event_mask =
 		IIO_EV_BIT(IIO_EV_TYPE_THRESH, IIO_EV_DIR_RISING) |
 		IIO_EV_BIT(IIO_EV_TYPE_THRESH, IIO_EV_DIR_FALLING) |
@@ -441,7 +442,8 @@ static const struct iio_chan_spec ad7150_channels[] = {
 		.type = IIO_CAPACITANCE,
 		.indexed = 1,
 		.channel = 1,
-		.info_mask = IIO_CHAN_INFO_AVERAGE_RAW_SEPARATE_BIT,
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |
+		BIT(IIO_CHAN_INFO_AVERAGE_RAW),
 		.event_mask =
 		IIO_EV_BIT(IIO_EV_TYPE_THRESH, IIO_EV_DIR_RISING) |
 		IIO_EV_BIT(IIO_EV_TYPE_THRESH, IIO_EV_DIR_FALLING) |
@@ -549,18 +551,16 @@ static const struct iio_info ad7150_info = {
  * device probe and remove
  */
 
-static int __devinit ad7150_probe(struct i2c_client *client,
+static int ad7150_probe(struct i2c_client *client,
 		const struct i2c_device_id *id)
 {
 	int ret;
 	struct ad7150_chip_info *chip;
 	struct iio_dev *indio_dev;
 
-	indio_dev = iio_allocate_device(sizeof(*chip));
-	if (indio_dev == NULL) {
-		ret = -ENOMEM;
-		goto error_ret;
-	}
+	indio_dev = devm_iio_device_alloc(&client->dev, sizeof(*chip));
+	if (!indio_dev)
+		return -ENOMEM;
 	chip = iio_priv(indio_dev);
 	mutex_init(&chip->state_lock);
 	/* this is only used for device removal purposes */
@@ -579,63 +579,47 @@ static int __devinit ad7150_probe(struct i2c_client *client,
 	indio_dev->modes = INDIO_DIRECT_MODE;
 
 	if (client->irq) {
-		ret = request_threaded_irq(client->irq,
+		ret = devm_request_threaded_irq(&client->dev, client->irq,
 					   NULL,
 					   &ad7150_event_handler,
 					   IRQF_TRIGGER_RISING |
-					   IRQF_TRIGGER_FALLING,
+					   IRQF_TRIGGER_FALLING |
+					   IRQF_ONESHOT,
 					   "ad7150_irq1",
 					   indio_dev);
 		if (ret)
-			goto error_free_dev;
+			return ret;
 	}
 
 	if (client->dev.platform_data) {
-		ret = request_threaded_irq(*(unsigned int *)
+		ret = devm_request_threaded_irq(&client->dev, *(unsigned int *)
 					   client->dev.platform_data,
 					   NULL,
 					   &ad7150_event_handler,
 					   IRQF_TRIGGER_RISING |
-					   IRQF_TRIGGER_FALLING,
+					   IRQF_TRIGGER_FALLING |
+					   IRQF_ONESHOT,
 					   "ad7150_irq2",
 					   indio_dev);
 		if (ret)
-			goto error_free_irq;
+			return ret;
 	}
 
 	ret = iio_device_register(indio_dev);
 	if (ret)
-		goto error_free_irq2;
+		return ret;
 
 	dev_info(&client->dev, "%s capacitive sensor registered,irq: %d\n",
 		 id->name, client->irq);
 
 	return 0;
-error_free_irq2:
-	if (client->dev.platform_data)
-		free_irq(*(unsigned int *)client->dev.platform_data,
-			 indio_dev);
-error_free_irq:
-	if (client->irq)
-		free_irq(client->irq, indio_dev);
-error_free_dev:
-	iio_free_device(indio_dev);
-error_ret:
-	return ret;
 }
 
-static int __devexit ad7150_remove(struct i2c_client *client)
+static int ad7150_remove(struct i2c_client *client)
 {
 	struct iio_dev *indio_dev = i2c_get_clientdata(client);
 
 	iio_device_unregister(indio_dev);
-	if (client->irq)
-		free_irq(client->irq, indio_dev);
-
-	if (client->dev.platform_data)
-		free_irq(*(unsigned int *)client->dev.platform_data, indio_dev);
-
-	iio_free_device(indio_dev);
 
 	return 0;
 }
@@ -654,7 +638,7 @@ static struct i2c_driver ad7150_driver = {
 		.name = "ad7150",
 	},
 	.probe = ad7150_probe,
-	.remove = __devexit_p(ad7150_remove),
+	.remove = ad7150_remove,
 	.id_table = ad7150_id,
 };
 module_i2c_driver(ad7150_driver);

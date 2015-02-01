@@ -124,7 +124,7 @@ static int vdpram_open(struct inode *inode, struct file *filp)
 	index = dev->index ;
 
 //	printk("%s:%d:index:%d\n", __FUNCTION__,current->pid,index);
-	
+
 #ifdef VDPRAM_LOCK_ENABLE
 	if (down_interruptible(&buffer[index].sem))
 		return -ERESTARTSYS;
@@ -183,12 +183,12 @@ static ssize_t vdpram_read (struct file *filp, char __user *buf, size_t count,
 	struct vdpram_dev *dev = filp->private_data;
 	int index = dev->adj_index ;
 	char *curr_rp, *curr_adj_wp;
-	int restData_len = 0, data_len = 0;	
+	int restData_len = 0, data_len = 0;
 #if 0
 	int i = 0; /* for debug */
 #endif
 //	printk("%s:%d start rp=%x adj_wp=%x \n", __FUNCTION__,current->pid, dev->rp, dev->adj->wp);
-	
+
 #ifdef VDPRAM_LOCK_ENABLE
 	if (down_interruptible(&buffer[index].sem))
 		return -ERESTARTSYS;
@@ -302,7 +302,7 @@ static int vdpram_getwritespace(struct vdpram_dev *dev, struct file *filp)
 
 	while (spacefree(dev) == 0) { /* full */
 		DEFINE_WAIT(wait);
-		
+
 #ifdef VDPRAM_LOCK_ENABLE
 		up(&buffer[index].sem);
 #endif //VDPRAM_LOCK_ENABLE
@@ -328,13 +328,13 @@ static int vdpram_getwritespace(struct vdpram_dev *dev, struct file *filp)
 #endif //VDPRAM_LOCK_ENABLE
 	}
 	return 0;
-}	
+}
 
 /* How much space is free? */
 static int spacefree(struct vdpram_dev *dev)
 {
 	int index = dev->index;
-	
+
 	if (dev->wp == dev->adj->rp)
 		return buffer[index].buffersize - 1;
 	return ((dev->adj->rp + buffer[index].buffersize - dev->wp) % buffer[index].buffersize) - 1;
@@ -383,10 +383,10 @@ static ssize_t vdpram_write(struct file *filp, const char __user *buf, size_t co
 			}
 
 			if (count - data_len > 0 )
-			{	
+			{
 				int restData_len = 0;
 				restData_len = min ( count - data_len, (size_t)(dev->adj->rp - buffer[index].begin) - 1 );
-				if(copy_from_user(dev->wp, buf + data_len, restData_len)) 
+				if(copy_from_user(dev->wp, buf + data_len, restData_len))
 				{
 #ifdef VDPRAM_LOCK_ENABLE
 				up (&buffer[index].sem);
@@ -413,7 +413,7 @@ static ssize_t vdpram_write(struct file *filp, const char __user *buf, size_t co
 //				printk("%s: back 0 !! \n",__FUNCTION__);
 				dev->wp = buffer[index].begin; /* wrapped */
 			}
-		
+
 		}
 	}
 	/* for debug */
@@ -444,7 +444,7 @@ static ssize_t vdpram_write(struct file *filp, const char __user *buf, size_t co
 #ifdef VDPRAM_LOCK_ENABLE
 	up(&buffer[index].sem);
 #endif //VDPRAM_LOCK_ENABLE
-	
+
 //	printk("%s:%d wp[%d]=%d, cnt=%d \n", __FUNCTION__,current->pid,dev->index, dev->wp -buffer[index].begin, count);
 	/* finally, awake any reader */
 	wake_up_interruptible(&queue[index].inq);  /* blocked in read() and select() */
@@ -566,14 +566,14 @@ long vdpram_ioctl(struct file* filp, unsigned int cmd, unsigned long arg)
 			if ( dev_status.adj_wp != 0 )
 				dev_status.adj_wp_cnt = dev->adj->wp-buffer[dev->adj_index].begin;
 
-			
+
 			if (copy_to_user((char*)arg, &dev_status, sizeof(struct vdpram_status_dev))) {
 				return -EFAULT;
 			}
-		default : 
+		default :
 //			printk("%s[%d]:p=%d:cmd=%d\n", __FUNCTION__,index,current->pid,cmd);
 			break;
-	
+
 	}
 	return 0;
 }
@@ -592,7 +592,7 @@ static void vdpram_setup_cdev(struct vdpram_dev *dev, int index)
 	dev->cdev.owner = THIS_MODULE;
 	err = cdev_add (&dev->cdev, node, 1);
 	dev->index = index;
-	
+
 	/* Fail gracefully if need be */
 	if (err)
 		printk(KERN_NOTICE "Error %d adding device%d\n", err, index);
@@ -639,7 +639,7 @@ int vdpram_init(void)
 		if (i% 2 ==1) {
 			vdpram_devices[i].adj = &vdpram_devices[i-1];
 			vdpram_devices[i-1].adj = &vdpram_devices[i];
-// hwjang 
+// hwjang
 			vdpram_devices[i].adj->adj_index=i;
 			vdpram_devices[i-1].adj->adj_index=i-1;
 		}
@@ -691,7 +691,7 @@ void vdpram_cleanup(void)
 	int i;
 
 //	printk("%s:%d\n", __FUNCTION__,current->pid);
-	
+
 	if (!vdpram_devices)
 		return; /* nothing else to release */
 

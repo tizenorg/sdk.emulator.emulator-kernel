@@ -2,6 +2,7 @@
 #include "vigs_device.h"
 #include "vigs_mman.h"
 #include "vigs_surface.h"
+#include "vigs_dp.h"
 #include <drm/vigs_drm.h>
 #include <ttm/ttm_placement.h>
 
@@ -72,8 +73,8 @@ int vigs_gem_init(struct vigs_gem_object *vigs_gem,
     }
 
     ret = ttm_bo_init(&vigs_dev->mman->bo_dev, &vigs_gem->bo, size, bo_type,
-                      &placement, 0, 0,
-                      false, NULL, 0,
+                      &placement, 0,
+                      false, NULL, 0, NULL,
                       &vigs_gem_bo_destroy);
 
     if (ret != 0) {
@@ -126,7 +127,7 @@ int vigs_gem_pin(struct vigs_gem_object *vigs_gem)
     placement.num_placement = 1;
     placement.num_busy_placement = 1;
 
-    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, true, false);
+    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, false);
 
     if (ret != 0) {
         DRM_ERROR("GEM pin failed (type = %u, off = 0x%llX, sz = %lu)\n",
@@ -176,7 +177,7 @@ void vigs_gem_unpin(struct vigs_gem_object *vigs_gem)
     placement.num_placement = 2;
     placement.num_busy_placement = 2;
 
-    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, true, false);
+    ret = ttm_bo_validate(&vigs_gem->bo, &placement, false, false);
 
     if (ret != 0) {
         DRM_ERROR("GEM unpin failed (type = %u, off = 0x%llX, sz = %lu)\n",
@@ -261,6 +262,13 @@ void vigs_gem_free_object(struct drm_gem_object *gem)
 {
     struct vigs_gem_object *vigs_gem = gem_to_vigs_gem(gem);
 
+    if (vigs_gem->type == VIGS_GEM_TYPE_SURFACE) {
+        struct vigs_device *vigs_dev = gem->dev->dev_private;
+
+        vigs_dp_remove_surface(vigs_dev->dp,
+                               vigs_gem_to_vigs_surface(vigs_gem));
+    }
+
     vigs_gem_reserve(vigs_gem);
 
     vigs_gem_kunmap(vigs_gem);
@@ -302,7 +310,7 @@ int vigs_gem_map_ioctl(struct drm_device *drm_dev,
     struct drm_gem_object *gem;
     struct vigs_gem_object *vigs_gem;
     struct mm_struct *mm = current->mm;
-    unsigned long address;
+    unsigned long address, unused;
 
     gem = drm_gem_object_lookup(drm_dev, file_priv, args->handle);
 
@@ -319,16 +327,13 @@ int vigs_gem_map_ioctl(struct drm_device *drm_dev,
      * 'do_mmap' takes an offset in bytes and our
      * offset is 64-bit (since it's TTM offset) and it can't fit into 32-bit
      * variable.
-     * For this to work we had to export
-     * 'do_mmap_pgoff'. 'do_mmap_pgoff' was exported prior to
-     * 3.4 and it's available after 3.5, but for some reason it's
-     * static in 3.4.
      */
     vigs_dev->track_gem_access = args->track_access;
     address = do_mmap_pgoff(file_priv->filp, 0, vigs_gem_size(vigs_gem),
                             PROT_READ | PROT_WRITE,
                             MAP_SHARED,
-                            vigs_gem_mmap_offset(vigs_gem) >> PAGE_SHIFT);
+                            vigs_gem_mmap_offset(vigs_gem) >> PAGE_SHIFT,
+                            &unused);
     vigs_dev->track_gem_access = false;
 
     up_write(&mm->mmap_sem);

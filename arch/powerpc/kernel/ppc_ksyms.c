@@ -43,6 +43,7 @@
 #include <asm/dcr.h>
 #include <asm/ftrace.h>
 #include <asm/switch_to.h>
+#include <asm/epapr_hcalls.h>
 
 #ifdef CONFIG_PPC32
 extern void transfer_to_handler(void);
@@ -85,8 +86,6 @@ EXPORT_SYMBOL(csum_tcpudp_magic);
 
 EXPORT_SYMBOL(__copy_tofrom_user);
 EXPORT_SYMBOL(__clear_user);
-EXPORT_SYMBOL(__strncpy_from_user);
-EXPORT_SYMBOL(__strnlen_user);
 EXPORT_SYMBOL(copy_page);
 
 #if defined(CONFIG_PCI) && defined(CONFIG_PPC32)
@@ -96,9 +95,10 @@ EXPORT_SYMBOL(pci_dram_offset);
 #endif /* CONFIG_PCI */
 
 EXPORT_SYMBOL(start_thread);
-EXPORT_SYMBOL(kernel_thread);
 
+#ifdef CONFIG_PPC_FPU
 EXPORT_SYMBOL(giveup_fpu);
+#endif
 #ifdef CONFIG_ALTIVEC
 EXPORT_SYMBOL(giveup_altivec);
 #endif /* CONFIG_ALTIVEC */
@@ -113,7 +113,6 @@ EXPORT_SYMBOL(giveup_spe);
 #ifndef CONFIG_PPC64
 EXPORT_SYMBOL(flush_instruction_cache);
 #endif
-EXPORT_SYMBOL(__flush_icache_range);
 EXPORT_SYMBOL(flush_dcache_range);
 
 #ifdef CONFIG_SMP
@@ -145,7 +144,8 @@ EXPORT_SYMBOL(__lshrdi3);
 int __ucmpdi2(unsigned long long, unsigned long long);
 EXPORT_SYMBOL(__ucmpdi2);
 #endif
-
+long long __bswapdi2(long long);
+EXPORT_SYMBOL(__bswapdi2);
 EXPORT_SYMBOL(memcpy);
 EXPORT_SYMBOL(memset);
 EXPORT_SYMBOL(memmove);
@@ -189,4 +189,12 @@ EXPORT_SYMBOL(__arch_hweight8);
 EXPORT_SYMBOL(__arch_hweight16);
 EXPORT_SYMBOL(__arch_hweight32);
 EXPORT_SYMBOL(__arch_hweight64);
+#endif
+
+#ifdef CONFIG_PPC_BOOK3S_64
+EXPORT_SYMBOL_GPL(mmu_psize_defs);
+#endif
+
+#ifdef CONFIG_EPAPR_PARAVIRT
+EXPORT_SYMBOL(epapr_hypercall_start);
 #endif

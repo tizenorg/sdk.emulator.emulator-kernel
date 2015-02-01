@@ -9,6 +9,10 @@ static const uint32_t formats[] =
 {
     DRM_FORMAT_XRGB8888,
     DRM_FORMAT_ARGB8888,
+    DRM_FORMAT_NV21,
+    fourcc_code('N', 'V', '4', '2'),
+    DRM_FORMAT_NV61,
+    DRM_FORMAT_YUV420
 };
 
 static int vigs_plane_update(struct drm_plane *plane,
@@ -23,33 +27,69 @@ static int vigs_plane_update(struct drm_plane *plane,
     struct vigs_plane *vigs_plane = plane_to_vigs_plane(plane);
     struct vigs_device *vigs_dev = plane->dev->dev_private;
     struct vigs_framebuffer *vigs_fb = fb_to_vigs_fb(fb);
-    int ret;
+    int ret, i;
     uint32_t src_x_whole = src_x >> 16;
     uint32_t src_y_whole = src_y >> 16;
     uint32_t src_w_whole = src_w >> 16;
     uint32_t src_h_whole = src_h >> 16;
+    vigsp_surface_id surface_ids[4] = { 0, 0, 0, 0 };
+    vigsp_plane_format format;
 
     DRM_DEBUG_KMS("enter: crtc_x = %d, crtc_y = %d, crtc_w = %u, crtc_h = %u, src_x = %u, src_y = %u, src_w = %u, src_h = %u\n",
                   crtc_x, crtc_y, crtc_w, crtc_h, src_x, src_y, src_w, src_h);
 
-    if (vigs_fb->fb_sfc->scanout) {
-        vigs_gem_reserve(&vigs_fb->fb_sfc->gem);
+    if (vigs_fb->surfaces[0]->scanout) {
+        vigs_gem_reserve(&vigs_fb->surfaces[0]->gem);
 
-        if (vigs_gem_in_vram(&vigs_fb->fb_sfc->gem) &&
-            vigs_surface_need_gpu_update(vigs_fb->fb_sfc)) {
+        if (vigs_gem_in_vram(&vigs_fb->surfaces[0]->gem) &&
+            vigs_surface_need_gpu_update(vigs_fb->surfaces[0])) {
             vigs_comm_update_gpu(vigs_dev->comm,
-                                 vigs_fb->fb_sfc->id,
-                                 vigs_fb->fb_sfc->width,
-                                 vigs_fb->fb_sfc->height,
-                                 vigs_gem_offset(&vigs_fb->fb_sfc->gem));
+                                 vigs_fb->surfaces[0]->id,
+                                 vigs_fb->surfaces[0]->width,
+                                 vigs_fb->surfaces[0]->height,
+                                 vigs_gem_offset(&vigs_fb->surfaces[0]->gem));
         }
 
-        vigs_gem_unreserve(&vigs_fb->fb_sfc->gem);
+        vigs_gem_unreserve(&vigs_fb->surfaces[0]->gem);
+    }
+
+    for (i = 0; i < 4; ++i) {
+        if (vigs_fb->surfaces[i]) {
+            surface_ids[i] = vigs_fb->surfaces[i]->id;
+        }
+    }
+
+    switch (fb->pixel_format) {
+    case DRM_FORMAT_XRGB8888:
+        format = vigsp_plane_bgrx8888;
+        break;
+    case DRM_FORMAT_ARGB8888:
+        format = vigsp_plane_bgra8888;
+        break;
+    case DRM_FORMAT_NV21:
+        format = vigsp_plane_nv21;
+        break;
+    case fourcc_code('N', 'V', '4', '2'):
+        format = vigsp_plane_nv42;
+        break;
+    case DRM_FORMAT_NV61:
+        format = vigsp_plane_nv61;
+        break;
+    case DRM_FORMAT_YUV420:
+        format = vigsp_plane_yuv420;
+        break;
+    default:
+        BUG();
+        format = vigsp_plane_bgrx8888;
+        break;
     }
 
     ret = vigs_comm_set_plane(vigs_dev->comm,
                               vigs_plane->index,
-                              vigs_fb->fb_sfc->id,
+                              fb->width,
+                              fb->height,
+                              format,
+                              surface_ids,
                               src_x_whole,
                               src_y_whole,
                               src_w_whole,
@@ -58,7 +98,10 @@ static int vigs_plane_update(struct drm_plane *plane,
                               crtc_y,
                               crtc_w,
                               crtc_h,
-                              vigs_plane->z_pos);
+                              vigs_plane->z_pos,
+                              vigs_plane->hflip,
+                              vigs_plane->vflip,
+                              vigs_plane->rotation);
 
     if (ret == 0) {
         vigs_plane->src_x = src_x;
@@ -82,6 +125,7 @@ static int vigs_plane_disable(struct drm_plane *plane)
     struct vigs_plane *vigs_plane = plane_to_vigs_plane(plane);
     struct vigs_device *vigs_dev = plane->dev->dev_private;
     int ret;
+    vigsp_surface_id surface_ids[4] = { 0, 0, 0, 0 };
 
     DRM_DEBUG_KMS("enter\n");
 
@@ -91,6 +135,12 @@ static int vigs_plane_disable(struct drm_plane *plane)
 
     ret = vigs_comm_set_plane(vigs_dev->comm,
                               vigs_plane->index,
+                              0,
+                              0,
+                              0,
+                              surface_ids,
+                              0,
+                              0,
                               0,
                               0,
                               0,
@@ -177,7 +227,7 @@ int vigs_plane_set_zpos_ioctl(struct drm_device *drm_dev,
     struct vigs_plane *vigs_plane;
     int ret;
 
-    mutex_lock(&drm_dev->mode_config.mutex);
+    drm_modeset_lock_all(drm_dev);
 
     obj = drm_mode_object_find(drm_dev,
                                args->plane_id,
@@ -195,7 +245,42 @@ int vigs_plane_set_zpos_ioctl(struct drm_device *drm_dev,
     ret = 0;
 
 out:
-    mutex_unlock(&drm_dev->mode_config.mutex);
+    drm_modeset_unlock_all(drm_dev);
+
+    return ret;
+}
+
+int vigs_plane_set_transform_ioctl(struct drm_device *drm_dev,
+                                   void *data,
+                                   struct drm_file *file_priv)
+{
+    struct drm_vigs_plane_set_transform *args = data;
+    struct drm_mode_object *obj;
+    struct drm_plane *plane;
+    struct vigs_plane *vigs_plane;
+    int ret;
+
+    drm_modeset_lock_all(drm_dev);
+
+    obj = drm_mode_object_find(drm_dev,
+                               args->plane_id,
+                               DRM_MODE_OBJECT_PLANE);
+    if (!obj) {
+        ret = -EINVAL;
+        goto out;
+    }
+
+    plane = obj_to_plane(obj);
+    vigs_plane = plane_to_vigs_plane(plane);
+
+    vigs_plane->hflip = args->hflip;
+    vigs_plane->vflip = args->vflip;
+    vigs_plane->rotation = args->rotation;
+
+    ret = 0;
+
+out:
+    drm_modeset_unlock_all(drm_dev);
 
     return ret;
 }

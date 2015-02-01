@@ -17,7 +17,7 @@ struct vigs_framebuffer
      */
     struct vigs_comm *comm;
 
-    struct vigs_surface *fb_sfc;
+    struct vigs_surface *surfaces[4];
 };
 
 static inline struct vigs_framebuffer *fb_to_vigs_fb(struct drm_framebuffer *fb)

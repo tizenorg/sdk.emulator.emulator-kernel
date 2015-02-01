@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: 
+ * Contact:
  *  Sungmin Ha <sungmin82.ha@samsung.com>
  *  Sangjin Kim <sangjin3.kim@samsung.com>
  *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
@@ -73,7 +73,7 @@ static struct virtio_device_id id_table[] = {
 };
 
 /* keep it consistent with emulator-skin definition */
-enum {  
+enum {
     KEY_PRESSED = 1,
     KEY_RELEASED = 2,
 };
@@ -190,7 +190,7 @@ static int virtio_hwkey_probe(struct virtio_device *vdev)
         }
     }
 
-    err = virtqueue_add_buf(vh->vq, vh->sg, 0,
+    err = virtqueue_add_inbuf(vh->vq, vh->sg,
             MAX_BUF_COUNT, (void *)MAX_BUF_COUNT, GFP_ATOMIC);
 
     /* register for input device */
@@ -232,7 +232,7 @@ static int virtio_hwkey_probe(struct virtio_device *vdev)
     return 0;
 }
 
-static void __devexit virtio_hwkey_remove(struct virtio_device *vdev)
+static void virtio_hwkey_remove(struct virtio_device *vdev)
 {
     virtio_hwkey *vhk = NULL;
 
@@ -255,7 +255,7 @@ static struct virtio_driver virtio_hwkey_driver = {
     .driver.owner = THIS_MODULE,
     .id_table = id_table,
     .probe = virtio_hwkey_probe,
-    .remove = __devexit_p(virtio_hwkey_remove),
+    .remove = virtio_hwkey_remove,
 };
 
 static int __init virtio_hwkey_init(void)

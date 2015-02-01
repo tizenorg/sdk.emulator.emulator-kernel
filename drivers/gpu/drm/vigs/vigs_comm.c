@@ -421,7 +421,10 @@ int vigs_comm_update_gpu(struct vigs_comm *comm,
 
 int vigs_comm_set_plane(struct vigs_comm *comm,
                         u32 plane,
-                        vigsp_surface_id sfc_id,
+                        u32 width,
+                        u32 height,
+                        vigsp_plane_format format,
+                        vigsp_surface_id surfaces[4],
                         unsigned int src_x,
                         unsigned int src_y,
                         unsigned int src_w,
@@ -430,14 +433,18 @@ int vigs_comm_set_plane(struct vigs_comm *comm,
                         int dst_y,
                         unsigned int dst_w,
                         unsigned int dst_h,
-                        int z_pos)
+                        int z_pos,
+                        int hflip,
+                        int vflip,
+                        int rotation)
 {
     int ret;
     struct vigsp_cmd_set_plane_request *request;
 
-    DRM_DEBUG_DRIVER("plane = %u, sfc_id = %u, src_x = %u, src_y = %u, src_w = %u, src_h = %u, dst_x = %d, dst_y = %d, dst_w = %u, dst_h = %u, z_pos = %d\n",
-                     plane, sfc_id, src_x, src_y, src_w, src_h,
-                     dst_x, dst_y, dst_w, dst_h, z_pos);
+    DRM_DEBUG_DRIVER("plane = %u, src_x = %u, src_y = %u, src_w = %u, src_h = %u, dst_x = %d, dst_y = %d, dst_w = %u, dst_h = %u, z_pos = %d, hflip = %d, vflip = %d, rotation = %d\n",
+                     plane, src_x, src_y, src_w, src_h,
+                     dst_x, dst_y, dst_w, dst_h, z_pos, hflip, vflip,
+                     rotation);
 
     mutex_lock(&comm->mutex);
 
@@ -448,7 +455,10 @@ int vigs_comm_set_plane(struct vigs_comm *comm,
 
     if (ret == 0) {
         request->plane = plane;
-        request->sfc_id = sfc_id;
+        request->width = width;
+        request->height = height;
+        request->format = format;
+        memcpy(request->surfaces, surfaces, sizeof(request->surfaces));
         request->src_rect.pos.x = src_x;
         request->src_rect.pos.y = src_y;
         request->src_rect.size.w = src_w;
@@ -458,6 +468,9 @@ int vigs_comm_set_plane(struct vigs_comm *comm,
         request->dst_size.w = dst_w;
         request->dst_size.h = dst_h;
         request->z_pos = z_pos;
+        request->hflip = hflip;
+        request->vflip = vflip;
+        request->rotation = rotation;
 
         vigs_comm_exec_internal(comm, comm->execbuffer);
     }

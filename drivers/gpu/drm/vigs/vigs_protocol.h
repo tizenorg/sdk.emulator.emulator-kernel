@@ -8,7 +8,7 @@
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 17
+#define VIGS_PROTOCOL_VERSION 20
 
 #define VIGS_MAX_PLANES 2
 
@@ -52,6 +52,7 @@ typedef enum
     vigsp_cmd_copy = 0x8,
     vigsp_cmd_solid_fill = 0x9,
     vigsp_cmd_set_plane = 0xA,
+    vigsp_cmd_ga_copy = 0xB
     /*
      * @}
      */
@@ -62,6 +63,24 @@ typedef enum
     vigsp_surface_bgrx8888 = 0x0,
     vigsp_surface_bgra8888 = 0x1,
 } vigsp_surface_format;
+
+typedef enum
+{
+    vigsp_plane_bgrx8888 = 0x0,
+    vigsp_plane_bgra8888 = 0x1,
+    vigsp_plane_nv21 = 0x2,
+    vigsp_plane_nv42 = 0x3,
+    vigsp_plane_nv61 = 0x4,
+    vigsp_plane_yuv420 = 0x5
+} vigsp_plane_format;
+
+typedef enum
+{
+    vigsp_rotation0   = 0x0,
+    vigsp_rotation90  = 0x1,
+    vigsp_rotation180 = 0x2,
+    vigsp_rotation270 = 0x3
+} vigsp_rotation;
 
 #pragma pack(1)
 
@@ -303,9 +322,9 @@ struct vigsp_cmd_solid_fill_request
 /*
  * cmd_set_plane
  *
- * Assigns surface 'sfc_id' to plane identified by 'plane'.
+ * Assigns surfaces 'surfaces' to plane identified by 'plane'.
  *
- * Pass 0 as sfc_id in order to disable the plane.
+ * Pass 0 as surfaces[0] in order to disable the plane.
  *
  * @{
  */
@@ -313,12 +332,43 @@ struct vigsp_cmd_solid_fill_request
 struct vigsp_cmd_set_plane_request
 {
     vigsp_u32 plane;
-    vigsp_surface_id sfc_id;
+    vigsp_u32 width;
+    vigsp_u32 height;
+    vigsp_plane_format format;
+    vigsp_surface_id surfaces[4];
     struct vigsp_rect src_rect;
     vigsp_s32 dst_x;
     vigsp_s32 dst_y;
     struct vigsp_size dst_size;
     vigsp_s32 z_pos;
+    vigsp_bool hflip;
+    vigsp_bool vflip;
+    vigsp_rotation rotation;
+};
+
+/*
+ * @}
+ */
+
+/*
+ * cmd_ga_copy
+ *
+ * Copies part of surface 'src_id' to
+ * surface 'dst_id' given surface
+ * sizes.
+ *
+ * @{
+ */
+
+struct vigsp_cmd_ga_copy_request
+{
+    vigsp_surface_id src_id;
+    vigsp_bool src_scanout;
+    vigsp_offset src_offset;
+    vigsp_u32 src_stride;
+    vigsp_surface_id dst_id;
+    vigsp_u32 dst_stride;
+    struct vigsp_copy entry;
 };
 
 /*

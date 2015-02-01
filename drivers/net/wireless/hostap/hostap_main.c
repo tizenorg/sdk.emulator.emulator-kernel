@@ -66,7 +66,7 @@ struct net_device * hostap_add_interface(struct local_info *local,
 	list_add(&iface->list, &local->hostap_interfaces);
 
 	mdev = local->dev;
-	memcpy(dev->dev_addr, mdev->dev_addr, ETH_ALEN);
+	eth_hw_addr_inherit(dev, mdev);
 	dev->base_addr = mdev->base_addr;
 	dev->irq = mdev->irq;
 	dev->mem_start = mdev->mem_start;
@@ -244,8 +244,7 @@ u16 hostap_tx_callback_register(local_info_t *local,
 	unsigned long flags;
 	struct hostap_tx_callback_info *entry;
 
-	entry = kmalloc(sizeof(*entry),
-							   GFP_ATOMIC);
+	entry = kmalloc(sizeof(*entry), GFP_KERNEL);
 	if (entry == NULL)
 		return 0;
 
@@ -668,7 +667,7 @@ static int prism2_open(struct net_device *dev)
 	if (local->no_pri) {
 		printk(KERN_DEBUG "%s: could not set interface UP - no PRI "
 		       "f/w\n", dev->name);
-		return 1;
+		return -ENODEV;
 	}
 
 	if ((local->func->card_present && !local->func->card_present(local)) ||
@@ -683,7 +682,7 @@ static int prism2_open(struct net_device *dev)
 		printk(KERN_WARNING "%s: could not enable MAC port\n",
 		       dev->name);
 		prism2_close(dev);
-		return 1;
+		return -ENODEV;
 	}
 	if (!local->dev_enabled)
 		prism2_callback(local, PRISM2_CALLBACK_ENABLE);
@@ -1085,7 +1084,7 @@ int prism2_sta_deauth(local_info_t *local, u16 reason)
 	__le16 val = cpu_to_le16(reason);
 
 	if (local->iw_mode != IW_MODE_INFRA ||
-	    memcmp(local->bssid, "\x00\x00\x00\x00\x00\x00", ETH_ALEN) == 0 ||
+	    is_zero_ether_addr(local->bssid) ||
 	    memcmp(local->bssid, "\x44\x44\x44\x44\x44\x44", ETH_ALEN) == 0)
 		return 0;
 

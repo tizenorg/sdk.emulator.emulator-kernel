@@ -31,7 +31,7 @@ static int vigs_crtc_update(struct drm_crtc *crtc,
 
     vigs_fb = fb_to_vigs_fb(crtc->fb);
 
-    if (vigs_fb->fb_sfc->scanout) {
+    if (vigs_fb->surfaces[0]->scanout) {
 retry:
         ret = vigs_framebuffer_pin(vigs_fb);
 
@@ -41,8 +41,7 @@ retry:
              * and with small amount of VRAM memory it's possible that
              * GEM pin will be failing for some time, thus, framebuffer pin
              * will be failing. This is unavoidable with current TTM design,
-             * even though ttm_bo_validate has 'no_wait_reserve' parameter it's
-             * always assumed that it's true, thus, if someone is intensively
+             * thus, if someone is intensively
              * reserves/unreserves GEMs then ttm_bo_validate can fail even if there
              * is free space in a placement. Even worse, ttm_bo_validate fails with
              * ENOMEM so it's not possible to tell if it's a temporary failure due
@@ -51,23 +50,19 @@ retry:
              * is relatively safe since we only pin GEMs on pageflip and user
              * should have started the VM with VRAM size equal to at least 3 frames,
              * thus, 2 frame will always be free and we can always pin 1 frame.
-             *
-             * Also, 'no_wait_reserve' parameter is completely removed in future
-             * kernels with this commit:
-             * https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=97a875cbdf89a4638eea57c2b456c7cc4e3e8b21
              */
             cpu_relax();
             goto retry;
         }
 
-        vigs_gem_reserve(&vigs_fb->fb_sfc->gem);
+        vigs_gem_reserve(&vigs_fb->surfaces[0]->gem);
 
         ret = vigs_comm_set_root_surface(vigs_dev->comm,
-                                         vigs_fb->fb_sfc->id,
+                                         vigs_fb->surfaces[0]->id,
                                          1,
-                                         vigs_gem_offset(&vigs_fb->fb_sfc->gem));
+                                         vigs_gem_offset(&vigs_fb->surfaces[0]->gem));
 
-        vigs_gem_unreserve(&vigs_fb->fb_sfc->gem);
+        vigs_gem_unreserve(&vigs_fb->surfaces[0]->gem);
 
         if (ret != 0) {
             vigs_framebuffer_unpin(vigs_fb);
@@ -76,7 +71,7 @@ retry:
         }
     } else {
         ret = vigs_comm_set_root_surface(vigs_dev->comm,
-                                         vigs_fb->fb_sfc->id,
+                                         vigs_fb->surfaces[0]->id,
                                          0,
                                          0);
 
@@ -85,7 +80,7 @@ retry:
         }
     }
 
-    if (vigs_old_fb && vigs_old_fb->fb_sfc->scanout) {
+    if (vigs_old_fb && vigs_old_fb->surfaces[0]->scanout) {
         vigs_framebuffer_unpin(vigs_old_fb);
     }
 
@@ -105,16 +100,15 @@ static void vigs_crtc_destroy(struct drm_crtc *crtc)
 
 static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
 {
-    struct vigs_crtc *vigs_crtc = crtc_to_vigs_crtc(crtc);
     struct vigs_device *vigs_dev = crtc->dev->dev_private;
     int blank, i;
     struct fb_event event;
 
-    DRM_DEBUG_KMS("enter: fb_blank = %d, mode = %d\n",
-                  vigs_crtc->in_fb_blank,
+    DRM_DEBUG_KMS("enter: in_dpms = %d, mode = %d\n",
+                  vigs_dev->in_dpms,
                   mode);
 
-    if (vigs_crtc->in_fb_blank) {
+    if (vigs_dev->in_dpms) {
         return;
     }
 
@@ -158,7 +152,20 @@ static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
      */
     for (i = 0; i < 5; ++i) {
         if (console_trylock()) {
+            /*
+             * We must set in_dpms to true while walking
+             * fb call chain because a callback inside the
+             * call chain might do FB_BLANK on its own, i.e.
+             * 'vigs_fbdev_dpms' might get called from here. To avoid
+             * this we set in_dpms to true and 'vigs_fbdev_dpms'
+             * checks this and returns.
+             */
+            vigs_dev->in_dpms = true;
+
             fb_notifier_call_chain(FB_EVENT_BLANK, &event);
+
+            vigs_dev->in_dpms = false;
+
             console_unlock();
             return;
         }
@@ -170,7 +177,7 @@ static void vigs_crtc_dpms(struct drm_crtc *crtc, int mode)
 }
 
 static bool vigs_crtc_mode_fixup(struct drm_crtc *crtc,
-                                 struct drm_display_mode *mode,
+                                 const struct drm_display_mode *mode,
                                  struct drm_display_mode *adjusted_mode)
 {
     DRM_DEBUG_KMS("enter\n");
@@ -235,7 +242,8 @@ static int vigs_crtc_cursor_move(struct drm_crtc *crtc, int x, int y)
 
 static int vigs_crtc_page_flip(struct drm_crtc *crtc,
                                struct drm_framebuffer *fb,
-                               struct drm_pending_vblank_event *event)
+                               struct drm_pending_vblank_event *event,
+                               uint32_t page_flip_flags)
 {
     unsigned long flags;
     struct vigs_device *vigs_dev = crtc->dev->dev_private;
@@ -306,7 +314,7 @@ static void vigs_crtc_disable(struct drm_crtc *crtc)
 
     vigs_comm_set_root_surface(vigs_dev->comm, 0, 0, 0);
 
-    if (vigs_fb->fb_sfc->scanout) {
+    if (vigs_fb->surfaces[0]->scanout) {
         vigs_framebuffer_unpin(vigs_fb);
     }
 }

@@ -18,8 +18,8 @@
 #include <linux/list.h>
 #include <linux/module.h>
 
-#include "../iio.h"
-#include "../sysfs.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
 #include "meter.h"
 #include "ade7759.h"
 
@@ -28,7 +28,7 @@ static int ade7759_spi_write_reg_8(struct device *dev,
 		u8 val)
 {
 	int ret;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7759_state *st = iio_priv(indio_dev);
 
 	mutex_lock(&st->buf_lock);
@@ -46,7 +46,7 @@ static int ade7759_spi_write_reg_16(struct device *dev,
 		u16 value)
 {
 	int ret;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7759_state *st = iio_priv(indio_dev);
 
 	mutex_lock(&st->buf_lock);
@@ -63,7 +63,7 @@ static int ade7759_spi_read_reg_8(struct device *dev,
 		u8 reg_address,
 		u8 *val)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7759_state *st = iio_priv(indio_dev);
 	int ret;
 
@@ -82,7 +82,7 @@ static int ade7759_spi_read_reg_16(struct device *dev,
 		u8 reg_address,
 		u16 *val)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7759_state *st = iio_priv(indio_dev);
 	int ret;
 
@@ -103,8 +103,7 @@ static int ade7759_spi_read_reg_40(struct device *dev,
 		u8 reg_address,
 		u64 *val)
 {
-	struct spi_message msg;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7759_state *st = iio_priv(indio_dev);
 	int ret;
 	struct spi_transfer xfers[] = {
@@ -120,9 +119,7 @@ static int ade7759_spi_read_reg_40(struct device *dev,
 	st->tx[0] = ADE7759_READ_REG(reg_address);
 	memset(&st->tx[1], 0 , 5);
 
-	spi_message_init(&msg);
-	spi_message_add_tail(xfers, &msg);
-	ret = spi_sync(st->us, &msg);
+	ret = spi_sync_transfer(st->us, xfers, ARRAY_SIZE(xfers));
 	if (ret) {
 		dev_err(&st->us->dev, "problem when reading 40 bit register 0x%02X",
 				reg_address);
@@ -230,21 +227,6 @@ static int ade7759_reset(struct device *dev)
 			val);
 
 	return ret;
-}
-
-static ssize_t ade7759_write_reset(struct device *dev,
-		struct device_attribute *attr,
-		const char *buf, size_t len)
-{
-	if (len < 1)
-		return -1;
-	switch (buf[0]) {
-	case '1':
-	case 'y':
-	case 'Y':
-		return ade7759_reset(dev);
-	}
-	return -1;
 }
 
 static IIO_DEV_ATTR_AENERGY(ade7759_read_40bit, ADE7759_AENERGY);
@@ -376,7 +358,7 @@ static ssize_t ade7759_write_frequency(struct device *dev,
 		const char *buf,
 		size_t len)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7759_state *st = iio_priv(indio_dev);
 	unsigned long val;
 	int ret;
@@ -385,6 +367,8 @@ static ssize_t ade7759_write_frequency(struct device *dev,
 	ret = strict_strtol(buf, 10, &val);
 	if (ret)
 		return ret;
+	if (val == 0)
+		return -EINVAL;
 
 	mutex_lock(&indio_dev->mlock);
 
@@ -419,8 +403,6 @@ static IIO_DEV_ATTR_SAMP_FREQ(S_IWUSR | S_IRUGO,
 		ade7759_read_frequency,
 		ade7759_write_frequency);
 
-static IIO_DEV_ATTR_RESET(ade7759_write_reset);
-
 static IIO_CONST_ATTR_SAMP_FREQ_AVAIL("27900 14000 7000 3500");
 
 static struct attribute *ade7759_attributes[] = {
@@ -429,7 +411,6 @@ static struct attribute *ade7759_attributes[] = {
 	&iio_const_attr_in_temp_scale.dev_attr.attr,
 	&iio_dev_attr_sampling_frequency.dev_attr.attr,
 	&iio_const_attr_sampling_frequency_available.dev_attr.attr,
-	&iio_dev_attr_reset.dev_attr.attr,
 	&iio_dev_attr_phcal.dev_attr.attr,
 	&iio_dev_attr_cfden.dev_attr.attr,
 	&iio_dev_attr_aenergy.dev_attr.attr,
@@ -456,14 +437,14 @@ static const struct iio_info ade7759_info = {
 	.driver_module = THIS_MODULE,
 };
 
-static int __devinit ade7759_probe(struct spi_device *spi)
+static int ade7759_probe(struct spi_device *spi)
 {
 	int ret;
 	struct ade7759_state *st;
 	struct iio_dev *indio_dev;
 
 	/* setup the industrialio driver allocated elements */
-	indio_dev = iio_allocate_device(sizeof(*st));
+	indio_dev = iio_device_alloc(sizeof(*st));
 	if (indio_dev == NULL) {
 		ret = -ENOMEM;
 		goto error_ret;
@@ -491,7 +472,7 @@ static int __devinit ade7759_probe(struct spi_device *spi)
 	return 0;
 
 error_free_dev:
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 error_ret:
 	return ret;
 }
@@ -499,18 +480,13 @@ error_ret:
 /* fixme, confirm ordering in this function */
 static int ade7759_remove(struct spi_device *spi)
 {
-	int ret;
 	struct iio_dev *indio_dev = spi_get_drvdata(spi);
 
 	iio_device_unregister(indio_dev);
-	ret = ade7759_stop_device(&(indio_dev->dev));
-	if (ret)
-		goto err_ret;
+	ade7759_stop_device(&indio_dev->dev);
+	iio_device_free(indio_dev);
 
-	iio_free_device(indio_dev);
-
-err_ret:
-	return ret;
+	return 0;
 }
 
 static struct spi_driver ade7759_driver = {
@@ -519,7 +495,7 @@ static struct spi_driver ade7759_driver = {
 		.owner = THIS_MODULE,
 	},
 	.probe = ade7759_probe,
-	.remove = __devexit_p(ade7759_remove),
+	.remove = ade7759_remove,
 };
 module_spi_driver(ade7759_driver);
 

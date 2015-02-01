@@ -45,14 +45,22 @@
  *
  * TLB entries of such buffers will not be flushed across
  * task switches.
- *
- * We don't bother with a FIX_HOLE since above the fixmaps
- * is unmapped memory in any case.
  */
 enum fixed_addresses {
+#ifdef __tilegx__
+	/*
+	 * TILEPro has unmapped memory above so the hole isn't needed,
+	 * and in any case the hole pushes us over a single 16MB pmd.
+	 */
+	FIX_HOLE,
+#endif
 #ifdef CONFIG_HIGHMEM
 	FIX_KMAP_BEGIN,	/* reserved pte's for temporary kernel mappings */
 	FIX_KMAP_END = FIX_KMAP_BEGIN+(KM_TYPE_NR*NR_CPUS)-1,
+#endif
+#ifdef __tilegx__  /* see homecache.c */
+	FIX_HOMECACHE_BEGIN,
+	FIX_HOMECACHE_END = FIX_HOMECACHE_BEGIN+(NR_CPUS)-1,
 #endif
 	__end_of_permanent_fixed_addresses,
 
@@ -69,14 +77,6 @@ enum fixed_addresses {
 	__end_of_fixed_addresses = __end_of_permanent_fixed_addresses
 #endif
 };
-
-extern void __set_fixmap(enum fixed_addresses idx,
-			 unsigned long phys, pgprot_t flags);
-
-#define set_fixmap(idx, phys) \
-		__set_fixmap(idx, phys, PAGE_KERNEL)
-#define clear_fixmap(idx) \
-		__set_fixmap(idx, 0, __pgprot(0))
 
 #define __FIXADDR_SIZE	(__end_of_permanent_fixed_addresses << PAGE_SHIFT)
 #define __FIXADDR_BOOT_SIZE	(__end_of_fixed_addresses << PAGE_SHIFT)

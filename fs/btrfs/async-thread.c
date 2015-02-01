@@ -107,7 +107,8 @@ static void check_idle_worker(struct btrfs_worker_thread *worker)
 		worker->idle = 1;
 
 		/* the list may be empty if the worker is just starting */
-		if (!list_empty(&worker->worker_list)) {
+		if (!list_empty(&worker->worker_list) &&
+		    !worker->workers->stopping) {
 			list_move(&worker->worker_list,
 				 &worker->workers->idle_list);
 		}
@@ -127,7 +128,8 @@ static void check_busy_worker(struct btrfs_worker_thread *worker)
 		spin_lock_irqsave(&worker->workers->lock, flags);
 		worker->idle = 0;
 
-		if (!list_empty(&worker->worker_list)) {
+		if (!list_empty(&worker->worker_list) &&
+		    !worker->workers->stopping) {
 			list_move_tail(&worker->worker_list,
 				      &worker->workers->worker_list);
 		}
@@ -206,10 +208,17 @@ static noinline void run_ordered_completions(struct btrfs_workers *workers,
 
 		work->ordered_func(work);
 
-		/* now take the lock again and call the freeing code */
+		/* now take the lock again and drop our item from the list */
 		spin_lock(&workers->order_lock);
 		list_del(&work->order_list);
+		spin_unlock(&workers->order_lock);
+
+		/*
+		 * we don't want to call the ordered free functions
+		 * with the lock held though
+		 */
 		work->ordered_free(work);
+		spin_lock(&workers->order_lock);
 	}
 
 	spin_unlock(&workers->order_lock);
@@ -405,6 +414,7 @@ void btrfs_stop_workers(struct btrfs_workers *workers)
 	int can_stop;
 
 	spin_lock_irq(&workers->lock);
+	workers->stopping = 1;
 	list_splice_init(&workers->idle_list, &workers->worker_list);
 	while (!list_empty(&workers->worker_list)) {
 		cur = workers->worker_list.next;
@@ -448,6 +458,7 @@ void btrfs_init_workers(struct btrfs_workers *workers, char *name, int max,
 	workers->ordered = 0;
 	workers->atomic_start_pending = 0;
 	workers->atomic_worker_start = async_helper;
+	workers->stopping = 0;
 }
 
 /*
@@ -473,15 +484,19 @@ static int __btrfs_start_workers(struct btrfs_workers *workers)
 	atomic_set(&worker->num_pending, 0);
 	atomic_set(&worker->refs, 1);
 	worker->workers = workers;
-	worker->task = kthread_run(worker_loop, worker,
-				   "btrfs-%s-%d", workers->name,
-				   workers->num_workers + 1);
+	worker->task = kthread_create(worker_loop, worker,
+				      "btrfs-%s-%d", workers->name,
+				      workers->num_workers + 1);
 	if (IS_ERR(worker->task)) {
 		ret = PTR_ERR(worker->task);
-		kfree(worker);
 		goto fail;
 	}
+
 	spin_lock_irq(&workers->lock);
+	if (workers->stopping) {
+		spin_unlock_irq(&workers->lock);
+		goto fail_kthread;
+	}
 	list_add_tail(&worker->worker_list, &workers->idle_list);
 	worker->idle = 1;
 	workers->num_workers++;
@@ -489,8 +504,13 @@ static int __btrfs_start_workers(struct btrfs_workers *workers)
 	WARN_ON(workers->num_workers_starting < 0);
 	spin_unlock_irq(&workers->lock);
 
+	wake_up_process(worker->task);
 	return 0;
+
+fail_kthread:
+	kthread_stop(worker->task);
 fail:
+	kfree(worker);
 	spin_lock_irq(&workers->lock);
 	workers->num_workers_starting--;
 	spin_unlock_irq(&workers->lock);

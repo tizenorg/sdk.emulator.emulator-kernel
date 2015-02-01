@@ -67,7 +67,10 @@ int vigs_comm_update_gpu(struct vigs_comm *comm,
 
 int vigs_comm_set_plane(struct vigs_comm *comm,
                         u32 plane,
-                        vigsp_surface_id sfc_id,
+                        u32 width,
+                        u32 height,
+                        vigsp_plane_format format,
+                        vigsp_surface_id surfaces[4],
                         unsigned int src_x,
                         unsigned int src_y,
                         unsigned int src_w,
@@ -76,7 +79,10 @@ int vigs_comm_set_plane(struct vigs_comm *comm,
                         int dst_y,
                         unsigned int dst_w,
                         unsigned int dst_h,
-                        int z_pos);
+                        int z_pos,
+                        int hflip,
+                        int vflip,
+                        int rotation);
 
 int vigs_comm_fence(struct vigs_comm *comm, struct vigs_fence *fence);
 

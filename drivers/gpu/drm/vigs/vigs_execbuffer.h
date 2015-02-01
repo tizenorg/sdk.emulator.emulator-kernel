@@ -45,7 +45,8 @@ int vigs_execbuffer_validate_buffers(struct vigs_execbuffer *execbuffer,
 
 void vigs_execbuffer_process_buffers(struct vigs_execbuffer *execbuffer,
                                      struct vigs_validate_buffer *buffers,
-                                     int num_buffers);
+                                     int num_buffers,
+                                     bool *sync);
 
 void vigs_execbuffer_fence(struct vigs_execbuffer *execbuffer,
                            struct vigs_fence *fence);

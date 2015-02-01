@@ -10,8 +10,8 @@
 #include "vigs_file.h"
 #include "vigs_plane.h"
 #include "vigs_mman.h"
-#include "drmP.h"
-#include "drm.h"
+#include "vigs_dp.h"
+#include <drm/drmP.h>
 #include <linux/module.h>
 #include <drm/vigs_drm.h>
 
@@ -24,7 +24,7 @@
 #define DRIVER_MAJOR DRM_VIGS_DRIVER_VERSION
 #define DRIVER_MINOR 0
 
-static struct pci_device_id vigs_pci_table[] __devinitdata =
+static struct pci_device_id vigs_pci_table[] =
 {
     {
         .vendor     = PCI_VENDOR_ID_VIGS,
@@ -67,7 +67,14 @@ static struct drm_ioctl_desc vigs_drm_ioctls[] =
     DRM_IOCTL_DEF_DRV(VIGS_FENCE_UNREF, vigs_fence_unref_ioctl,
                                         DRM_UNLOCKED | DRM_AUTH),
     DRM_IOCTL_DEF_DRV(VIGS_PLANE_SET_ZPOS, vigs_plane_set_zpos_ioctl,
-                                           DRM_UNLOCKED | DRM_AUTH)
+                                           DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_PLANE_SET_TRANSFORM, vigs_plane_set_transform_ioctl,
+                                                DRM_UNLOCKED | DRM_AUTH),
+
+    DRM_IOCTL_DEF_DRV(VIGS_DP_CREATE_SURFACE, vigs_dp_surface_create_ioctl,
+                                              DRM_UNLOCKED | DRM_AUTH),
+    DRM_IOCTL_DEF_DRV(VIGS_DP_OPEN_SURFACE, vigs_dp_surface_open_ioctl,
+                                            DRM_UNLOCKED | DRM_AUTH)
 };
 
 static const struct file_operations vigs_drm_driver_fops =
@@ -77,7 +84,6 @@ static const struct file_operations vigs_drm_driver_fops =
     .release = drm_release,
     .unlocked_ioctl = drm_ioctl,
     .poll = drm_poll,
-    .fasync = drm_fasync,
     .mmap = vigs_device_mmap,
     .read = drm_read
 };
@@ -142,10 +148,7 @@ static int vigs_drm_open(struct drm_device *dev, struct drm_file *file_priv)
 
     file_priv->driver_priv = vigs_file;
 
-    if (unlikely(vigs_dev->mman->bo_dev.dev_mapping == NULL)) {
-        vigs_dev->mman->bo_dev.dev_mapping =
-            file_priv->filp->f_path.dentry->d_inode->i_mapping;
-    }
+    vigs_dev->mman->bo_dev.dev_mapping = dev->dev_mapping;
 
     return 0;
 }
@@ -229,7 +232,7 @@ static struct drm_driver vigs_drm_driver =
     .minor = DRIVER_MINOR,
 };
 
-static int __devinit vigs_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+static int vigs_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
     return drm_get_pci_dev(pdev, ent, &vigs_drm_driver);
 }
@@ -246,7 +249,7 @@ static struct pci_driver vigs_pci_driver =
      .name = DRIVER_NAME,
      .id_table = vigs_pci_table,
      .probe = vigs_pci_probe,
-     .remove = __devexit_p(vigs_pci_remove),
+     .remove = vigs_pci_remove,
 };
 
 int vigs_driver_register(void)

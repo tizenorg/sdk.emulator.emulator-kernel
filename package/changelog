@@ -1,3 +1,72 @@
+* 2.0.20
+- smack: [PATCH] Fix a bidirectional UDS connect check
+- enable smp feature
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2015-01-09
+* 2.0.19
+- Revert "smack: [PATCH] Fix a bidirectional UDS connect check"
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2015-01-07
+* 2.0.18
+- smack: [PATCH] Fix a bidirectional UDS connect check
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2014-12-30
+* 2.0.17
+- added pressure, ultraviolet, and hrm sensor drivers
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-10-23
+* 2.0.15
+- sensor: added 0 input event handling
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-09-16
+* 2.0.14
+- enable ANDROID_INTF_ALARM_DEV
+== Kitae Kim <kt920.kim@samsung.com> 2014-09-04
+* 2.0.13
+- make a vmodem device driver using virtio
+- removed log
+== Sooyoung Ha <yoosah.ha@samsung.com> 2014-09-04
+* 2.0.12
+- added maru_leds
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-08-28
+* 2.0.11
+- rollback: disabled SMACK for inhouse development
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-08-14
+* 2.0.10
+- disabled SMACK for inhouse development
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-08-04
+* 2.0.9
+- Enable FHANDLE config.
+- This option has to be enabled in kernel to use systemd >= 209. Otherwise, udev won't find any devices.
+== Kitae Kim <kt920.kim@samsung.com> 2014-07-31
+* 2.0.8
+- Revert "Add emulator specific uname"
+== Munkyu Im <munkyu.im@samsung.com> 2014-07-17
+* 2.0.7
+- Add emulator specific uname
+== Munkyu Im <munkyu.im@samsung.com> 2014-07-11
+* 2.0.6
+- changed to way to print debug messages
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-07-07
+* 2.0.5
+- Apply W/A patch to avoid version mismatch with OBS
+== SeokYeon Hwang <syeon.hwang@samsung.com> 2014-07-03
+* 2.0.4
+- added rotation vector sensor
+- sensors: sync with sensor fw
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-06-27
+* 2.0.3
+- v4l2-core: Modified the error code.
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2014-06-23
+* 2.0.2
+- sensor device name is changed to maru_sensor_[device]_1
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-06-20
+* 2.0.1
+- Sensor device with input event supports
+- haptic sensor is added
+- EVDI driver send emuld connection to qemu
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-06-18
+* 2.0.0
+- Major package version up
+== SeokYeon Hwang <syeon.hwang@samsung.com> 2014-06-10
+* 1.4.36
+- Apply Linux Kernel 3.12
+== GiWoong Kim <giwoong.kim@samsung.com> 2014-05-13
 * 1.4.35
 - set touchscreen resolution
 == GiWoong Kim <giwoong.kim@samsung.com> 2014-04-14
@@ -74,7 +143,7 @@
 * 1.4.3
 - fixed a bug when virtio-keyboard is removed.
 - input_free_device function cannot be used after calling input_unregister_device function.
-== Kita Kim <kt920.kim@samsung.com> 2012-11-13
+== Kitae Kim <kt920.kim@samsung.com> 2012-11-13
 * 1.4.2
 - enable virtio-pci, virtio-touchscreen, net-9p, 9pfs drivers for arm kernel.
 - Those drivers are necessary for host fileshare feature and virtio-touchscreen-pci device on arm emulator.

@@ -83,29 +83,6 @@ static const unsigned short atkbd_set2_keycode[ATKBD_KEYMAP_SIZE] = {
 #include "hpps2atkbd.h"	/* include the keyboard scancodes */
 
 #else
-
-/* conversion scancode for Tizen emulator */
-#ifndef MARU_SCANCODE
-	  0, 67, 65, 63, 61, 59, 60, 88,  169, 68, 66, 64, 62, 15, 41,117,
-	  139, 56, 42, 93, 29, 16,  2,  0,  174,  0, 44, 31, 30, 17,  3,  0,
-	  116, 46, 45, 32, 18,  5,  4, 95,  217, 57, 47, 33, 20, 19,  6,183,
-	  356, 49, 48, 35, 34, 21,  7,184,  0,  114, 50, 36, 22,  8,  9,185,
-	  0, 51, 37, 23, 24, 11, 10,  0,  0, 52, 53, 38, 39, 25, 12,  0,
-	  0, 115, 40,  0, 26, 13,  0,  0, 58, 54, 28, 27,  0, 43,  0, 85,
-	  0, 86, 91, 90, 92,  0, 14, 94,  0, 79,124, 75, 71,121,  0,  0,
-	 82, 83, 80, 76, 77, 72,  1, 69, 87, 78, 81, 74, 55, 73, 70, 99,
-
-	  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	217,100,255,  0, 97,165,  0,  0,156,  0,  0,  0,  0,  0,  0,125,
-	173,114,  0,113,  0,  0,  0,126,128,  0,  0,140,  0,  0,  0,127,
-	159,  0,115,  0,164,  0,  0,116,158,  0,172,166,  0,  0,  0,142,
-	157,  0,  0,  0,  0,  0,  0,  0,155,  0, 98,  0,  0,163,  0,  0,
-	226,  0,  0,  0,  0,  0,  0,  0,  0,255, 96,  0,  0,  0,143,  0,
-	  0,  0,  0,  0,  0,  0,  0,  0,  0,107,  0,105,102,  0,  0,112,
-	110,111,108,112,106,103,  0,119,  0,118,109,  0, 99,104,119,  0,
-
-	  0,  0,  0, 65, 99,
-#else
 	  0, 67, 65, 63, 61, 59, 60, 88,  0, 68, 66, 64, 62, 15, 41,117,
 	  0, 56, 42, 93, 29, 16,  2,  0,  0,  0, 44, 31, 30, 17,  3,  0,
 	  0, 46, 45, 32, 18,  5,  4, 95,  0, 57, 47, 33, 20, 19,  6,183,
@@ -125,8 +102,6 @@ static const unsigned short atkbd_set2_keycode[ATKBD_KEYMAP_SIZE] = {
 	110,111,108,112,106,103,  0,119,  0,118,109,  0, 99,104,119,  0,
 
 	  0,  0,  0, 65, 99,
-#endif
-
 #endif
 };
 
@@ -458,7 +433,7 @@ static irqreturn_t atkbd_interrupt(struct serio *serio, unsigned char data,
 		if (printk_ratelimit())
 			dev_warn(&serio->dev,
 				 "Spurious %s on %s. "
-				 "Some program might be trying access hardware directly.\n",
+				 "Some program might be trying to access hardware directly.\n",
 				 data == ATKBD_RET_ACK ? "ACK" : "NAK", serio->phys);
 		goto out;
 	case ATKBD_RET_ERR:
@@ -474,16 +449,6 @@ static irqreturn_t atkbd_interrupt(struct serio *serio, unsigned char data,
 		goto out;
 
 	keycode = atkbd->keycode[code];
-
-/* conversion scancode for Tizen emulator */
-#ifndef MARU_SCANCODE
-	if (code == 100) code = 169;
-	else if (code == 101) code = 132;
-	else if (code == 102) code = 174;
-	else if (code == 103) code = 116;
-	else if (code == 104) code = 217;
-	else if (code == 105) code = 356;		
-#endif
 
 	if (keycode != ATKBD_KEY_NULL)
 		input_event(dev, EV_MSC, MSC_SCAN, code);
@@ -536,10 +501,6 @@ static irqreturn_t atkbd_interrupt(struct serio *serio, unsigned char data,
 			atkbd->time = jiffies + msecs_to_jiffies(dev->rep[REP_DELAY]) / 2;
 		}
 
-#ifndef MARU_SCANCODE
-		dev_dbg(&serio->dev, "atkbd.c: Conversion Received code = (%d)%03x, keycode = (%d)%03x\n", 
-				code, code, keycode, keycode);
-#endif
 		input_event(dev, EV_KEY, keycode, value);
 		input_sync(dev);
 
@@ -715,6 +676,39 @@ static inline void atkbd_disable(struct atkbd *atkbd)
 	serio_continue_rx(atkbd->ps2dev.serio);
 }
 
+static int atkbd_activate(struct atkbd *atkbd)
+{
+	struct ps2dev *ps2dev = &atkbd->ps2dev;
+
+/*
+ * Enable the keyboard to receive keystrokes.
+ */
+
+	if (ps2_command(ps2dev, NULL, ATKBD_CMD_ENABLE)) {
+		dev_err(&ps2dev->serio->dev,
+			"Failed to enable keyboard on %s\n",
+			ps2dev->serio->phys);
+		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * atkbd_deactivate() resets and disables the keyboard from sending
+ * keystrokes.
+ */
+
+static void atkbd_deactivate(struct atkbd *atkbd)
+{
+	struct ps2dev *ps2dev = &atkbd->ps2dev;
+
+	if (ps2_command(ps2dev, NULL, ATKBD_CMD_RESET_DIS))
+		dev_err(&ps2dev->serio->dev,
+			"Failed to deactivate keyboard on %s\n",
+			ps2dev->serio->phys);
+}
+
 /*
  * atkbd_probe() probes for an AT keyboard on a serio port.
  */
@@ -765,10 +759,16 @@ static int atkbd_probe(struct atkbd *atkbd)
 
 	if (atkbd->id == 0xaca1 && atkbd->translated) {
 		dev_err(&ps2dev->serio->dev,
-			"NCD terminal keyboards are only supported on non-translating controlelrs. "
+			"NCD terminal keyboards are only supported on non-translating controllers. "
 			"Use i8042.direct=1 to disable translation.\n");
 		return -1;
 	}
+
+/*
+ * Make sure nothing is coming from the keyboard and disturbs our
+ * internal state.
+ */
+	atkbd_deactivate(atkbd);
 
 	return 0;
 }
@@ -860,24 +860,6 @@ static int atkbd_reset_state(struct atkbd *atkbd)
 	param[0] = 0;
 	if (ps2_command(ps2dev, param, ATKBD_CMD_SETREP))
 		return -1;
-
-	return 0;
-}
-
-static int atkbd_activate(struct atkbd *atkbd)
-{
-	struct ps2dev *ps2dev = &atkbd->ps2dev;
-
-/*
- * Enable the keyboard to receive keystrokes.
- */
-
-	if (ps2_command(ps2dev, NULL, ATKBD_CMD_ENABLE)) {
-		dev_err(&ps2dev->serio->dev,
-			"Failed to enable keyboard on %s\n",
-			ps2dev->serio->phys);
-		return -1;
-	}
 
 	return 0;
 }
@@ -1073,11 +1055,7 @@ static void atkbd_set_device_attrs(struct atkbd *atkbd)
 			 "AT Set 2 Extra keyboard");
 	else
 		snprintf(atkbd->name, sizeof(atkbd->name),
-#ifndef MARU_SCANCODE
-			 "AT %s Set %d hardkeys",
-#else
 			 "AT %s Set %d keyboard",
-#endif
 			 atkbd->translated ? "Translated" : "Raw", atkbd->set);
 
 	snprintf(atkbd->phys, sizeof(atkbd->phys),
@@ -1193,7 +1171,6 @@ static int atkbd_connect(struct serio *serio, struct serio_driver *drv)
 
 		atkbd->set = atkbd_select_set(atkbd, atkbd_set, atkbd_extra);
 		atkbd_reset_state(atkbd);
-		atkbd_activate(atkbd);
 
 	} else {
 		atkbd->set = 2;
@@ -1208,6 +1185,8 @@ static int atkbd_connect(struct serio *serio, struct serio_driver *drv)
 		goto fail3;
 
 	atkbd_enable(atkbd);
+	if (serio->write)
+		atkbd_activate(atkbd);
 
 	err = input_register_device(atkbd->dev);
 	if (err)
@@ -1251,8 +1230,6 @@ static int atkbd_reconnect(struct serio *serio)
 		if (atkbd->set != atkbd_select_set(atkbd, atkbd->set, atkbd->extra))
 			goto out;
 
-		atkbd_activate(atkbd);
-
 		/*
 		 * Restore LED state and repeat rate. While input core
 		 * will do this for us at resume time reconnect may happen
@@ -1266,7 +1243,17 @@ static int atkbd_reconnect(struct serio *serio)
 
 	}
 
+	/*
+	 * Reset our state machine in case reconnect happened in the middle
+	 * of multi-byte scancode.
+	 */
+	atkbd->xl_bit = 0;
+	atkbd->emul = 0;
+
 	atkbd_enable(atkbd);
+	if (atkbd->write)
+		atkbd_activate(atkbd);
+
 	retval = 0;
 
  out:

@@ -34,13 +34,10 @@ extern unsigned long __toc_start;
  */
 struct lppaca lppaca[] = {
 	[0 ... (NR_LPPACAS-1)] = {
-		.desc = 0xd397d781,	/* "LpPa" */
-		.size = sizeof(struct lppaca),
-		.dyn_proc_status = 2,
-		.decr_val = 0x00ff0000,
+		.desc = cpu_to_be32(0xd397d781),	/* "LpPa" */
+		.size = cpu_to_be16(sizeof(struct lppaca)),
 		.fpregs_in_use = 1,
-		.end_of_quantum = 0xfffffffffffffffful,
-		.slb_count = 64,
+		.slb_count = cpu_to_be16(64),
 		.vmxregs_in_use = 0,
 		.page_ins = 0,
 	},
@@ -104,8 +101,8 @@ static inline void free_lppacas(void) { }
  */
 struct slb_shadow slb_shadow[] __cacheline_aligned = {
 	[0 ... (NR_CPUS-1)] = {
-		.persistent = SLB_NUM_BOLTED,
-		.buffer_length = sizeof(struct slb_shadow),
+		.persistent = cpu_to_be32(SLB_NUM_BOLTED),
+		.buffer_length = cpu_to_be32(sizeof(struct slb_shadow)),
 	},
 };
 
@@ -122,8 +119,6 @@ struct slb_shadow slb_shadow[] __cacheline_aligned = {
  */
 struct paca_struct *paca;
 EXPORT_SYMBOL(paca);
-
-struct paca_struct boot_paca;
 
 void __init initialise_paca(struct paca_struct *new_paca, int cpu)
 {
@@ -145,6 +140,7 @@ void __init initialise_paca(struct paca_struct *new_paca, int cpu)
 	new_paca->hw_cpu_id = 0xffff;
 	new_paca->kexec_state = KEXEC_STATE_NONE;
 	new_paca->__current = &init_task;
+	new_paca->data_offset = 0xfeeeeeeeeeeeeeeeULL;
 #ifdef CONFIG_PPC_STD_MMU_64
 	new_paca->slb_shadow_ptr = &slb_shadow[cpu];
 #endif /* CONFIG_PPC_STD_MMU_64 */

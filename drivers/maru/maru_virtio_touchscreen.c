@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2012 - 2013 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: 
+ * Contact:
  *  GiWoong Kim <giwoong.kim@samsung.com>
  *  SeokYeon Hwang <syeon.hwang@samsung.com>
  *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
@@ -106,7 +106,7 @@ static int run_touchscreen(void *_vtouchscreen)
     for (index = 0; index < MAX_BUF_COUNT; index++) {
         sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
 
-        err = virtqueue_add_buf(vt->vq, sg, 0, index + 1, (void *)index + 1, GFP_ATOMIC);
+        err = virtqueue_add_inbuf(vt->vq, sg, index + 1, (void *)index + 1, GFP_ATOMIC);
         if (err < 0) {
             printk(KERN_ERR "failed to add buf\n");
         }
@@ -148,7 +148,7 @@ static int run_touchscreen(void *_vtouchscreen)
             input_sync(input_dev);
 
             /* expose buffer to other end */
-            err = virtqueue_add_buf(vt->vq, sg, 0, recv_index, (void *)recv_index, GFP_ATOMIC);
+            err = virtqueue_add_inbuf(vt->vq, sg, recv_index, (void *)recv_index, GFP_ATOMIC);
             if (err < 0) {
                 printk(KERN_ERR "failed to add buf\n");
             }
@@ -223,7 +223,7 @@ static void vq_touchscreen_callback(struct virtqueue *vq)
         }
 
         /* expose buffer to other end */
-        err = virtqueue_add_buf(vt->vq, sg, 0,
+        err = virtqueue_add_inbuf(vt->vq, sg,
             recv_index, (void *)recv_index, GFP_ATOMIC);
 
         if (err < 0) {
@@ -310,7 +310,7 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     for (index = 0; index < MAX_BUF_COUNT; index++) {
         sg_set_buf(&sg[index], &vbuf[index], sizeof(EmulTouchEvent));
 
-        err = virtqueue_add_buf(vt->vq, sg, 0,
+        err = virtqueue_add_inbuf(vt->vq, sg,
             index + 1, (void *)index + 1, GFP_ATOMIC);
 
         if (err < 0) {
@@ -375,7 +375,7 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     vt->idev->absbit[BIT_WORD(ABS_MISC)] |= BIT_MASK(ABS_MISC);
     vt->idev->keybit[BIT_WORD(BTN_TOUCH)] |= BIT_MASK(BTN_TOUCH);
 
-    input_mt_init_slots(vt->idev, MAX_TRKID);
+    input_mt_init_slots(vt->idev, MAX_TRKID, 0);
 
     input_set_abs_params(vt->idev, ABS_X, 0,
         width, 0, 0);
@@ -427,7 +427,7 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
     return 0;
 }
 
-static void __devexit virtio_touchscreen_remove(struct virtio_device *vdev)
+static void virtio_touchscreen_remove(struct virtio_device *vdev)
 {
     virtio_touchscreen *vts = NULL;
 
@@ -453,13 +453,13 @@ static struct virtio_driver virtio_touchscreen_driver = {
     .driver.owner = THIS_MODULE,
     .id_table = id_table,
     .probe = virtio_touchscreen_probe,
-    .remove = __devexit_p(virtio_touchscreen_remove),
+    .remove = virtio_touchscreen_remove,
 #if 0
     .feature_table = features,
     .feature_table_size = ARRAY_SIZE(features),
     .config_changed =
 #ifdef CONFIG_PM
-    .freeze =   
+    .freeze =
     .restore =
 #endif
 #endif

@@ -145,8 +145,8 @@ int _make_buf_and_kick(void)
 {
 	int ret;
 	memset(&vevdi->read_msginfo, 0x00, sizeof(vevdi->read_msginfo));
-	ret = virtqueue_add_buf(vevdi->rvq, vevdi->sg_read, 0, 1, &vevdi->read_msginfo,
-			GFP_ATOMIC );
+	ret = virtqueue_add_inbuf(vevdi->rvq, vevdi->sg_read,
+	    1, &vevdi->read_msginfo, GFP_ATOMIC);
 	if (ret < 0) {
 		LOGERR("failed to add buffer to virtqueue.(%d)\n", ret);
 		return ret;
@@ -164,7 +164,7 @@ static int add_inbuf(struct virtqueue *vq, struct msg_info *msg)
 
 	sg_init_one(sg, msg, sizeof(struct msg_info));
 
-	ret = virtqueue_add_buf(vq, sg, 0, 1, msg, GFP_ATOMIC);
+	ret = virtqueue_add_inbuf(vq, sg, 1, msg, GFP_ATOMIC);
 	virtqueue_kick(vq);
 	return ret;
 }
@@ -184,6 +184,44 @@ static bool has_readdata(struct virtevdi_info *evdi)
 	spin_unlock_irqrestore(&evdi->inbuf_lock, flags);
 
 	return ret;
+}
+
+#define HEADER_SIZE	4
+#define ID_SIZE	10
+#define GUEST_CONNECTION_CATEGORY	"guest"
+static void send_guest_connected_msg(bool connected)
+{
+	int err;
+	struct msg_info* _msg;
+	char connect = (char)connected;
+	if (vevdi == NULL) {
+		LOGERR("invalid evdi handle\n");
+		return;
+	}
+
+	_msg = &vevdi->send_msginfo;
+
+	memset(_msg, 0, sizeof(vevdi->send_msginfo));
+
+	memcpy(_msg->buf, GUEST_CONNECTION_CATEGORY, 7);
+	memcpy(_msg->buf + ID_SIZE + 3, &connect, 1);
+	_msg->route = route_control_server;
+	_msg->use = ID_SIZE + HEADER_SIZE;
+	_msg->count = 1;
+	_msg->index = 0;
+	_msg->cclisn = 0;
+
+	err = virtqueue_add_outbuf(vevdi->svq, vevdi->sg_send, 1,
+			_msg, GFP_ATOMIC);
+
+	LOGERR("send guest connection message to qemu with (%d)\n", connected);
+
+	if (err < 0) {
+		LOGERR("failed to add buffer to virtqueue (err = %d)\n", err);
+		return;
+	}
+
+	virtqueue_kick(vevdi->svq);
 }
 
 
@@ -212,6 +250,7 @@ static int evdi_open(struct inode* inode, struct file* filp)
 
 	evdi_info->guest_connected = true;
 
+	send_guest_connected_msg(true);
 
 	ret = _make_buf_and_kick();
 	if (ret < 0)
@@ -227,6 +266,8 @@ static int evdi_close(struct inode* i, struct file* filp) {
 
 	evdi_info = filp->private_data;
 	evdi_info->guest_connected = false;
+
+	send_guest_connected_msg(false);
 
 	LOGDEBUG("evdi_closed\n");
 	return 0;
@@ -293,8 +334,6 @@ static ssize_t evdi_write(struct file *f, const char __user *ubuf, size_t len,
 	int err = 0;
 	ssize_t ret = 0;
 
-	LOGDEBUG("start of evdi_write len= %d, msglen = %d\n", len, sizeof(vevdi->send_msginfo));
-
 	if (vevdi == NULL) {
 		LOGERR("invalid evdi handle\n");
 		return 0;
@@ -311,7 +350,7 @@ static ssize_t evdi_write(struct file *f, const char __user *ubuf, size_t len,
 	}
 
 
-	err = virtqueue_add_buf(vevdi->svq, vevdi->sg_send, 1, 0,
+	err = virtqueue_add_outbuf(vevdi->svq, vevdi->sg_send, 1,
 			&vevdi->send_msginfo, GFP_ATOMIC);
 
 	/*
@@ -325,7 +364,7 @@ static ssize_t evdi_write(struct file *f, const char __user *ubuf, size_t len,
 
 	virtqueue_kick(vevdi->svq);
 
-	LOGDEBUG("send to host\n");
+	//LOG("send to host\n");
 
 	return len;
 }
@@ -383,19 +422,20 @@ static void evdi_recv_done(struct virtqueue *rvq) {
 	}
 
 	do {
-		LOGDEBUG("msg use = %d\n", _msg->use);
-		LOGDEBUG("msg data = %s\n", _msg->buf);
+		//LOG("msg use = %d\n", _msg->use);
+		//LOG("msg data = %s\n", _msg->buf);
 
 		/* insert into queue */
 		msgbuf = (struct msg_buf*) __xmalloc(SIZEOF_MSG_BUF);
 		memset(msgbuf, 0x00, sizeof(*msgbuf));
 		memcpy(&(msgbuf->msg), _msg, sizeof(*_msg));
 
-		LOGDEBUG("copied msg data = %s, %s\n", msgbuf->msg.buf, _msg->buf);
+		//LOG("copied msg data = %s, %s\n", msgbuf->msg.buf, _msg->buf);
 
 		spin_lock_irqsave(&pevdi_info[EVID_READ]->inbuf_lock, flags);
 
 		list_add_tail(&msgbuf->list, &vevdi->read_list);
+		//LOG("== wake_up_interruptible = %d!\n", ++g_wake_up_interruptible_count);
 
 		spin_unlock_irqrestore(&pevdi_info[EVID_READ]->inbuf_lock, flags);
 
@@ -535,11 +575,13 @@ static int evdi_probe(struct virtio_device* dev) {
 	sg_init_one(vevdi->sg_read, &vevdi->read_msginfo, sizeof(vevdi->read_msginfo));
 	sg_init_one(vevdi->sg_send, &vevdi->send_msginfo, sizeof(vevdi->send_msginfo));
 
+
+
 	LOGDEBUG("EVDI Probe completed");
 	return 0;
 }
 
-static void __devexit evdi_remove(struct virtio_device* dev)
+static void evdi_remove(struct virtio_device* dev)
 {
 	struct virtio_evdi* _evdi = dev->priv;
 	if (!_evdi)

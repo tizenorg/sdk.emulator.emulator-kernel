@@ -23,15 +23,24 @@ struct plat_nand_data {
 	void __iomem		*io_base;
 };
 
+static const char *part_probe_types[] = { "cmdlinepart", NULL };
+
 /*
  * Probe for the NAND device.
  */
-static int __devinit plat_nand_probe(struct platform_device *pdev)
+static int plat_nand_probe(struct platform_device *pdev)
 {
-	struct platform_nand_data *pdata = pdev->dev.platform_data;
+	struct platform_nand_data *pdata = dev_get_platdata(&pdev->dev);
+	struct mtd_part_parser_data ppdata;
 	struct plat_nand_data *data;
 	struct resource *res;
+	const char **part_types;
 	int err = 0;
+
+	if (!pdata) {
+		dev_err(&pdev->dev, "platform_nand_data is missing\n");
+		return -EINVAL;
+	}
 
 	if (pdata->chip.nr_chips < 1) {
 		dev_err(&pdev->dev, "invalid number of chips specified\n");
@@ -75,6 +84,7 @@ static int __devinit plat_nand_probe(struct platform_device *pdev)
 	data->chip.select_chip = pdata->ctrl.select_chip;
 	data->chip.write_buf = pdata->ctrl.write_buf;
 	data->chip.read_buf = pdata->ctrl.read_buf;
+	data->chip.read_byte = pdata->ctrl.read_byte;
 	data->chip.chip_delay = pdata->chip.chip_delay;
 	data->chip.options |= pdata->chip.options;
 	data->chip.bbt_options |= pdata->chip.bbt_options;
@@ -98,8 +108,10 @@ static int __devinit plat_nand_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	err = mtd_device_parse_register(&data->mtd,
-					pdata->chip.part_probe_types, NULL,
+	part_types = pdata->chip.part_probe_types ? : part_probe_types;
+
+	ppdata.of_node = pdev->dev.of_node;
+	err = mtd_device_parse_register(&data->mtd, part_types, &ppdata,
 					pdata->chip.partitions,
 					pdata->chip.nr_partitions);
 
@@ -110,7 +122,6 @@ static int __devinit plat_nand_probe(struct platform_device *pdev)
 out:
 	if (pdata->ctrl.remove)
 		pdata->ctrl.remove(pdev);
-	platform_set_drvdata(pdev, NULL);
 	iounmap(data->io_base);
 out_release_io:
 	release_mem_region(res->start, resource_size(res));
@@ -122,10 +133,10 @@ out_free:
 /*
  * Remove a NAND device.
  */
-static int __devexit plat_nand_remove(struct platform_device *pdev)
+static int plat_nand_remove(struct platform_device *pdev)
 {
 	struct plat_nand_data *data = platform_get_drvdata(pdev);
-	struct platform_nand_data *pdata = pdev->dev.platform_data;
+	struct platform_nand_data *pdata = dev_get_platdata(&pdev->dev);
 	struct resource *res;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -140,12 +151,19 @@ static int __devexit plat_nand_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id plat_nand_match[] = {
+	{ .compatible = "gen_nand" },
+	{},
+};
+MODULE_DEVICE_TABLE(of, plat_nand_match);
+
 static struct platform_driver plat_nand_driver = {
-	.probe		= plat_nand_probe,
-	.remove		= __devexit_p(plat_nand_remove),
-	.driver		= {
-		.name	= "gen_nand",
-		.owner	= THIS_MODULE,
+	.probe	= plat_nand_probe,
+	.remove	= plat_nand_remove,
+	.driver	= {
+		.name		= "gen_nand",
+		.owner		= THIS_MODULE,
+		.of_match_table = plat_nand_match,
 	},
 };
 

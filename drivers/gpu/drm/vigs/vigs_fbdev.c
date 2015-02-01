@@ -12,6 +12,29 @@
  * @{
  */
 
+static bool vigs_fbdev_helper_is_bound(struct drm_fb_helper *fb_helper)
+{
+    struct drm_device *dev = fb_helper->dev;
+    struct drm_crtc *crtc;
+    int bound = 0, crtcs_bound = 0;
+
+    list_for_each_entry(crtc, &dev->mode_config.crtc_list, head) {
+        if (crtc->fb) {
+            crtcs_bound++;
+        }
+
+        if (crtc->fb == fb_helper->fb) {
+            bound++;
+        }
+    }
+
+    if (bound < crtcs_bound) {
+        return false;
+    }
+
+    return true;
+}
+
 static int vigs_fbdev_setcolreg(struct drm_crtc *crtc, u16 red, u16 green,
                                 u16 blue, u16 regno, struct fb_info *fbi)
 {
@@ -39,6 +62,15 @@ static int vigs_fbdev_setcolreg(struct drm_crtc *crtc, u16 red, u16 green,
             palette[regno] = value;
         }
         return 0;
+    }
+
+    /*
+     * The driver really shouldn't advertise pseudo/directcolor
+     * visuals if it can't deal with the palette.
+     */
+    if (WARN_ON(!fb_helper->funcs->gamma_set ||
+                !fb_helper->funcs->gamma_get)) {
+        return -EINVAL;
     }
 
     pindex = regno;
@@ -87,11 +119,18 @@ static int vigs_fbdev_setcolreg(struct drm_crtc *crtc, u16 red, u16 green,
 static int vigs_fbdev_setcmap(struct fb_cmap *cmap, struct fb_info *fbi)
 {
     struct drm_fb_helper *fb_helper = fbi->par;
+    struct drm_device *dev = fb_helper->dev;
     struct drm_crtc_helper_funcs *crtc_funcs;
     u16 *red, *green, *blue, *transp;
     struct drm_crtc *crtc;
     int i, j, ret = 0;
     int start;
+
+    drm_modeset_lock_all(dev);
+    if (!vigs_fbdev_helper_is_bound(fb_helper)) {
+        drm_modeset_unlock_all(dev);
+        return -EBUSY;
+    }
 
     for (i = 0; i < fb_helper->crtc_count; i++) {
         crtc = fb_helper->crtc_info[i].mode_set.crtc;
@@ -117,13 +156,17 @@ static int vigs_fbdev_setcmap(struct fb_cmap *cmap, struct fb_info *fbi)
             ret = vigs_fbdev_setcolreg(crtc, hred, hgreen, hblue, start++, fbi);
 
             if (ret != 0) {
-                return ret;
+                goto out;
             }
         }
 
-        crtc_funcs->load_lut(crtc);
+        if (crtc_funcs->load_lut) {
+            crtc_funcs->load_lut(crtc);
+        }
     }
 
+ out:
+    drm_modeset_unlock_all(dev);
     return ret;
 }
 
@@ -139,22 +182,48 @@ static int vigs_fbdev_set_par(struct fb_info *fbi)
 }
 
 /*
- * This is 'drm_fb_helper_dpms' modified to set 'fbdev'
- * flag inside 'mode_config.mutex'.
+ * This is 'drm_fb_helper_dpms' modified to set 'in_dpms'
+ * flag inside drm_modeset_lock_all.
  */
 static void vigs_fbdev_dpms(struct fb_info *fbi, int dpms_mode)
 {
     struct drm_fb_helper *fb_helper = fbi->par;
     struct drm_device *dev = fb_helper->dev;
+    struct vigs_device *vigs_dev = dev->dev_private;
     struct drm_crtc *crtc;
     struct vigs_crtc *vigs_crtc;
     struct drm_connector *connector;
     int i, j;
 
     /*
+     * fbdev->blank can be called from irq context in case of a panic.
+     * Since we already have our own special panic handler which will
+     * restore the fbdev console mode completely, just bail out early.
+     */
+    if (oops_in_progress) {
+        return;
+    }
+
+    if (vigs_dev->in_dpms) {
+        /*
+         * If this is called from 'vigs_crtc_dpms' then we just
+         * return in order to not deadlock. Note that it's
+         * correct to check this flag here without any locks
+         * being held since 'fb_blank' callback is already called with
+         * console lock being held and 'vigs_crtc_dpms' only sets in_dpms
+         * inside the console lock.
+         */
+        return;
+    }
+
+    /*
      * For each CRTC in this fb, turn the connectors on/off.
      */
-    mutex_lock(&dev->mode_config.mutex);
+    drm_modeset_lock_all(dev);
+    if (!vigs_fbdev_helper_is_bound(fb_helper)) {
+        drm_modeset_unlock_all(dev);
+        return;
+    }
 
     for (i = 0; i < fb_helper->crtc_count; i++) {
         crtc = fb_helper->crtc_info[i].mode_set.crtc;
@@ -164,20 +233,20 @@ static void vigs_fbdev_dpms(struct fb_info *fbi, int dpms_mode)
             continue;
         }
 
-        vigs_crtc->in_fb_blank = true;
+        vigs_dev->in_dpms = true;
 
         /* Walk the connectors & encoders on this fb turning them on/off */
         for (j = 0; j < fb_helper->connector_count; j++) {
             connector = fb_helper->connector_info[j]->connector;
-            drm_helper_connector_dpms(connector, dpms_mode);
-            drm_connector_property_set_value(connector,
+            connector->funcs->dpms(connector, dpms_mode);
+            drm_object_property_set_value(&connector->base,
                 dev->mode_config.dpms_property, dpms_mode);
         }
 
-        vigs_crtc->in_fb_blank = false;
+        vigs_dev->in_dpms = false;
     }
 
-    mutex_unlock(&dev->mode_config.mutex);
+    drm_modeset_unlock_all(dev);
 }
 
 /*
@@ -456,6 +525,7 @@ fail1:
 void vigs_fbdev_destroy(struct vigs_fbdev *vigs_fbdev)
 {
     struct fb_info *fbi = vigs_fbdev->base.fbdev;
+    struct drm_framebuffer *fb;
 
     DRM_DEBUG_KMS("enter\n");
 
@@ -465,11 +535,16 @@ void vigs_fbdev_destroy(struct vigs_fbdev *vigs_fbdev)
         framebuffer_release(fbi);
     }
 
+    fb = vigs_fbdev->base.fb;
+
     drm_fb_helper_fini(&vigs_fbdev->base);
 
     if (vigs_fbdev->kptr) {
         iounmap(vigs_fbdev->kptr);
     }
+
+    drm_framebuffer_unregister_private(fb);
+    drm_framebuffer_remove(fb);
 
     kfree(vigs_fbdev);
 }
@@ -485,5 +560,7 @@ void vigs_fbdev_restore_mode(struct vigs_fbdev *vigs_fbdev)
 {
     DRM_DEBUG_KMS("enter\n");
 
+    drm_modeset_lock_all(vigs_fbdev->base.dev);
     drm_fb_helper_restore_fbdev_mode(&vigs_fbdev->base);
+    drm_modeset_unlock_all(vigs_fbdev->base.dev);
 }

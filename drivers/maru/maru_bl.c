@@ -1,7 +1,7 @@
 /*
  * MARU Virtual Backlight Driver
  *
- * Copyright (c) 2011 - 2014 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
  *  Jinhyung Jo <jinhyung.jo@samsung.com>
@@ -46,7 +46,7 @@
 #define MIN_BRIGHTNESS	0
 #define MAX_BRIGHTNESS	100
 
-static struct pci_device_id marubl_pci_table[] __devinitdata = {
+static struct pci_device_id marubl_pci_table[] = {
 	{
 		.vendor		= PCI_VENDOR_ID_TIZEN,
 		.device		= PCI_DEVICE_ID_VIRTUAL_BRIGHTNESS,
@@ -191,7 +191,7 @@ static struct device_attribute hbm_device_attr =
 
 /* pci probe function
 */
-static int __devinit marubl_probe(struct pci_dev *pci_dev,
+static int marubl_probe(struct pci_dev *pci_dev,
 				  const struct pci_device_id *ent)
 {
 	int ret;
@@ -304,7 +304,7 @@ static int __devinit marubl_probe(struct pci_dev *pci_dev,
 	return 0;
 }
 
-static void __devexit marubl_exit(struct pci_dev *pcidev)
+static void marubl_exit(struct pci_dev *pcidev)
 {
 	/*
 	 * Unregister backlight device
@@ -337,7 +337,7 @@ static struct pci_driver marubl_pci_driver = {
 	.name		= MARUBL_DRIVER_NAME,
 	.id_table	= marubl_pci_table,
 	.probe		= marubl_probe,
-	.remove		= __devexit_p(marubl_exit),
+	.remove		= marubl_exit,
 #ifdef CONFIG_PM
 	/* .suspend  = marubl_suspend, */
 	/* .resume   = marubl_resume, */

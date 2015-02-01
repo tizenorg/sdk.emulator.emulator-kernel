@@ -2,6 +2,7 @@
  * wm8731.c  --  WM8731 ALSA SoC Audio driver
  *
  * Copyright 2005 Openedhand Ltd.
+ * Copyright 2006-12 Wolfson Microelectronics, plc
  *
  * Author: Richard Purdie <richard@openedhand.com>
  *
@@ -44,6 +45,7 @@ static const char *wm8731_supply_names[WM8731_NUM_SUPPLIES] = {
 struct wm8731_priv {
 	struct regmap *regmap;
 	struct regulator_bulk_data supplies[WM8731_NUM_SUPPLIES];
+	const struct snd_pcm_hw_constraint_list *constraints;
 	unsigned int sysclk;
 	int sysclk_type;
 	int playback_fs;
@@ -289,6 +291,36 @@ static const struct _coeff_div coeff_div[] = {
 	{12000000, 88200, 136, 0xf, 0x1, 0x1},
 };
 
+/* rates constraints */
+static const unsigned int wm8731_rates_12000000[] = {
+	8000, 32000, 44100, 48000, 96000, 88200,
+};
+
+static const unsigned int wm8731_rates_12288000_18432000[] = {
+	8000, 32000, 48000, 96000,
+};
+
+static const unsigned int wm8731_rates_11289600_16934400[] = {
+	8000, 44100, 88200,
+};
+
+static const struct snd_pcm_hw_constraint_list wm8731_constraints_12000000 = {
+	.list = wm8731_rates_12000000,
+	.count = ARRAY_SIZE(wm8731_rates_12000000),
+};
+
+static const
+struct snd_pcm_hw_constraint_list wm8731_constraints_12288000_18432000 = {
+	.list = wm8731_rates_12288000_18432000,
+	.count = ARRAY_SIZE(wm8731_rates_12288000_18432000),
+};
+
+static const
+struct snd_pcm_hw_constraint_list wm8731_constraints_11289600_16934400 = {
+	.list = wm8731_rates_11289600_16934400,
+	.count = ARRAY_SIZE(wm8731_rates_11289600_16934400),
+};
+
 static inline int get_coeff(int mclk, int rate)
 {
 	int i;
@@ -361,16 +393,25 @@ static int wm8731_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 	}
 
 	switch (freq) {
-	case 11289600:
+	case 0:
+		wm8731->constraints = NULL;
+		break;
 	case 12000000:
+		wm8731->constraints = &wm8731_constraints_12000000;
+		break;
 	case 12288000:
-	case 16934400:
 	case 18432000:
-		wm8731->sysclk = freq;
+		wm8731->constraints = &wm8731_constraints_12288000_18432000;
+		break;
+	case 16934400:
+	case 11289600:
+		wm8731->constraints = &wm8731_constraints_11289600_16934400;
 		break;
 	default:
 		return -EINVAL;
 	}
+
+	wm8731->sysclk = freq;
 
 	snd_soc_dapm_sync(&codec->dapm);
 
@@ -406,10 +447,10 @@ static int wm8731_set_dai_fmt(struct snd_soc_dai *codec_dai,
 		iface |= 0x0001;
 		break;
 	case SND_SOC_DAIFMT_DSP_A:
-		iface |= 0x0003;
+		iface |= 0x0013;
 		break;
 	case SND_SOC_DAIFMT_DSP_B:
-		iface |= 0x0013;
+		iface |= 0x0003;
 		break;
 	default:
 		return -EINVAL;
@@ -474,12 +515,26 @@ static int wm8731_set_bias_level(struct snd_soc_codec *codec,
 	return 0;
 }
 
+static int wm8731_startup(struct snd_pcm_substream *substream,
+	struct snd_soc_dai *dai)
+{
+	struct wm8731_priv *wm8731 = snd_soc_codec_get_drvdata(dai->codec);
+
+	if (wm8731->constraints)
+		snd_pcm_hw_constraint_list(substream->runtime, 0,
+					   SNDRV_PCM_HW_PARAM_RATE,
+					   wm8731->constraints);
+
+	return 0;
+}
+
 #define WM8731_RATES SNDRV_PCM_RATE_8000_96000
 
 #define WM8731_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |\
 	SNDRV_PCM_FMTBIT_S24_LE)
 
 static const struct snd_soc_dai_ops wm8731_dai_ops = {
+	.startup	= wm8731_startup,
 	.hw_params	= wm8731_hw_params,
 	.digital_mute	= wm8731_mute,
 	.set_sysclk	= wm8731_set_dai_sysclk,
@@ -630,21 +685,22 @@ static const struct regmap_config wm8731_regmap = {
 };
 
 #if defined(CONFIG_SPI_MASTER)
-static int __devinit wm8731_spi_probe(struct spi_device *spi)
+static int wm8731_spi_probe(struct spi_device *spi)
 {
 	struct wm8731_priv *wm8731;
 	int ret;
 
-	wm8731 = kzalloc(sizeof(struct wm8731_priv), GFP_KERNEL);
+	wm8731 = devm_kzalloc(&spi->dev, sizeof(struct wm8731_priv),
+			      GFP_KERNEL);
 	if (wm8731 == NULL)
 		return -ENOMEM;
 
-	wm8731->regmap = regmap_init_spi(spi, &wm8731_regmap);
+	wm8731->regmap = devm_regmap_init_spi(spi, &wm8731_regmap);
 	if (IS_ERR(wm8731->regmap)) {
 		ret = PTR_ERR(wm8731->regmap);
 		dev_err(&spi->dev, "Failed to allocate register map: %d\n",
 			ret);
-		goto err;
+		return ret;
 	}
 
 	spi_set_drvdata(spi, wm8731);
@@ -653,25 +709,15 @@ static int __devinit wm8731_spi_probe(struct spi_device *spi)
 			&soc_codec_dev_wm8731, &wm8731_dai, 1);
 	if (ret != 0) {
 		dev_err(&spi->dev, "Failed to register CODEC: %d\n", ret);
-		goto err_regmap;
+		return ret;
 	}
 
 	return 0;
-
-err_regmap:
-	regmap_exit(wm8731->regmap);
-err:
-	kfree(wm8731);
-	return ret;
 }
 
-static int __devexit wm8731_spi_remove(struct spi_device *spi)
+static int wm8731_spi_remove(struct spi_device *spi)
 {
-	struct wm8731_priv *wm8731 = spi_get_drvdata(spi);
-
 	snd_soc_unregister_codec(&spi->dev);
-	regmap_exit(wm8731->regmap);
-	kfree(wm8731);
 	return 0;
 }
 
@@ -682,27 +728,28 @@ static struct spi_driver wm8731_spi_driver = {
 		.of_match_table = wm8731_of_match,
 	},
 	.probe		= wm8731_spi_probe,
-	.remove		= __devexit_p(wm8731_spi_remove),
+	.remove		= wm8731_spi_remove,
 };
 #endif /* CONFIG_SPI_MASTER */
 
 #if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
-static __devinit int wm8731_i2c_probe(struct i2c_client *i2c,
-				      const struct i2c_device_id *id)
+static int wm8731_i2c_probe(struct i2c_client *i2c,
+			    const struct i2c_device_id *id)
 {
 	struct wm8731_priv *wm8731;
 	int ret;
 
-	wm8731 = kzalloc(sizeof(struct wm8731_priv), GFP_KERNEL);
+	wm8731 = devm_kzalloc(&i2c->dev, sizeof(struct wm8731_priv),
+			      GFP_KERNEL);
 	if (wm8731 == NULL)
 		return -ENOMEM;
 
-	wm8731->regmap = regmap_init_i2c(i2c, &wm8731_regmap);
+	wm8731->regmap = devm_regmap_init_i2c(i2c, &wm8731_regmap);
 	if (IS_ERR(wm8731->regmap)) {
 		ret = PTR_ERR(wm8731->regmap);
 		dev_err(&i2c->dev, "Failed to allocate register map: %d\n",
 			ret);
-		goto err;
+		return ret;
 	}
 
 	i2c_set_clientdata(i2c, wm8731);
@@ -711,24 +758,15 @@ static __devinit int wm8731_i2c_probe(struct i2c_client *i2c,
 			&soc_codec_dev_wm8731, &wm8731_dai, 1);
 	if (ret != 0) {
 		dev_err(&i2c->dev, "Failed to register CODEC: %d\n", ret);
-		goto err_regmap;
+		return ret;
 	}
 
 	return 0;
-
-err_regmap:
-	regmap_exit(wm8731->regmap);
-err:
-	kfree(wm8731);
-	return ret;
 }
 
-static __devexit int wm8731_i2c_remove(struct i2c_client *client)
+static int wm8731_i2c_remove(struct i2c_client *client)
 {
-	struct wm8731_priv *wm8731 = i2c_get_clientdata(client);
 	snd_soc_unregister_codec(&client->dev);
-	regmap_exit(wm8731->regmap);
-	kfree(wm8731);
 	return 0;
 }
 
@@ -745,7 +783,7 @@ static struct i2c_driver wm8731_i2c_driver = {
 		.of_match_table = wm8731_of_match,
 	},
 	.probe =    wm8731_i2c_probe,
-	.remove =   __devexit_p(wm8731_i2c_remove),
+	.remove =   wm8731_i2c_remove,
 	.id_table = wm8731_i2c_id,
 };
 #endif

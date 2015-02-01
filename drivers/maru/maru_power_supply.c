@@ -47,6 +47,8 @@
 #define DEVICE_NAME				"power_supply"
 #define FILE_PERMISSION			(S_IRUGO | S_IWUSR)
 
+#define __MAX_BUF_POWER			512
+
 //#define DEBUG_MARU_POWER_SUPPLY
 
 #ifdef DEBUG_MARU_POWER_SUPPLY
@@ -99,7 +101,7 @@ struct virtio_power *v_power;
 static struct class* power_class;
 static struct device* power_device;
 
-static char power_data [PAGE_SIZE];
+static char power_data [__MAX_BUF_POWER];
 
 static DECLARE_WAIT_QUEUE_HEAD(wq);
 
@@ -113,16 +115,21 @@ static void power_vq_done(struct virtqueue *vq) {
 		return;
 	}
 
-	if (msg->req != request_answer || msg->buf == NULL) {
+	if (msg->req != request_answer) {
+		DLOG(KERN_DEBUG, "receive queue- not an answer message: %d", msg->req);
+		return;
+	}
+	if (msg->buf == NULL) {
+		DLOG(KERN_ERR, "receive queue- message from host is NULL.");
 		return;
 	}
 
 	DLOG(KERN_DEBUG, "msg buf: %s, req: %d, type: %d", msg->buf, msg->req, msg->type);
 
 	mutex_lock(&v_power->lock);
+	memset(power_data, 0, __MAX_BUF_POWER);
 	strcpy(power_data, msg->buf);
-	v_power->flags ++;
-	DLOG(KERN_DEBUG, "flags : %d", v_power->flags);
+	v_power->flags = 1;
 	mutex_unlock(&v_power->lock);
 
 	wake_up_interruptible(&wq);
@@ -143,7 +150,7 @@ static void set_power_data(int type, const char* buf)
 	}
 
 	mutex_lock(&v_power->lock);
-	memset(power_data, 0, PAGE_SIZE);
+	memset(power_data, 0, __MAX_BUF_POWER);
 	memset(&v_power->msginfo, 0, sizeof(v_power->msginfo));
 
 	strcpy(power_data, buf);
@@ -156,7 +163,7 @@ static void set_power_data(int type, const char* buf)
 	DLOG(KERN_DEBUG, "set_power_data type: %d, req: %d, buf: %s",
 			v_power->msginfo.type, v_power->msginfo.req, v_power->msginfo.buf);
 
-	err = virtqueue_add_buf(v_power->vq, v_power->sg_vq, 1, 0, &v_power->msginfo, GFP_ATOMIC);
+	err = virtqueue_add_outbuf(v_power->vq, v_power->sg_vq, 1, &v_power->msginfo, GFP_ATOMIC);
 	if (err < 0) {
 		DLOG(KERN_ERR, "failed to add buffer to virtqueue (err = %d)", err);
 		return;
@@ -165,31 +172,32 @@ static void set_power_data(int type, const char* buf)
 	virtqueue_kick(v_power->vq);
 }
 
-static void get_power_data(int type)
+static int get_power_data(int type, char* data)
 {
+	struct scatterlist *sgs[2];
 	int err = 0;
 
-	if (v_power == NULL) {
-		DLOG(KERN_ERR, "Invalid power handle");
-		return;
+	if (v_power == NULL || data == NULL) {
+		DLOG(KERN_ERR, "Invalid power handle or data is NULL");
+		return -1;
 	}
 
 	mutex_lock(&v_power->lock);
-	memset(power_data, 0, PAGE_SIZE);
 	memset(&v_power->msginfo, 0, sizeof(v_power->msginfo));
 
 	v_power->msginfo.req = request_get;
 	v_power->msginfo.type = type;
-
 	mutex_unlock(&v_power->lock);
 
 	DLOG(KERN_DEBUG, "get_power_data type: %d, req: %d",
 			v_power->msginfo.type, v_power->msginfo.req);
 
-	err = virtqueue_add_buf(v_power->vq, v_power->sg_vq, 1, 1, &v_power->msginfo, GFP_ATOMIC);
+	sgs[0] = &v_power->sg_vq[0];
+	sgs[1] = &v_power->sg_vq[1];
+	err = virtqueue_add_sgs(v_power->vq, sgs, 1, 1, &v_power->msginfo, GFP_ATOMIC);
 	if (err < 0) {
 		DLOG(KERN_ERR, "failed to add buffer to virtqueue (err = %d)", err);
-		return;
+		return -1;
 	}
 
 	virtqueue_kick(v_power->vq);
@@ -197,45 +205,56 @@ static void get_power_data(int type)
 	wait_event_interruptible(wq, v_power->flags != 0);
 
 	mutex_lock(&v_power->lock);
-	v_power->flags --;
-	DLOG(KERN_DEBUG, "flags : %d", v_power->flags);
+	v_power->flags = 0;
+	memcpy(data, power_data, strlen(power_data));
 	mutex_unlock(&v_power->lock);
+
+	return 0;
+}
+
+static int get_data_for_show(int type, char* buf)
+{
+	int ret;
+	char power_data[__MAX_BUF_POWER];
+	memset(power_data, 0, sizeof(power_data));
+	ret = get_power_data(type, power_data);
+	if (ret)
+		return 0;
+	return sprintf(buf, "%s", power_data);
+
 }
 
 static ssize_t show_capacity(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	get_power_data(power_type_capacity);
-	return snprintf(buf, PAGE_SIZE, "%s", power_data);
+	return get_data_for_show(power_type_capacity, buf);
 }
 
 static ssize_t store_capacity(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	set_power_data(power_type_capacity, buf);
-	return strnlen(buf, PAGE_SIZE);
+	return strnlen(buf, count);
 }
 
 static ssize_t show_charge_full(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	get_power_data(power_type_charge_full);
-	return snprintf(buf, PAGE_SIZE, "%s", power_data);
+	return get_data_for_show(power_type_charge_full, buf);
 }
 
 static ssize_t store_charge_full(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	set_power_data(power_type_charge_full, buf);
-	return strnlen(buf, PAGE_SIZE);
+	return strnlen(buf, count);
 }
 
 static ssize_t show_charge_now(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	get_power_data(power_type_charge_now);
-	return snprintf(buf, PAGE_SIZE, "%s", power_data);
+	return get_data_for_show(power_type_charge_now, buf);
 }
 
 static ssize_t store_charge_now(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	set_power_data(power_type_charge_now, buf);
-	return strnlen(buf, PAGE_SIZE);
+	return strnlen(buf, count);
 }
 
 static struct device_attribute ps_device_attributes[] = {
@@ -307,7 +326,6 @@ static int power_probe(struct virtio_device* dev)
 
 	v_power->vdev = dev;
 	dev->priv = v_power;
-	v_power->flags = 0;
 
 	power_class = class_create(THIS_MODULE, DEVICE_NAME);
 	if (power_class == NULL) {

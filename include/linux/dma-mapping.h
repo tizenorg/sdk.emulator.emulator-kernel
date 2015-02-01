@@ -18,6 +18,9 @@ struct dma_map_ops {
 	int (*mmap)(struct device *, struct vm_area_struct *,
 			  void *, dma_addr_t, size_t, struct dma_attrs *attrs);
 
+	int (*get_sgtable)(struct device *dev, struct sg_table *sgt, void *,
+			   dma_addr_t, size_t, struct dma_attrs *attrs);
+
 	dma_addr_t (*map_page)(struct device *dev, struct page *page,
 			       unsigned long offset, size_t size,
 			       enum dma_data_direction dir,
@@ -129,9 +132,8 @@ static inline int dma_set_seg_boundary(struct device *dev, unsigned long mask)
 static inline void *dma_zalloc_coherent(struct device *dev, size_t size,
 					dma_addr_t *dma_handle, gfp_t flag)
 {
-	void *ret = dma_alloc_coherent(dev, size, dma_handle, flag);
-	if (ret)
-		memset(ret, 0, size);
+	void *ret = dma_alloc_coherent(dev, size, dma_handle,
+				       flag | __GFP_ZERO);
 	return ret;
 }
 

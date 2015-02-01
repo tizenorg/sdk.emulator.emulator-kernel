@@ -55,13 +55,13 @@
 #define DEVICE_NAME     "nfc"
 
 /* device protocol */
-#define MAX_BUF_SIZE  255
+#define NFC_MAX_BUF_SIZE  4096
 
 struct msg_info {
     unsigned char client_id;
     unsigned char client_type;
     uint32_t use;
-    char buf[MAX_BUF_SIZE];
+    char buf[NFC_MAX_BUF_SIZE];
 };
 
 static int g_read_count = 0;
@@ -129,8 +129,8 @@ int make_buf_and_kick(void)
 {
     int ret;
     memset(&vnfc->read_msginfo, 0x00, sizeof(vnfc->read_msginfo));
-    ret = virtqueue_add_buf(vnfc->rvq, vnfc->sg_read, 0, 1, &vnfc->read_msginfo,
-            GFP_ATOMIC );
+    ret = virtqueue_add_inbuf(vnfc->rvq, vnfc->sg_read,
+        1, &vnfc->read_msginfo, GFP_ATOMIC);
     if (ret < 0) {
         LOG("failed to add buffer to virtqueue.(%d)\n", ret);
         return ret;
@@ -146,9 +146,9 @@ static int add_inbuf(struct virtqueue *vq, struct msg_info *msg)
     struct scatterlist sg[1];
     int ret;
 
-    sg_init_one(sg, msg, MAX_BUF_SIZE);
+    sg_init_one(sg, msg, NFC_MAX_BUF_SIZE);
 
-    ret = virtqueue_add_buf(vq, sg, 0, 1, msg, GFP_ATOMIC);
+    ret = virtqueue_add_inbuf(vq, sg, 1, msg, GFP_ATOMIC);
     virtqueue_kick(vq);
     return ret;
 }
@@ -292,7 +292,7 @@ static ssize_t nfc_write(struct file *f, const char __user *ubuf, size_t len,
 
     sg_init_one(vnfc->sg_send, &vnfc->send_msginfo, sizeof(vnfc->send_msginfo));
 
-    err = virtqueue_add_buf(vnfc->svq, vnfc->sg_send, 1, 0,
+    err = virtqueue_add_outbuf(vnfc->svq, vnfc->sg_send, 1,
             &vnfc->send_msginfo, GFP_ATOMIC);
 
     /*
@@ -501,10 +501,10 @@ static int nfc_probe(struct virtio_device* dev) {
 
 
     memset(&vnfc->read_msginfo, 0x00, sizeof(vnfc->read_msginfo));
-    sg_set_buf(vnfc->sg_read, &vnfc->read_msginfo, MAX_BUF_SIZE);
+    sg_set_buf(vnfc->sg_read, &vnfc->read_msginfo, NFC_MAX_BUF_SIZE);
 
     memset(&vnfc->send_msginfo, 0x00, sizeof(vnfc->send_msginfo));
-    sg_set_buf(vnfc->sg_send, &vnfc->send_msginfo, MAX_BUF_SIZE);
+    sg_set_buf(vnfc->sg_send, &vnfc->send_msginfo, NFC_MAX_BUF_SIZE);
 
 
     sg_init_one(vnfc->sg_read, &vnfc->read_msginfo, sizeof(vnfc->read_msginfo));
@@ -516,7 +516,7 @@ static int nfc_probe(struct virtio_device* dev) {
     return 0;
 }
 
-static void __devexit nfc_remove(struct virtio_device* dev)
+static void nfc_remove(struct virtio_device* dev)
 {
     struct virtio_nfc* _nfc = dev->priv;
     if (!_nfc) {

@@ -99,14 +99,14 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 		/* how to get keycode and value. */
 		input_event(vkbd->idev, EV_KEY, kbdevent.code, kbdevent.value);
 		input_sync(vkbd->idev);
-		printk(KERN_ERR "input_event code = %d, value = %d\n", kbdevent.code, kbdevent.value); 
+		printk(KERN_ERR "input_event code = %d, value = %d\n", kbdevent.code, kbdevent.value);
 		memset(&vkbd->kbdevt[vqidx], 0x00, sizeof(kbdevent));
 		vqidx++;
 		if (vqidx == KBD_BUF_SIZE) {
 			vqidx = 0;
 		}
 	}
-	err = virtqueue_add_buf (vq, vkbd->sg, 0, KBD_BUF_SIZE, (void *)KBD_BUF_SIZE, GFP_ATOMIC);
+	err = virtqueue_add_inbuf(vq, vkbd->sg, KBD_BUF_SIZE, (void *)KBD_BUF_SIZE, GFP_ATOMIC);
 	if (err < 0) {
 		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
 		return;
@@ -177,7 +177,7 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 				sizeof(struct EmulKbdEvent));
 	}
 
-	ret = virtqueue_add_buf(vkbd->vq, vkbd->sg, 0, KBD_BUF_SIZE, (void *)KBD_BUF_SIZE, GFP_ATOMIC);
+	ret = virtqueue_add_inbuf(vkbd->vq, vkbd->sg, KBD_BUF_SIZE, (void *)KBD_BUF_SIZE, GFP_ATOMIC);
 	if (ret < 0) {
 		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
 		kfree(vkbd);
@@ -240,7 +240,7 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 	return 0;
 }
 
-static void __devexit virtio_keyboard_remove(struct virtio_device *vdev)
+static void virtio_keyboard_remove(struct virtio_device *vdev)
 {
 	VKBD_LOG(KERN_INFO, "driver is removed.\n");
 	if (!vkbd) {

@@ -13,6 +13,12 @@
 
 /*-------------------------------------------------------------------------*/
 
+static int override_alt = -1;
+module_param_named(alt, override_alt, int, 0644);
+MODULE_PARM_DESC(alt, ">= 0 to override altsetting selection");
+
+/*-------------------------------------------------------------------------*/
+
 /* FIXME make these public somewhere; usbdevfs.h? */
 struct usbtest_param {
 	/* inputs */
@@ -103,6 +109,10 @@ get_endpoints(struct usbtest_dev *dev, struct usb_interface *intf)
 		iso_in = iso_out = NULL;
 		alt = intf->altsetting + tmp;
 
+		if (override_alt >= 0 &&
+				override_alt != alt->desc.bAlternateSetting)
+			continue;
+
 		/* take the first altsetting with in-bulk + out-bulk;
 		 * ignore other endpoints and altsettings.
 		 */
@@ -144,6 +154,7 @@ try_iso:
 
 found:
 	udev = testdev_to_usbdev(dev);
+	dev->info->alt = alt->desc.bAlternateSetting;
 	if (alt->desc.bAlternateSetting != 0) {
 		tmp = usb_set_interface(udev,
 				alt->desc.bInterfaceNumber,
@@ -422,6 +433,9 @@ alloc_sglist(int nents, int max, int vary)
 	struct scatterlist	*sg;
 	unsigned		i;
 	unsigned		size = max;
+
+	if (max == 0)
+		return NULL;
 
 	sg = kmalloc_array(nents, sizeof *sg, GFP_KERNEL);
 	if (!sg)
@@ -733,9 +747,9 @@ static int ch9_postconfig(struct usbtest_dev *dev)
 
 	/* [9.4.5] get_status always works */
 	retval = usb_get_status(udev, USB_RECIP_DEVICE, 0, dev->buf);
-	if (retval != 2) {
+	if (retval) {
 		dev_err(&iface->dev, "get dev status --> %d\n", retval);
-		return (retval < 0) ? retval : -EDOM;
+		return retval;
 	}
 
 	/* FIXME configuration.bmAttributes says if we could try to set/clear
@@ -744,9 +758,9 @@ static int ch9_postconfig(struct usbtest_dev *dev)
 
 	retval = usb_get_status(udev, USB_RECIP_INTERFACE,
 			iface->altsetting[0].desc.bInterfaceNumber, dev->buf);
-	if (retval != 2) {
+	if (retval) {
 		dev_err(&iface->dev, "get interface status --> %d\n", retval);
-		return (retval < 0) ? retval : -EDOM;
+		return retval;
 	}
 	/* FIXME get status for each endpoint in the interface */
 
@@ -1028,7 +1042,10 @@ test_ctrl_queue(struct usbtest_dev *dev, struct usbtest_param *param)
 		case 13:	/* short read, resembling case 10 */
 			req.wValue = cpu_to_le16((USB_DT_CONFIG << 8) | 0);
 			/* last data packet "should" be DATA1, not DATA0 */
-			len = 1024 - udev->descriptor.bMaxPacketSize0;
+			if (udev->speed == USB_SPEED_SUPER)
+				len = 1024 - 512;
+			else
+				len = 1024 - udev->descriptor.bMaxPacketSize0;
 			expected = -EREMOTEIO;
 			break;
 		case 14:	/* short read; try to fill the last packet */
@@ -1334,7 +1351,6 @@ static int verify_halted(struct usbtest_dev *tdev, int ep, struct urb *urb)
 				ep, retval);
 		return retval;
 	}
-	le16_to_cpus(&status);
 	if (status != 1) {
 		ERROR(tdev, "ep %02x bogus status: %04x != 1\n", ep, status);
 		return -EINVAL;
@@ -1387,11 +1403,15 @@ static int test_halt(struct usbtest_dev *tdev, int ep, struct urb *urb)
 
 static int halt_simple(struct usbtest_dev *dev)
 {
-	int		ep;
-	int		retval = 0;
-	struct urb	*urb;
+	int			ep;
+	int			retval = 0;
+	struct urb		*urb;
+	struct usb_device	*udev = testdev_to_usbdev(dev);
 
-	urb = simple_alloc_urb(testdev_to_usbdev(dev), 0, 512);
+	if (udev->speed == USB_SPEED_SUPER)
+		urb = simple_alloc_urb(udev, 0, 1024);
+	else
+		urb = simple_alloc_urb(udev, 0, 512);
 	if (urb == NULL)
 		return -ENOMEM;
 
@@ -2169,7 +2189,7 @@ usbtest_ioctl(struct usb_interface *intf, unsigned int code, void *buf)
 		if (dev->out_pipe == 0 || !param->length || param->sglen < 4)
 			break;
 		retval = 0;
-		dev_info(&intf->dev, "TEST 17:  unlink from %d queues of "
+		dev_info(&intf->dev, "TEST 24:  unlink from %d queues of "
 				"%d %d-byte writes\n",
 				param->iterations, param->sglen, param->length);
 		for (i = param->iterations; retval == 0 && i > 0; --i) {
@@ -2270,7 +2290,7 @@ usbtest_probe(struct usb_interface *intf, const struct usb_device_id *id)
 			wtest = " intr-out";
 		}
 	} else {
-		if (info->autoconf) {
+		if (override_alt >= 0 || info->autoconf) {
 			int status;
 
 			status = get_endpoints(dev, intf);
@@ -2379,6 +2399,7 @@ static struct usbtest_info gz_info = {
 	.name		= "Linux gadget zero",
 	.autoconf	= 1,
 	.ctrl_out	= 1,
+	.iso		= 1,
 	.alt		= 0,
 };
 

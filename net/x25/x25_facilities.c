@@ -156,12 +156,16 @@ int x25_parse_facilities(struct sk_buff *skb, struct x25_facilities *facilities,
 			case X25_FAC_CALLING_AE:
 				if (p[1] > X25_MAX_DTE_FACIL_LEN || p[1] <= 1)
 					return -1;
+				if (p[2] > X25_MAX_AE_LEN)
+					return -1;
 				dte_facs->calling_len = p[2];
 				memcpy(dte_facs->calling_ae, &p[3], p[1] - 1);
 				*vc_fac_mask |= X25_MASK_CALLING_AE;
 				break;
 			case X25_FAC_CALLED_AE:
 				if (p[1] > X25_MAX_DTE_FACIL_LEN || p[1] <= 1)
+					return -1;
+				if (p[2] > X25_MAX_AE_LEN)
 					return -1;
 				dte_facs->called_len = p[2];
 				memcpy(dte_facs->called_ae, &p[3], p[1] - 1);
@@ -231,7 +235,7 @@ int x25_create_facilities(unsigned char *buffer,
 	}
 
 	if (dte_facs->calling_len && (facil_mask & X25_MASK_CALLING_AE)) {
-		unsigned bytecount = (dte_facs->calling_len + 1) >> 1;
+		unsigned int bytecount = (dte_facs->calling_len + 1) >> 1;
 		*p++ = X25_FAC_CALLING_AE;
 		*p++ = 1 + bytecount;
 		*p++ = dte_facs->calling_len;
@@ -240,7 +244,7 @@ int x25_create_facilities(unsigned char *buffer,
 	}
 
 	if (dte_facs->called_len && (facil_mask & X25_MASK_CALLED_AE)) {
-		unsigned bytecount = (dte_facs->called_len % 2) ?
+		unsigned int bytecount = (dte_facs->called_len % 2) ?
 		dte_facs->called_len / 2 + 1 :
 		dte_facs->called_len / 2;
 		*p++ = X25_FAC_CALLED_AE;

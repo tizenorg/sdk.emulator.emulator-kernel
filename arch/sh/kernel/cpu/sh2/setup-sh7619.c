@@ -12,6 +12,7 @@
 #include <linux/init.h>
 #include <linux/serial.h>
 #include <linux/serial_sci.h>
+#include <linux/sh_eth.h>
 #include <linux/sh_timer.h>
 #include <linux/io.h>
 
@@ -65,7 +66,7 @@ static struct plat_sci_port scif0_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type		= PORT_SCIF,
-	.irqs		= { 88, 88, 88, 88 },
+	.irqs		= SCIx_IRQ_MUXED(88),
 };
 
 static struct platform_device scif0_device = {
@@ -82,7 +83,7 @@ static struct plat_sci_port scif1_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type		= PORT_SCIF,
-	.irqs		= { 92, 92, 92, 92 },
+	.irqs		= SCIx_IRQ_MUXED(92),
 };
 
 static struct platform_device scif1_device = {
@@ -99,7 +100,7 @@ static struct plat_sci_port scif2_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type		= PORT_SCIF,
-	.irqs		= { 96, 96, 96, 96 },
+	.irqs		= SCIx_IRQ_MUXED(96),
 };
 
 static struct platform_device scif2_device = {
@@ -110,10 +111,16 @@ static struct platform_device scif2_device = {
 	},
 };
 
+static struct sh_eth_plat_data eth_platform_data = {
+	.phy		= 1,
+	.edmac_endian	= EDMAC_LITTLE_ENDIAN,
+	.phy_interface	= PHY_INTERFACE_MODE_MII,
+};
+
 static struct resource eth_resources[] = {
 	[0] = {
 		.start = 0xfb000000,
-		.end =   0xfb0001c8,
+		.end = 0xfb0001c7,
 		.flags = IORESOURCE_MEM,
 	},
 	[1] = {
@@ -124,10 +131,10 @@ static struct resource eth_resources[] = {
 };
 
 static struct platform_device eth_device = {
-	.name = "sh-eth",
-	.id	= -1,
+	.name = "sh7619-ether",
+	.id = -1,
 	.dev = {
-		.platform_data = (void *)1,
+		.platform_data = &eth_platform_data,
 	},
 	.num_resources = ARRAY_SIZE(eth_resources),
 	.resource = eth_resources,
