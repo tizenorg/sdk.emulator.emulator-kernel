@@ -1,3 +1,6 @@
+* 3.14.1
+- package: version up
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-03-11
 * 2.0.8
 - Merge branch 'tizen_next_linux_3.14' into tizen_next
 == SeokYeon Hwang <syeon.hwang@samsung.com> 2014-12-22
