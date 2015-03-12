@@ -35,7 +35,6 @@
 struct maru_proxi_data {
 	struct input_dev *input_data;
 	struct delayed_work work;
-	struct mutex data_mutex;
 
 	struct virtio_sensor* vs;
 
@@ -64,14 +63,12 @@ static void maru_proxi_input_work_func(struct work_struct *work) {
 	memset(sensor_data, 0, __MAX_BUF_SENSOR);
 	poll_time = atomic_read(&data->poll_delay);
 
-	mutex_lock(&data->data_mutex);
 	enable = atomic_read(&data->enable);
-	mutex_unlock(&data->data_mutex);
 
 	if (enable) {
-		mutex_lock(&data->data_mutex);
+		mutex_lock(&data->vs->vqlock);
 		ret = get_sensor_data(sensor_type_proxi, sensor_data);
-		mutex_unlock(&data->data_mutex);
+		mutex_unlock(&data->vs->vqlock);
 		if (!ret) {
 			sscanf(sensor_data, "%d", &proxi);
 			if (!proxi)
@@ -86,9 +83,7 @@ static void maru_proxi_input_work_func(struct work_struct *work) {
 		}
 	}
 
-	mutex_lock(&data->data_mutex);
 	enable = atomic_read(&data->enable);
-	mutex_unlock(&data->data_mutex);
 
 	LOG(1, "enable: %d, poll_time: %d", enable, poll_time);
 	if (enable) {
@@ -115,7 +110,19 @@ static ssize_t maru_vendor_show(struct device *dev, struct device_attribute *att
 
 static ssize_t maru_enable_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_proxi_enable, buf);
+	char sensor_data[__MAX_BUF_SENSOR];
+	int ret;
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_proxi_data *data = input_get_drvdata(input_data);
+
+	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	mutex_lock(&data->vs->vqlock);
+	ret = get_sensor_data(sensor_type_proxi_enable, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
+	if (ret)
+		return sprintf(buf, "%d", -1);
+
+	return sprintf(buf, "%s", sensor_data);
 }
 
 static ssize_t maru_enable_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -127,7 +134,9 @@ static ssize_t maru_enable_store(struct device *dev, struct device_attribute *at
 	if (value != 0 && value != 1)
 		return count;
 
+	mutex_lock(&data->vs->vqlock);
 	set_sensor_data(sensor_type_proxi_enable, buf);
+	mutex_unlock(&data->vs->vqlock);
 
 	if (value) {
 		if (atomic_read(&data->enable) != 1) {
@@ -147,7 +156,19 @@ static ssize_t maru_enable_store(struct device *dev, struct device_attribute *at
 
 static ssize_t maru_poll_delay_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_proxi_delay, buf);
+	char sensor_data[__MAX_BUF_SENSOR];
+	int ret;
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_proxi_data *data = input_get_drvdata(input_data);
+
+	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	mutex_lock(&data->vs->vqlock);
+	ret = get_sensor_data(sensor_type_proxi_delay, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
+	if (ret)
+		return sprintf(buf, "%d", -1);
+
+	return sprintf(buf, "%s", sensor_data);
 }
 
 static ssize_t maru_poll_delay_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -156,7 +177,12 @@ static ssize_t maru_poll_delay_store(struct device *dev, struct device_attribute
 	struct maru_proxi_data *data = input_get_drvdata(input_data);
 	int value = simple_strtoul(buf, NULL, 10);
 
+	if (value < __MIN_DELAY_SENSOR)
+		return count;
+
+	mutex_lock(&data->vs->vqlock);
 	set_sensor_data(sensor_type_proxi_delay, buf);
+	mutex_unlock(&data->vs->vqlock);
 	atomic_set(&data->poll_delay, value);
 
 	return strnlen(buf, __MAX_BUF_SENSOR);
@@ -184,23 +210,55 @@ static ssize_t proxi_name_show(struct device *dev, struct device_attribute *attr
 
 static ssize_t enable_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_proxi_enable, buf);
+	char sensor_data[__MAX_BUF_SENSOR];
+	int ret;
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_proxi_data *data = input_get_drvdata(input_data);
+
+	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	mutex_lock(&data->vs->vqlock);
+	ret = get_sensor_data(sensor_type_proxi_enable, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
+	if (ret)
+		return sprintf(buf, "%d", -1);
+
+	return sprintf(buf, "%s", sensor_data);
 }
 
 static ssize_t enable_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_proxi_data *data = input_get_drvdata(input_data);
+	mutex_lock(&data->vs->vqlock);
 	set_sensor_data(sensor_type_proxi_enable, buf);
+	mutex_unlock(&data->vs->vqlock);
 	return strnlen(buf, __MAX_BUF_SENSOR);
 }
 
 static ssize_t vo_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_proxi, buf);
+	char sensor_data[__MAX_BUF_SENSOR];
+	int ret;
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_proxi_data *data = input_get_drvdata(input_data);
+
+	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	mutex_lock(&data->vs->vqlock);
+	ret = get_sensor_data(sensor_type_proxi, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
+	if (ret)
+		return sprintf(buf, "%d", -1);
+
+	return sprintf(buf, "%s", sensor_data);
 }
 
 static ssize_t vo_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_proxi_data *data = input_get_drvdata(input_data);
+	mutex_lock(&data->vs->vqlock);
 	set_sensor_data(sensor_type_proxi, buf);
+	mutex_unlock(&data->vs->vqlock);
 	return strnlen(buf, __MAX_BUF_SENSOR);
 }
 
@@ -257,7 +315,9 @@ static int set_initial_value(struct maru_proxi_data *data)
 
 	memset(sensor_data, 0, __MAX_BUF_SENSOR);
 
+	mutex_lock(&data->vs->vqlock);
 	ret = get_sensor_data(sensor_type_proxi_delay, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
 	if (ret) {
 		ERR("failed to get initial delay time");
 		return ret;
@@ -265,7 +325,9 @@ static int set_initial_value(struct maru_proxi_data *data)
 
 	delay = sensor_atoi(sensor_data);
 
+	mutex_lock(&data->vs->vqlock);
 	ret = get_sensor_data(sensor_type_proxi_enable, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
 	if (ret) {
 		ERR("failed to get initial enable");
 		return ret;
@@ -342,8 +404,6 @@ int maru_proxi_init(struct virtio_sensor *vs) {
 
 	vs->proxi_handle = data;
 	data->vs = vs;
-
-	mutex_init(&data->data_mutex);
 
 	INIT_DELAYED_WORK(&data->work, maru_proxi_input_work_func);
 

@@ -159,9 +159,9 @@ static void sensor_vq_done(struct virtqueue *rvq) {
 		return;
 	}
 
-	LOG(1, "msg buf: %s, req: %d, type: %d", msg->buf, msg->req, msg->type);
-
 	mutex_lock(&vs->lock);
+	LOG(1, "msg buf: %s, req: %d, type: %d, vs->flags: %d", msg->buf, msg->req, msg->type, vs->flags);
+
 	memset(sensor_data, 0, __MAX_BUF_SENSOR);
 	strcpy(sensor_data, msg->buf);
 	vs->flags = 1;
@@ -190,12 +190,13 @@ void set_sensor_data(int type, const char* buf)
 	vs->msginfo.req = request_set;
 	vs->msginfo.type = type;
 	strcpy(vs->msginfo.buf, buf);
-	mutex_unlock(&vs->lock);
 
 	LOG(1, "set_sensor_data type: %d, req: %d, buf: %s",
 			vs->msginfo.type, vs->msginfo.req, vs->msginfo.buf);
 
-	err = virtqueue_add_outbuf(vs->vq, vs->sg_vq, 1, &vs->msginfo, GFP_ATOMIC);
+	mutex_unlock(&vs->lock);
+
+	err = virtqueue_add_outbuf(vs->vq, vs->sg_vq, 1, &vs->msginfo, GFP_NOWAIT);//GFP_ATOMIC);
 	if (err < 0) {
 		ERR("failed to add buffer to virtqueue (err = %d)", err);
 		return;
@@ -219,14 +220,15 @@ int get_sensor_data(int type, char* data)
 
 	vs->msginfo.req = request_get;
 	vs->msginfo.type = type;
-	mutex_unlock(&vs->lock);
 
-	LOG(1, "get_sensor_data type: %d, req: %d",
+	LOG(1, "get_sensor_data start type: %d, req: %d",
 			vs->msginfo.type, vs->msginfo.req);
 
 	sgs[0] = &vs->sg_vq[0];
 	sgs[1] = &vs->sg_vq[1];
-	err = virtqueue_add_sgs(vs->vq, sgs, 1, 1, &vs->msginfo, GFP_ATOMIC);
+	mutex_unlock(&vs->lock);
+
+	err = virtqueue_add_sgs(vs->vq, sgs, 1, 1, &vs->msginfo, GFP_NOWAIT);//GFP_ATOMIC);
 	if (err < 0) {
 		ERR("failed to add buffer to virtqueue (err = %d)", err);
 		return err;
@@ -241,20 +243,8 @@ int get_sensor_data(int type, char* data)
 	memcpy(data, sensor_data, strlen(sensor_data));
 	mutex_unlock(&vs->lock);
 
+	LOG(1, "get_sensor_data end type: %d, data: %p", type, data);
 	return 0;
-}
-
-int get_data_for_show(int type, char* buf)
-{
-	char sensor_data[__MAX_BUF_SENSOR];
-	int ret;
-
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
-	ret = get_sensor_data(type, sensor_data);
-	if (ret)
-		return sprintf(buf, "%d", -1);
-
-	return sprintf(buf, "%s", sensor_data);
 }
 
 static void device_init(struct virtio_sensor *vs)
@@ -463,9 +453,12 @@ static int sensor_probe(struct virtio_device* dev)
 	}
 
 	mutex_init(&vs->lock);
+	mutex_init(&vs->vqlock);
 
 	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	mutex_lock(&vs->vqlock);
 	ret = get_sensor_data(sensor_type_list, sensor_data);
+	mutex_unlock(&vs->vqlock);
 	if (ret) {
 		ERR("sensor capability data is null.");
 		cleanup(dev);

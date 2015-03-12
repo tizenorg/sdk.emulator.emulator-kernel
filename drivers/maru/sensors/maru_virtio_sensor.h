@@ -33,6 +33,7 @@
 #include <linux/kernel.h>
 #include <linux/virtio.h>
 #include <linux/input.h>
+#include <linux/limits.h>
 
 #define SUPPORT_LEGACY_SENSOR	1
 
@@ -97,7 +98,10 @@ enum sensor_capabilities {
 };
 
 #define __MAX_BUF_SIZE			1024
-#define __MAX_BUF_SENSOR		128
+#define __MAX_BUF_SENSOR		32
+
+#define __MIN_DELAY_SENSOR		1000000
+#define __MAX_DELAY_SENSOR		INT_MAX
 
 struct msg_info {
 	char buf[__MAX_BUF_SIZE];
@@ -119,6 +123,7 @@ struct virtio_sensor {
 
 	int flags;
 	struct mutex lock;
+	struct mutex vqlock;
 
 	struct class* sensor_class;
 
@@ -157,7 +162,6 @@ struct virtio_sensor {
 
 int sensor_atoi(const char *value);
 
-int get_data_for_show(int type, char* buf);
 int register_sensor_device(struct device *dev, struct virtio_sensor *vs,
 		struct device_attribute *attributes[], const char* name);
 
