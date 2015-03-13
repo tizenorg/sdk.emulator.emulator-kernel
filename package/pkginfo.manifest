@@ -1,6 +1,6 @@
-Version: 3.14.2
-Maintainer: Yeong-Kyoon, Lee <yeongkyoon.lee@samsung.com>
 Source: emulator-kernel
+Version: 3.14.2
+Maintainer: SeokYeon Hwang <syeon.hwang@samsung.com>
 
 Package: emulator-kernel-x86
 OS: ubuntu-32, ubuntu-64, windows-32, windows-64, macos-64
