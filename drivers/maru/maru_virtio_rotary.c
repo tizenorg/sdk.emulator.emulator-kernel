@@ -43,7 +43,7 @@ MODULE_LICENSE("GPL2");
 MODULE_AUTHOR("Jinhyung Jo <jinhyung.jo@samsung.com>");
 MODULE_DESCRIPTION("Emulator Virtio Rotary Driver");
 
-#define DRIVER_NAME "tizen_rotary"
+#define DRIVER_NAME "tizen_detent"
 #define VR_LOG(log_level, fmt, ...) \
 	printk(log_level "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
 
@@ -68,16 +68,38 @@ struct virtio_rotary {
 
 struct virtio_rotary *vrtr;
 
+static int last_pos; /* 0 ~ 360 */
+static int last_detent;
+static int status; /* 0 ~ 2 */
+
 static struct virtio_device_id id_table[] = {
 	{ VIRTIO_ID_ROTARY, VIRTIO_DEV_ANY_ID },
 	{ 0 },
 };
+
+#define DETENT_UNIT (15)
+#define REMAINDER(n,div) ({ \
+    typeof(n) _n = (n) % (div); \
+    if (_n < 0) { \
+        _n += (div); \
+    } \
+    _n; \
+})
+
+static int get_rotary_pos(int value)
+{
+	return REMAINDER(value, 360);
+}
 
 static void vq_rotary_handler(struct virtqueue *vq)
 {
 	int err = 0, len = 0;
 	void *data;
 	struct rotary_event event;
+
+	int i = 0;
+	int pos = 0;
+	int value = 0;
 
 	data = virtqueue_get_buf(vq, &len);
 	if (!data) {
@@ -89,14 +111,61 @@ static void vq_rotary_handler(struct virtqueue *vq)
 		memcpy(&event,
 				&vrtr->event[vqidx],
 				sizeof(struct rotary_event));
-		if (event.delta == 0)
+
+		event.delta %= 360;
+		if (event.delta == 0) {
 			break;
+		}
+
+		pos = get_rotary_pos(last_pos + event.delta);
+
 		VR_LOG(KERN_DEBUG,
-				"rotary event: vqidx(%d), delta(%d), type(%d)\n",
-				vqidx, event.delta, event.type);
-		input_report_rel(vrtr->idev, REL_X, event.delta);
-		input_report_rel(vrtr->idev, REL_Y, 0);
-		input_sync(vrtr->idev);
+			"rotary event: vqidx(%d), event.delta(%d), pos(%d)\n",
+			vqidx, event.delta, pos);
+
+		if (event.delta > 0) { /* CW */
+			for (i = 0; i < event.delta; i++) {
+				value = last_pos + i;
+				if ((value % DETENT_UNIT == 0) && (get_rotary_pos(value) != last_detent)) {
+					status++;
+					status %= 3; /* 0->1->2->0 .. */
+
+					last_detent = get_rotary_pos(value);
+
+					VR_LOG(KERN_INFO,
+						"event: delta(%d), detent(%d), status(%d)\n",
+						event.delta, last_detent, status);
+
+					input_report_rel(vrtr->idev, REL_X, 0);
+					input_report_rel(vrtr->idev, REL_Y, 0);
+					input_report_rel(vrtr->idev, REL_WHEEL, status + 1);
+					input_sync(vrtr->idev);
+				}
+			}
+		} else { /* CCW */
+			for (i = 0; i > event.delta; i--) {
+				value = last_pos + i;
+				if ((value % DETENT_UNIT == 0) && (get_rotary_pos(value) != last_detent)) {
+					status--;
+					status = REMAINDER(status, 3); /* 0->2->1->0 .. */
+
+					last_detent = get_rotary_pos(value);
+
+					VR_LOG(KERN_INFO,
+						"event: delta(%d), detent(%d), status(%d)\n",
+						event.delta, last_detent, status);
+
+					input_report_rel(vrtr->idev, REL_X, 0);
+					input_report_rel(vrtr->idev, REL_Y, 0);
+					input_report_rel(vrtr->idev, REL_WHEEL, status + 1);
+					input_sync(vrtr->idev);
+				}
+
+			}
+		}
+
+		last_pos = pos;
+
 		memset(&vrtr->event[vqidx],
 				0x00,
 				sizeof(struct rotary_event));
@@ -190,11 +259,12 @@ static int virtio_rotary_probe(struct virtio_device *vdev)
 	__set_bit(EV_KEY, vrtr->idev->evbit);
 	__set_bit(REL_X, vrtr->idev->relbit);
 	__set_bit(REL_Y, vrtr->idev->relbit);
+	__set_bit(REL_WHEEL, vrtr->idev->relbit);
 	__set_bit(BTN_LEFT, vrtr->idev->keybit);
 
 	input_set_capability(vrtr->idev, EV_REL, REL_X);
 	input_set_capability(vrtr->idev, EV_REL, REL_Y);
-	input_set_capability(vrtr->idev, EV_REL, REL_Z);
+	input_set_capability(vrtr->idev, EV_REL, REL_WHEEL);
 
 	ret = input_register_device(vrtr->idev);
 	if (ret) {
