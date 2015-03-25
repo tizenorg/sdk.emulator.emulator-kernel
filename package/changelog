@@ -1,3 +1,6 @@
+* 3.14.4
+- initramfs: mount devtmpfs before switching root
+== Sooyoung Ha <yoosah.ha@samsung.com> 2015-03-25
 * 3.14.3
 - package: version up
 == Sungmin Ha <sungmin82.ha@samsung.com> 2015-03-20
