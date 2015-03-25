@@ -266,6 +266,9 @@ extern struct mutex	smack_known_lock;
 extern struct list_head smack_known_list;
 extern struct list_head smk_netlbladdr_list;
 
+/* Cache for fast and thrifty allocations */
+extern struct kmem_cache *smack_rule_cache;
+
 extern struct security_operations smack_ops;
 
 #define SMACK_HASH_SLOTS 16

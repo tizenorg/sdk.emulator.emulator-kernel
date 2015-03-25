@@ -4016,6 +4016,9 @@ static __init void init_smack_known_list(void)
 	smk_insert_entry(&smack_known_web);
 }
 
+/* KMEM caches for fast and thrifty allocations */
+struct kmem_cache *smack_rule_cache;
+
 /**
  * smack_init - initialize the smack system
  *
@@ -4029,10 +4032,16 @@ static __init int smack_init(void)
 	if (!security_module_enable(&smack_ops))
 		return 0;
 
+	smack_rule_cache = KMEM_CACHE(smack_rule, 0);
+	if (!smack_rule_cache)
+		return -ENOMEM;
+
 	tsp = new_task_smack(&smack_known_floor, &smack_known_floor,
 				GFP_KERNEL);
-	if (tsp == NULL)
+	if (tsp == NULL) {
+		kmem_cache_destroy(smack_rule_cache);
 		return -ENOMEM;
+	}
 
 	printk(KERN_INFO "Smack:  Initializing.\n");
 
