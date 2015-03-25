@@ -223,6 +223,12 @@ struct smk_audit_info {
 	struct smack_audit_data sad;
 #endif
 };
+
+struct smack_master_list {
+	struct list_head	list;
+	struct smack_rule	*smk_rule;
+};
+
 /*
  * These functions are in smack_lsm.c
  */
@@ -268,6 +274,7 @@ extern struct list_head smk_netlbladdr_list;
 
 /* Cache for fast and thrifty allocations */
 extern struct kmem_cache *smack_rule_cache;
+extern struct kmem_cache *smack_master_list_cache;
 
 extern struct security_operations smack_ops;
 

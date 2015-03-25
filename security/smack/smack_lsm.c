@@ -4018,6 +4018,7 @@ static __init void init_smack_known_list(void)
 
 /* KMEM caches for fast and thrifty allocations */
 struct kmem_cache *smack_rule_cache;
+struct kmem_cache *smack_master_list_cache;
 
 /**
  * smack_init - initialize the smack system
@@ -4036,9 +4037,16 @@ static __init int smack_init(void)
 	if (!smack_rule_cache)
 		return -ENOMEM;
 
+	smack_master_list_cache = KMEM_CACHE(smack_master_list, 0);
+	if (!smack_master_list_cache) {
+		kmem_cache_destroy(smack_rule_cache);
+		return -ENOMEM;
+	}
+
 	tsp = new_task_smack(&smack_known_floor, &smack_known_floor,
 				GFP_KERNEL);
 	if (tsp == NULL) {
+		kmem_cache_destroy(smack_master_list_cache);
 		kmem_cache_destroy(smack_rule_cache);
 		return -ENOMEM;
 	}

@@ -122,11 +122,6 @@ LIST_HEAD(smk_netlbladdr_list);
  * Rule lists are maintained for each label.
  * This master list is just for reading /smack/load and /smack/load2.
  */
-struct smack_master_list {
-	struct list_head	list;
-	struct smack_rule	*smk_rule;
-};
-
 LIST_HEAD(smack_rule_list);
 
 struct smack_parsed_rule {
@@ -251,7 +246,8 @@ static int smk_set_access(struct smack_parsed_rule *srp,
 		 * it needs to get added for reporting.
 		 */
 		if (global) {
-			smlp = kzalloc(sizeof(*smlp), GFP_KERNEL);
+			smlp = kmem_cache_zalloc(smack_master_list_cache,
+							GFP_KERNEL);
 			if (smlp != NULL) {
 				smlp->smk_rule = sp;
 				list_add_rcu(&smlp->list, &smack_rule_list);
