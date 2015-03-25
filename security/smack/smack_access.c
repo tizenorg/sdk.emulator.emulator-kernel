@@ -157,10 +157,11 @@ int smk_access(struct smack_known *subject_known, char *object_label,
 	if (subject_known->smk_known == object_label)
 		goto out_audit;
 	/*
-	 * A hat subject can read any object.
-	 * A floor object can be read by any subject.
+	 * A hat subject can read or lock any object.
+	 * A floor object can be read or locked by any subject.
 	 */
-	if ((request & MAY_ANYREAD) == request) {
+	if ((request & MAY_ANYREAD) == request ||
+	    (request & MAY_LOCK) == request) {
 		if (object_label == smack_known_floor.smk_known)
 			goto out_audit;
 		if (subject_known == &smack_known_hat)
