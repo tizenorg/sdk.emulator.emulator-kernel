@@ -3087,14 +3087,12 @@ static int smack_unix_stream_connect(struct sock *sock,
 
 	if (!smack_privileged(CAP_MAC_OVERRIDE)) {
 		skp = ssp->smk_out;
-		okp = osp->smk_out;
+		okp = osp->smk_in;
 #ifdef CONFIG_AUDIT
 		smk_ad_init_net(&ad, __func__, LSM_AUDIT_DATA_NET, &net);
 		smk_ad_setfield_u_net_sk(&ad, other);
 #endif
 		rc = smk_access(skp, okp->smk_known, MAY_WRITE, &ad);
-		if (rc == 0)
-			rc = smk_access(okp, okp->smk_known, MAY_WRITE, NULL);
 	}
 
 	/*
