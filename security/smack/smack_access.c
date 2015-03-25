@@ -130,7 +130,8 @@ int smk_access(struct smack_known *subject_known, char *object_label,
 
 	/*
 	 * Hardcoded comparisons.
-	 *
+	 */
+	/*
 	 * A star subject can't access any object.
 	 */
 	if (subject_known == &smack_known_star) {
@@ -179,11 +180,27 @@ int smk_access(struct smack_known *subject_known, char *object_label,
 				&subject_known->smk_rules);
 	rcu_read_unlock();
 
-	if (may > 0 && (request & may) == request)
+	if (may <= 0 || (request & may) != request) {
+		rc = -EACCES;
 		goto out_audit;
+	}
+#ifdef CONFIG_SECURITY_SMACK_BRINGUP
+	if (may & MAY_BRINGUP)
+		rc = SMACK_BRINGUP_ALLOW;
+#endif
 
-	rc = -EACCES;
 out_audit:
+#ifdef CONFIG_SECURITY_SMACK_BRINGUP
+	if (rc < 0) {
+		if (smack_unconfined != NULL) {
+			if (object_label == smack_unconfined->smk_known)
+				rc = SMACK_UNCONFINED_OBJECT;
+			if (subject_known->smk_known == smack_unconfined->smk_known)
+				rc = SMACK_UNCONFINED_SUBJECT;
+		}
+	}
+#endif
+
 #ifdef CONFIG_AUDIT
 	if (a)
 		smack_log(subject_known->smk_known, object_label, request,
@@ -215,7 +232,7 @@ int smk_tskacc(struct task_smack *subject, char *obj_label,
 	 * Check the global rule list
 	 */
 	rc = smk_access(skp, obj_label, mode, NULL);
-	if (rc == 0) {
+	if (rc >= 0) {
 		/*
 		 * If there is an entry in the task's rule list
 		 * it can further restrict access.
@@ -325,12 +342,16 @@ static void smack_log_callback(struct audit_buffer *ab, void *a)
 void smack_log(char *subject_label, char *object_label, int request,
 	       int result, struct smk_audit_info *ad)
 {
+#ifdef CONFIG_SECURITY_SMACK_BRINGUP
+	char request_buffer[SMK_NUM_ACCESS_TYPE + 5];
+#else
 	char request_buffer[SMK_NUM_ACCESS_TYPE + 1];
+#endif
 	struct smack_audit_data *sad;
 	struct common_audit_data *a = &ad->a;
 
 	/* check if we have to log the current event */
-	if (result != 0 && (log_policy & SMACK_AUDIT_DENIED) == 0)
+	if (result < 0 && (log_policy & SMACK_AUDIT_DENIED) == 0)
 		return;
 	if (result == 0 && (log_policy & SMACK_AUDIT_ACCEPT) == 0)
 		return;
@@ -344,6 +365,22 @@ void smack_log(char *subject_label, char *object_label, int request,
 	smack_str_from_perm(request_buffer, request);
 	sad->subject = subject_label;
 	sad->object  = object_label;
+#ifdef CONFIG_SECURITY_SMACK_BRINGUP
+	/*
+	 * The result may be positive in bringup mode.
+	 * A positive result is an allow, but not for normal reasons.
+	 * Mark it as successful, but don't filter it out even if
+	 * the logging policy says to do so.
+	 */
+	if (result == SMACK_UNCONFINED_SUBJECT)
+		strcat(request_buffer, "(US)");
+	else if (result == SMACK_UNCONFINED_OBJECT)
+		strcat(request_buffer, "(UO)");
+
+	if (result > 0)
+		result = 0;
+#endif
+
 	sad->request = request_buffer;
 	sad->result  = result;
 
