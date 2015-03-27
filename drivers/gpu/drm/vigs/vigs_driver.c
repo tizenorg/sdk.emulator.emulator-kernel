@@ -11,6 +11,7 @@
 #include "vigs_plane.h"
 #include "vigs_mman.h"
 #include "vigs_dp.h"
+#include "vigs_dmabuf.h"
 #include <drm/drmP.h>
 #include <linux/module.h>
 #include <drm/vigs_drm.h>
@@ -204,7 +205,7 @@ static struct drm_driver vigs_drm_driver =
 {
     .driver_features = DRIVER_GEM | DRIVER_MODESET |
                        DRIVER_HAVE_IRQ | DRIVER_IRQ_SHARED |
-                       DRIVER_RENDER,
+                       DRIVER_RENDER | DRIVER_PRIME,
     .load = vigs_drm_load,
     .unload = vigs_drm_unload,
     .open = vigs_drm_open,
@@ -218,6 +219,12 @@ static struct drm_driver vigs_drm_driver =
     .gem_free_object = vigs_gem_free_object,
     .gem_open_object = vigs_gem_open_object,
     .gem_close_object = vigs_gem_close_object,
+
+    .prime_handle_to_fd = vigs_prime_handle_to_fd,
+    .prime_fd_to_handle = vigs_prime_fd_to_handle,
+    .gem_prime_export = vigs_dmabuf_prime_export,
+    .gem_prime_import = vigs_dmabuf_prime_import,
+
     .dumb_create = vigs_gem_dumb_create,
     .dumb_map_offset = vigs_gem_dumb_map_offset,
     .dumb_destroy = vigs_gem_dumb_destroy,

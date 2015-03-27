@@ -12,7 +12,7 @@
 #include "vigs_dp.h"
 #include <drm/vigs_drm.h>
 
-extern const struct dma_buf_ops vigs_prime_dmabuf_ops;
+extern const struct dma_buf_ops vigs_dmabuf_ops;
 
 static void vigs_device_mman_vram_to_gpu(void *user_data,
                                          struct ttm_buffer_object *bo)
@@ -159,7 +159,7 @@ int vigs_device_init(struct vigs_device *vigs_dev,
     }
 
     vigs_dev->obj_dev = ttm_object_device_init(vigs_dev->mman->mem_global_ref.object,
-                                               12, &vigs_prime_dmabuf_ops);
+                                               12, &vigs_dmabuf_ops);
 
     if (!vigs_dev->obj_dev) {
         DRM_ERROR("Unable to initialize obj_dev\n");
