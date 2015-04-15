@@ -1,3 +1,8 @@
+* 3.14.5
+- x86, mm/ASLR: Fix stack randomization on 64-bit systems
+- net: sctp: fix slab corruption from use after free on INIT collisions
+- vfs: read file_handle only once in handle_to_path
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-04-15
 * 3.14.4
 - initramfs: mount devtmpfs before switching root
 == Sooyoung Ha <yoosah.ha@samsung.com> 2015-03-25
