@@ -196,7 +196,7 @@ void set_sensor_data(int type, const char* buf)
 
 	mutex_unlock(&vs->lock);
 
-	err = virtqueue_add_outbuf(vs->vq, vs->sg_vq, 1, &vs->msginfo, GFP_NOWAIT);//GFP_ATOMIC);
+	err = virtqueue_add_outbuf(vs->vq, vs->sg_vq, 1, &vs->msginfo, GFP_ATOMIC);
 	if (err < 0) {
 		ERR("failed to add buffer to virtqueue (err = %d)", err);
 		return;
@@ -228,7 +228,7 @@ int get_sensor_data(int type, char* data)
 	sgs[1] = &vs->sg_vq[1];
 	mutex_unlock(&vs->lock);
 
-	err = virtqueue_add_sgs(vs->vq, sgs, 1, 1, &vs->msginfo, GFP_NOWAIT);//GFP_ATOMIC);
+	err = virtqueue_add_sgs(vs->vq, sgs, 1, 1, &vs->msginfo, GFP_ATOMIC);
 	if (err < 0) {
 		ERR("failed to add buffer to virtqueue (err = %d)", err);
 		return err;
