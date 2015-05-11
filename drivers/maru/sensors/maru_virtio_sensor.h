@@ -49,27 +49,27 @@ enum sensor_types {
     sensor_type_accel_enable,
     sensor_type_accel_delay,
 	sensor_type_geo,
-    sensor_type_geo_enable,
+    sensor_type_geo_enable,				// 5
     sensor_type_geo_delay,
 	sensor_type_gyro,
     sensor_type_gyro_enable,
     sensor_type_gyro_delay,
-	sensor_type_gyro_x,
+	sensor_type_gyro_x,					// 10
 	sensor_type_gyro_y,
 	sensor_type_gyro_z,
 	sensor_type_light,
 	sensor_type_light_enable,
-	sensor_type_light_delay,
+	sensor_type_light_delay,			// 15
 	sensor_type_light_adc,
 	sensor_type_light_level,
 	sensor_type_proxi,
 	sensor_type_proxi_enable,
-	sensor_type_proxi_delay,
+	sensor_type_proxi_delay,			// 20
 	sensor_type_rotation_vector,
 	sensor_type_rotation_vector_enable,
 	sensor_type_rotation_vector_delay,
 	sensor_type_mag,
-	sensor_type_tilt,
+	sensor_type_tilt,					// 25
     sensor_type_pressure,
     sensor_type_pressure_enable,
     sensor_type_pressure_delay,
@@ -120,6 +120,7 @@ struct virtio_sensor {
 
 	struct msg_info msginfo;
 	struct scatterlist sg_vq[2];
+	struct scatterlist sg_svq[1];
 
 	int flags;
 	struct mutex lock;
@@ -225,7 +226,7 @@ extern int sensor_driver_debug;
 
 #define LOG(log_level, fmt, ...) \
 	do {	\
-		if (sensor_driver_debug >= (log_level)) {	\
+		if (sensor_driver_debug == (log_level)) {	\
 			printk(KERN_INFO "%s: " fmt "\n", SENSOR_CLASS_NAME, ##__VA_ARGS__);	\
 		}	\
 	} while (0)

@@ -151,9 +151,15 @@ static void sensor_vq_done(struct virtqueue *rvq) {
 	}
 
 	if (msg->req != request_answer) {
-		LOG(1, "receive queue- not an answer message: %d", msg->req);
+		LOG(1, "set_sensor_data callback.");
+		mutex_lock(&vs->lock);
+		vs->flags = 1;
+		mutex_unlock(&vs->lock);
+
+		wake_up_interruptible(&wq);
 		return;
 	}
+
 	if (msg->buf == NULL) {
 		ERR("receive queue- message from host is NULL.");
 		return;
@@ -196,13 +202,19 @@ void set_sensor_data(int type, const char* buf)
 
 	mutex_unlock(&vs->lock);
 
-	err = virtqueue_add_outbuf(vs->vq, vs->sg_vq, 1, &vs->msginfo, GFP_ATOMIC);
+	err = virtqueue_add_outbuf(vs->vq, vs->sg_svq, 1, &vs->msginfo, GFP_ATOMIC);
 	if (err < 0) {
-		ERR("failed to add buffer to virtqueue (err = %d)", err);
+		ERR("failed to add_outbuf buffer to virtqueue (err = %d)", err);
 		return;
 	}
 
 	virtqueue_kick(vs->vq);
+
+	wait_event_interruptible(wq, vs->flags != 0);
+
+	mutex_lock(&vs->lock);
+	vs->flags = 0;
+	mutex_unlock(&vs->lock);
 }
 
 int get_sensor_data(int type, char* data)
@@ -230,7 +242,7 @@ int get_sensor_data(int type, char* data)
 
 	err = virtqueue_add_sgs(vs->vq, sgs, 1, 1, &vs->msginfo, GFP_ATOMIC);
 	if (err < 0) {
-		ERR("failed to add buffer to virtqueue (err = %d)", err);
+		ERR("failed to add_sgs buffer to virtqueue (err = %d)", err);
 		return err;
 	}
 
@@ -451,6 +463,8 @@ static int sensor_probe(struct virtio_device* dev)
 	for (; index < 2; index++) {
 		sg_set_buf(&vs->sg_vq[index], &vs->msginfo, sizeof(vs->msginfo));
 	}
+
+	sg_init_one(vs->sg_svq, &vs->msginfo, sizeof(vs->msginfo));
 
 	mutex_init(&vs->lock);
 	mutex_init(&vs->vqlock);
