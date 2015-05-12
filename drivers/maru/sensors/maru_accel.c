@@ -308,7 +308,9 @@ static int set_initial_value(struct maru_accel_data *data)
 
 	memset(sensor_data, 0, sizeof(sensor_data));
 
+	mutex_lock(&data->vs->vqlock);
 	ret = get_sensor_data(sensor_type_accel_delay, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
 	if (ret) {
 		ERR("failed to get initial delay time");
 		return ret;
