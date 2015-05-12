@@ -476,6 +476,7 @@ static int sensor_probe(struct virtio_device* dev)
 		return ret;
 	}
 
+	INFO("sensor raw capability is %s", sensor_data);
 	vs->sensor_capability = sensor_atoi(sensor_data);
 	INFO("sensor capability is %02x", vs->sensor_capability);
 
