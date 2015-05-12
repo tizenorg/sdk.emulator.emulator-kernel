@@ -168,7 +168,7 @@ static void sensor_vq_done(struct virtqueue *rvq) {
 	mutex_lock(&vs->lock);
 	LOG(1, "msg buf: %s, req: %d, type: %d, vs->flags: %d", msg->buf, msg->req, msg->type, vs->flags);
 
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	memset(sensor_data, 0, sizeof(sensor_data));
 	strcpy(sensor_data, msg->buf);
 	vs->flags = 1;
 	mutex_unlock(&vs->lock);
@@ -422,7 +422,6 @@ static void cleanup(struct virtio_device* dev) {
 static int sensor_probe(struct virtio_device* dev)
 {
 	int ret = 0;
-	int index = 0;
 	char sensor_data[__MAX_BUF_SENSOR];
 
 	INFO("Sensor probe starts");
@@ -459,17 +458,15 @@ static int sensor_probe(struct virtio_device* dev)
 
 	virtqueue_enable_cb(vs->vq);
 
-	sg_init_table(vs->sg_vq, 2);
-	for (; index < 2; index++) {
-		sg_set_buf(&vs->sg_vq[index], &vs->msginfo, sizeof(vs->msginfo));
-	}
+	sg_init_one(&vs->sg_vq[0], &vs->msginfo, sizeof(vs->msginfo));
+	sg_init_one(&vs->sg_vq[1], &vs->msginfo, sizeof(vs->msginfo));
 
 	sg_init_one(vs->sg_svq, &vs->msginfo, sizeof(vs->msginfo));
 
 	mutex_init(&vs->lock);
 	mutex_init(&vs->vqlock);
 
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	memset(sensor_data, 0, sizeof(sensor_data));
 	mutex_lock(&vs->vqlock);
 	ret = get_sensor_data(sensor_type_list, sensor_data);
 	mutex_unlock(&vs->vqlock);
