@@ -31,8 +31,8 @@ build()
 # install
 install()
 {
-	X86_BIN_DIR=$SRCDIR/package/emulator-kernel-x86.package.${TARGET_OS}/data/tools/emulator/data/kernel
-#	ARM_BIN_DIR=$SRCDIR/package/emulator-kernel-arm.package.${TARGET_OS}/data/tools/emulator/data/kernel
+	X86_BIN_DIR=$SRCDIR/package/2.4-emulator-kernel-x86.package.${TARGET_OS}/data/platforms/tizen-2.4/common/emulator/data/kernel
+#	ARM_BIN_DIR=$SRCDIR/package/2.4-emulator-kernel-arm.package.${TARGET_OS}/data/tools/emulator/data/kernel
 	mkdir -p $X86_BIN_DIR
 #	mkdir -p $ARM_BIN_DIR
 
