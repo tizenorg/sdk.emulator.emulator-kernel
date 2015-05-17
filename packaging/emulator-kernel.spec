@@ -28,7 +28,6 @@ ExclusiveArch: %{ix86}
 
 #BuildRequires: linux-glibc-devel
 #BuildRequires: bc
-BuildRequires: emulator-kernel-user-headers
 
 Provides: kernel = %{version}-%{release}
 Provides: kernel-uname-r = %{fullVersion}
