@@ -3979,7 +3979,7 @@ static int smack_key_permission(key_ref_t key_ref,
 	ad.a.u.key_struct.key_desc = keyp->description;
 #endif
 	rc = smk_access(tkp, keyp->security, MAY_READWRITE, &ad);
-	rc = smk_bu_note("key access", tkp, keyp->security, request, rc);
+	rc = smk_bu_note("key access", tkp, keyp->security, MAY_READWRITE, rc);
 	return rc;
 }
 #endif /* CONFIG_KEYS */
