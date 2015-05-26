@@ -27,6 +27,7 @@
 #include <linux/slab.h>
 #include <linux/cpu.h>
 #include <linux/average.h>
+#include <linux/mii.h>
 
 static int napi_weight = NAPI_POLL_WEIGHT;
 module_param(napi_weight, int, 0444);
@@ -1333,6 +1334,28 @@ static int virtnet_change_mtu(struct net_device *dev, int new_mtu)
 	return 0;
 }
 
+static int virtnet_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+{
+    struct mii_ioctl_data *data = if_mii(ifr);
+    switch (cmd) {
+    case SIOCGMIIPHY:
+        // FIXME
+        data->phy_id = 32;
+        return 0;
+
+    case SIOCGMIIREG:
+        // FIXME
+        data->val_out |= BMSR_LSTATUS;
+        return 0;
+
+    case SIOCSMIIREG:
+        // TODO
+        return 0;
+    }
+    printk(KERN_WARNING "virtio-net: not supported cmd: %d\n", cmd);
+    return -EOPNOTSUPP;
+}
+
 static const struct net_device_ops virtnet_netdev = {
 	.ndo_open            = virtnet_open,
 	.ndo_stop   	     = virtnet_close,
@@ -1344,6 +1367,7 @@ static const struct net_device_ops virtnet_netdev = {
 	.ndo_get_stats64     = virtnet_stats,
 	.ndo_vlan_rx_add_vid = virtnet_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid = virtnet_vlan_rx_kill_vid,
+	.ndo_do_ioctl		= virtnet_ioctl,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller = virtnet_netpoll,
 #endif
