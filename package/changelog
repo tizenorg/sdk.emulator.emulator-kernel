@@ -1,3 +1,29 @@
+* 3.14.9
+- Apply MII
+== Munkyu Im <munkyu.im@samsung.com> 2015-05-27
+* 3.14.7
+- sensor: virtio memory allocation flag changed. (GFP_NOWAIT > GFP_ATOMIC)
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2015-05-08
+* 3.14.6
+- enable CONFIG_ANDROID_INTF_ALARM_DEV
+== SeokYeon Hwang <syeon.hwang@samsung.com> 2015-04-21
+* 3.14.5
+- x86, mm/ASLR: Fix stack randomization on 64-bit systems
+- net: sctp: fix slab corruption from use after free on INIT collisions
+- vfs: read file_handle only once in handle_to_path
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-04-15
+* 3.14.4
+- initramfs: mount devtmpfs before switching root
+== Sooyoung Ha <yoosah.ha@samsung.com> 2015-03-25
+* 3.14.3
+- package: version up
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-03-20
+* 3.14.2
+- sensor: a global sensor mutex for message transfer
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2015-03-12
+* 3.14.1
+- package: version up
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-03-11
 * 2.0.8
 - Merge branch 'tizen_next_linux_3.14' into tizen_next
 == SeokYeon Hwang <syeon.hwang@samsung.com> 2014-12-22

@@ -93,9 +93,16 @@ fi
 # clean up...
 /bin/busybox umount /proc
 /bin/busybox umount /sys
+#/bin/busybox umount /dev
 
 echo -e "${COLOR_BLUE}Switching root...${NO_COLOR}"
 if [ -z $INIT ]; then
     INIT="/sbin/init"
 fi
+
+/bin/busybox mkdir -p $NEW_ROOT/dev
+/bin/busybox mount -t devtmpfs devtmpfs $NEW_ROOT/dev
+/bin/busybox mkdir -p $NEW_ROOT/sys
+/bin/busybox mount -t sysfs sys $NEW_ROOT/sys
+
 exec /bin/busybox switch_root -c /dev/console $NEW_ROOT $INIT
