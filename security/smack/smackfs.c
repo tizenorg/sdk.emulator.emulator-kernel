@@ -1731,8 +1731,8 @@ static ssize_t smk_write_onlycap(struct file *file, const char __user *buf,
 			continue;
 
 		skp = smk_import_entry(tok, 0);
-		if (IS_ERR(skp)) {
-			rc = PTR_ERR(skp);
+		if (skp == NULL) {
+			rc = -EINVAL;
 			break;
 		}
 
