@@ -25,7 +25,7 @@ rescue_shell() {
 }
 
 mount_fs() {
-    /bin/busybox mount -o rw $1 $2 || rescue_shell
+    /bin/busybox mount -t $FSTYPE -o rw $1 $2 || rescue_shell
 }
 
 /bin/busybox mkdir -p /dev
@@ -50,6 +50,12 @@ NEW_ROOT="/new_root"
 INIT=$(cmdline init)
 CONSOLE=$(cmdline console)
 ROOT=$(cmdline root)
+FSTYPE=$(cmdline fstype)
+
+# set default fs type
+if [ -z $FSTYPE]; then
+    FSTYPE=ext4
+fi
 
 # mount image...
 echo -e "${COLOR_BLUE}Mount image...${NO_COLOR}"
