@@ -1655,7 +1655,7 @@ static int smk_open_onlycap(struct inode *inode, struct file *file)
 }
 
 /**
- * list_swap_rcu - swap public list with a private one in RCU-safe way
+ * smk_list_swap_rcu - swap public list with a private one in RCU-safe way
  * The caller must hold appropriate mutex to prevent concurrent modifications
  * to the public list.
  * Private list is assumed to be not accessible to other threads yet.
@@ -1663,7 +1663,8 @@ static int smk_open_onlycap(struct inode *inode, struct file *file)
  * @public: public list
  * @private: private list
  */
-static void list_swap_rcu(struct list_head *public, struct list_head *private)
+static void smk_list_swap_rcu(struct list_head *public,
+			      struct list_head *private)
 {
 	struct list_head *first, *last;
 
@@ -1747,13 +1748,10 @@ static ssize_t smk_write_onlycap(struct file *file, const char __user *buf,
 	kfree(data);
 
 	/*
-	 * Should the null string be passed in unset the onlycap value.
-	 * This seems like something to be careful with as usually
-	 * smk_import only expects to return NULL for errors. It
-	 * is usually the case that a nullstring or "\n" would be
-	 * bad to pass to smk_import but in fact this is useful here.
+	 * Clear the smack_onlycap on invalid label errors. This means
+	 * that we can pass a null string to unset the onlycap value.
 	 *
-	 * smk_import will also reject a label beginning with '-',
+	 * Importing will also reject a label beginning with '-',
 	 * so "-usecapabilities" will also work.
 	 *
 	 * But do so only on invalid label, not on system errors.
@@ -1764,7 +1762,7 @@ static ssize_t smk_write_onlycap(struct file *file, const char __user *buf,
 
 	if (rc >= 0) {
 		mutex_lock(&smack_onlycap_lock);
-		list_swap_rcu(&smack_onlycap_list, &list_tmp);
+		smk_list_swap_rcu(&smack_onlycap_list, &list_tmp);
 		mutex_unlock(&smack_onlycap_lock);
 	}
 
