@@ -57,3 +57,11 @@ config MARU_VIRTIO_VMODEM
 config MARU_VIRTIO_ROTARY
 	tristate "MARU VirtIO Virtual Rotary Device Driver"
 	depends on MARU != n
+
+config MARU_EXTENSION_SOURCE
+	tristate "MARU Extension source"
+	depends on MARU != n
+
+config MARU_EXTENSION_SOURCE_PATH
+	string "MARU Extension source path"
+	depends on MARU != n && MARU_EXTENSION_SOURCE != n

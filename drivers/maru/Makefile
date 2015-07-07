@@ -11,3 +11,4 @@ obj-$(CONFIG_MARU_VIRTIO_SENSOR) += sensors/ #maru_virtio_sensor.o
 obj-$(CONFIG_MARU_BRILLCODEC) += maru_brillcodec.o
 obj-$(CONFIG_MARU_VIRTIO_VMODEM) += maru_virtio_vmodem.o
 obj-$(CONFIG_MARU_VIRTIO_ROTARY) += maru_virtio_rotary.o
+subdir-$(CONFIG_MARU_EXTENSION_SOURCE) += $(CONFIG_MARU_EXTENSION_SOURCE_PATH)
