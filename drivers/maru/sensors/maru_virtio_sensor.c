@@ -82,7 +82,7 @@ int register_sensor_device(struct device *dev, struct virtio_sensor *vs,
 
 	INFO("device creation: %s.", name);
 
-	dev = device_create(vs->sensor_class, NULL, 0, NULL, "%s", name);
+	dev = device_create(vs->sensor_class, NULL, MKDEV(0,0), NULL, "%s", name);
 	if (dev < 0) {
 		ERR("register_device_create failed!");
 		return -1;
@@ -117,7 +117,7 @@ int l_register_sensor_device(struct device *dev, struct virtio_sensor *vs,
 		return -1;
 	}
 
-	dev = device_create(vs->l_sensor_class, NULL, 0, NULL, "%s", name);
+	dev = device_create(vs->l_sensor_class, NULL, MKDEV(0,0), NULL, "%s", name);
 	if (dev < 0) {
 		ERR("legacy register_device_create failed!");
 		return -1;
@@ -404,13 +404,13 @@ static void cleanup(struct virtio_device* dev) {
 		return;
 
 	if (vs->sensor_class) {
-		device_destroy(vs->sensor_class, (dev_t)NULL);
+		device_destroy(vs->sensor_class, MKDEV(0,0));
 		class_destroy(vs->sensor_class);
 	}
 
 #ifdef SUPPORT_LEGACY_SENSOR
 	if (vs->l_sensor_class) {
-		device_destroy(vs->l_sensor_class, (dev_t)NULL);
+		device_destroy(vs->l_sensor_class, MKDEV(0,0));
 		class_destroy(vs->l_sensor_class);
 	}
 #endif
