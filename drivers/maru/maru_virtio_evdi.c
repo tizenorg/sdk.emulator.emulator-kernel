@@ -347,7 +347,7 @@ static ssize_t evdi_write(struct file *f, const char __user *ubuf, size_t len,
 	memset(&vevdi->send_msginfo, 0, sizeof(vevdi->send_msginfo));
 	ret = copy_from_user(&vevdi->send_msginfo, ubuf, sizeof(vevdi->send_msginfo));
 
-	LOGDEBUG("copy_from_user ret = %d, msg = %s", ret, vevdi->send_msginfo.buf);
+	LOGDEBUG("copy_from_user ret = %zd, msg = %s", ret, vevdi->send_msginfo.buf);
 
 	if (ret) {
 		ret = -EFAULT;
