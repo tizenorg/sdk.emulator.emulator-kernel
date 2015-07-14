@@ -271,7 +271,7 @@ static ssize_t nfc_write(struct file *f, const char __user *ubuf, size_t len,
 	int err = 0;
 	ssize_t ret = 0;
 
-	LOG("start of nfc_write len= %d, msglen = %d\n", len, sizeof(vnfc->send_msginfo));
+	LOG("start of nfc_write len= %zu, msglen = %zu\n", len, sizeof(vnfc->send_msginfo));
 
 	if (vnfc == NULL) {
 		LOG("invalid nfc handle\n");
@@ -281,7 +281,7 @@ static ssize_t nfc_write(struct file *f, const char __user *ubuf, size_t len,
 	memset(&vnfc->send_msginfo, 0, sizeof(vnfc->send_msginfo));
 	ret = copy_from_user(&vnfc->send_msginfo, ubuf, sizeof(vnfc->send_msginfo));
 
-	LOG("copy_from_user ret = %d, id = %02x, type = %02x, msg = %s use = %d\n",
+	LOG("copy_from_user ret = %zd id = %02x, type = %02x, msg = %s use = %d\n",
 			ret, vnfc->send_msginfo.client_id, vnfc->send_msginfo.client_type,
 			vnfc->send_msginfo.buf, vnfc->send_msginfo.use);
 
