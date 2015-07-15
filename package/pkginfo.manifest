@@ -1,5 +1,5 @@
 Source: emulator-kernel
-Version: 3.14.6
+Version: 3.14.7
 Maintainer: SeokYeon Hwang <syeon.hwang@samsung.com>
 
 Package: 2.4-emulator-kernel-x86

@@ -1,3 +1,8 @@
+* 3.14.7
+- Ready to build for 64bit & extensions
+- Allow smack patches
+- maru-camera: Changed the method for passing the argument to/from device
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2015-07-15
 * 3.14.6
 - Apply MII
 == Munkyu Im <munkyu.im@samsung.com> 2015-05-27
