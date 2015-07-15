@@ -132,7 +132,7 @@ int vigs_device_init(struct vigs_device *vigs_dev,
 
     if ((vigs_dev->io_size < sizeof(void*)) ||
         ((vigs_dev->io_size % sizeof(void*)) != 0)) {
-        DRM_ERROR("IO bar has bad size: %u bytes\n", vigs_dev->io_size);
+        DRM_ERROR("IO bar has bad size: %pa bytes\n", &vigs_dev->io_size);
         ret = -ENODEV;
         goto fail1;
     }
