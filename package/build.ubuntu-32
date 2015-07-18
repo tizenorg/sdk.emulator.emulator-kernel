@@ -2,45 +2,33 @@
 # clean
 clean()
 {
-	echo "$SRCDIR"
-	make clean
-	rm -rf $SRCDIR/*.zip
-	rm -rf $SRCDIR/*.tar.gz
+	rm -rf .git
 }
 
 # build
 build()
 {
-	# x86 kernel
-	rm -rf $SRCDIR/.git
+	# for i386 (32bit) kernel
+	./build-i386.sh
+	mv arch/x86/boot/bzImage ./bzImage.i386
 
-	make ARCH=i386 i386_tizen_emul_defconfig
-	make ARCH=i386 -j4
+	make distclean
 
-#	ARM_TOOLCHAIN=`which arm-linux-gnueabi-gcc`
-#	if [ $ARM_TOOLCHAIN = "" ]
-#	then
-#		echo "There is no a toolchain for arm."
-#		exit 1
-#	fi
-	# arm kernel
-#	make ARCH=arm arm_tizen_emul_defconfig
-#	make -j4 ARCH=arm CROSS_COMPILE=arm-linux-gnueabi-
+	# for x86-64 (64bit) kernel
+	./build-x86_64.sh
+	mv arch/x86/boot/bzImage ./bzImage.x86_64
 }
 
 # install
 install()
 {
-	X86_BIN_DIR=$SRCDIR/package/2.4-emulator-kernel-x86.package.${TARGET_OS}/data/platforms/tizen-2.4/common/emulator/data/kernel
-#	ARM_BIN_DIR=$SRCDIR/package/2.4-emulator-kernel-arm.package.${TARGET_OS}/data/tools/emulator/data/kernel
-	mkdir -p $X86_BIN_DIR
-#	mkdir -p $ARM_BIN_DIR
+	KERNEL_DIR=$SRCDIR/package/2.4-emulator-kernel-x86.package.${TARGET_OS}/data/platforms/tizen-2.4/common/emulator/data/kernel
+	mkdir -p $KERNEL_DIR
 
-	cp arch/x86/boot/bzImage $X86_BIN_DIR/bzImage.x86
-#	cp arch/arm/boot/zImage $ARM_BIN_DIR/bzImage.arm
+	cp ./bzImage.i386 $KERNEL_DIR/bzImage.i386
+	cp ./bzImage.x86_64 $KERNEL_DIR/bzImage.x86_64
 }
 
-#[ "$1" = "clean" ] && clean
 [ "$1" = "build" ] && build
 [ "$1" = "install" ] && install
 
