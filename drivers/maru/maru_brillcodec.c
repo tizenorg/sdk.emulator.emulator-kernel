@@ -148,7 +148,7 @@ struct context_id {
 };
 
 struct user_process_id {
-	uint32_t id;
+	uintptr_t id;
 	struct list_head ctx_id_mgr;
 
 	struct list_head pid_node;
@@ -230,7 +230,7 @@ static struct workqueue_struct *bh_workqueue;
 static void bh_func(struct work_struct *work);
 static DECLARE_WORK(bh_work, bh_func);
 
-static void context_add(uint32_t user_pid, uint32_t ctx_id);
+static void context_add(uintptr_t user_pid, uint32_t ctx_id);
 static int invoke_api_and_release_buffer(struct ioctl_data *opaque);
 
 static void divide_device_memory(void)
@@ -568,8 +568,8 @@ static long brillcodec_ioctl(struct file *file,
 		} else {
 			// task_id & context_id
 			DEBUG("add context. ctx_id: %d\n", (int)value);
-			context_add((uint32_t)file, value);
 
+			context_add((uintptr_t)file, value);
 			if (copy_to_user((void *)arg, &value, sizeof(uint32_t))) {
 				ERROR("ioctl: failed to copy data to user.\n");
 				ret = -EIO;
@@ -807,7 +807,7 @@ static irqreturn_t irq_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static void context_add(uint32_t user_pid, uint32_t ctx_id)
+static void context_add(uintptr_t user_pid, uint32_t ctx_id)
 {
 	struct list_head *pos, *temp;
 	struct user_process_id *pid_elem = NULL;
@@ -885,7 +885,7 @@ static void brillcodec_context_remove(struct user_process_id *pid_elem)
 	DEBUG("leave: %s\n", __func__);
 }
 
-static void task_add(uint32_t user_pid)
+static void task_add(uintptr_t user_pid)
 {
 	struct user_process_id *pid_elem = NULL;
 	unsigned long flags;
@@ -911,7 +911,7 @@ static void task_add(uint32_t user_pid)
 	DEBUG("leave: %s\n", __func__);
 }
 
-static void task_remove(uint32_t user_pid)
+static void task_remove(uintptr_t user_pid)
 {
 	struct list_head *pos, *temp;
 	struct user_process_id *pid_elem = NULL;
@@ -959,7 +959,7 @@ static int brillcodec_open(struct inode *inode, struct file *file)
 		return -EBUSY;
 	}
 
-	task_add((uint32_t)file);
+	task_add((uintptr_t)file);
 
 	try_module_get(THIS_MODULE);
 
@@ -978,7 +978,7 @@ static int brillcodec_release(struct inode *inode, struct file *file)
 
 	DEBUG("before removing task: %x\n", (uint32_t)file);
 	/* free resource */
-	task_remove((uint32_t)file);
+	task_remove((uintptr_t)file);
 
 	module_put(THIS_MODULE);
 
