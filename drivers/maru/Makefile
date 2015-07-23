@@ -1,6 +1,8 @@
 ccflags-y += -Werror
 obj-$(CONFIG_MARU_VIRTIO_TOUCHSCREEN) += maru_virtio_touchscreen.o
+ifndef CONFIG_MARU_EXTENSION_SOURCE
 obj-$(CONFIG_MARU_CAMERA) += maru_camera.o
+endif
 obj-$(CONFIG_MARU_BACKLIGHT) += maru_bl.o
 obj-$(CONFIG_MARU_VIRTIO_HWKEY) += maru_virtio_hwkey.o
 obj-$(CONFIG_MARU_JACK) += maru_jack.o
