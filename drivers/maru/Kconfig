@@ -30,6 +30,10 @@ config MARU_VIRTIO_HWKEY
 	tristate "MARU Virtio HW Key Driver"
 	depends on MARU != n
 
+config MARU_VIRTIO_TABLET
+	tristate "MARU Virtio Tablet Driver"
+	depends on MARU != n
+
 config MARU_VIRTIO_KEYBOARD
 	tristate "MARU Virtio Keyboard Driver"
 	depends on MARU != n
