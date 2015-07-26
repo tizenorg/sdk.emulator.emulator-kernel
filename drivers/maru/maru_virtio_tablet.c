@@ -127,7 +127,7 @@ static void vq_tablet_callback(struct virtqueue *vq)
 			input_sync(vtb->idev);
 		} else {
 			printk(KERN_ERR "Unknown event type\n");
-			return;
+			break;
 		}
 
 		memset(&vtb->vbuf[vqidx], 0x00,
@@ -140,37 +140,6 @@ static void vq_tablet_callback(struct virtqueue *vq)
 
 	virtqueue_kick(vtb->vq);
 }
-
-static int virtio_tablet_open(struct inode *inode,
-				struct file *file)
-{
-	printk(KERN_INFO "virtio tablet device is opened\n");
-	return 0;
-}
-
-static int virtio_tablet_release(struct inode *inode,
-				struct file *file)
-{
-	printk(KERN_INFO "virtio tablet device is closed\n");
-	return 0;
-}
-
-static int input_tablet_open(struct input_dev *dev)
-{
-	printk(KERN_INFO "input tablet device is opened\n");
-	return 0;
-}
-
-static void input_tablet_close(struct input_dev *dev)
-{
-	printk(KERN_INFO "input tablet device is closed\n");
-}
-
-struct file_operations virtio_tablet_fops = {
-	.owner   = THIS_MODULE,
-	.open    = virtio_tablet_open,
-	.release = virtio_tablet_release,
-};
 
 static int virtio_tablet_probe(struct virtio_device *vdev)
 {
@@ -232,8 +201,6 @@ static int virtio_tablet_probe(struct virtio_device *vdev)
 	vtb->idev->dev.parent = &(vdev->dev);
 
 	input_set_drvdata(vtb->idev, vtb);
-	vtb->idev->open = input_tablet_open;
-	vtb->idev->close = input_tablet_close;
 
 	vtb->idev->evbit[0] = BIT_MASK(EV_KEY)
 				| BIT_MASK(EV_REL)
