@@ -99,6 +99,8 @@ static unsigned int index = 0;
 static void vq_tablet_callback(struct virtqueue *vq)
 {
 	struct EmulTabletEvent tablet_event;
+	unsigned int len = 0;
+	void *token = NULL;
 
 	while (1) {
 		memcpy(&tablet_event, &vtb->vbuf[vqidx],
@@ -132,6 +134,19 @@ static void vq_tablet_callback(struct virtqueue *vq)
 
 		memset(&vtb->vbuf[vqidx], 0x00,
 				sizeof(tablet_event));
+		token = virtqueue_get_buf(vtb->vq, &len);
+		if (!token) {
+			printk(KERN_ERR "failed to virtqueue_get_buf\n");
+			return;
+		}
+
+		err = virtqueue_add_inbuf(vtb->vq, vtb->sg,
+				MAX_BUF_COUNT, token, GFP_ATOMIC);
+		if (err < 0) {
+			printk(KERN_ERR "failed to add buffer to virtqueue\n");
+			return;
+		}
+
 		vqidx++;
 		if (vqidx == MAX_BUF_COUNT) {
 			vqidx = 0;
