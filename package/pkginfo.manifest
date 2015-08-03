@@ -2,12 +2,12 @@ Source: emulator-kernel
 Version: 3.14.7
 Maintainer: SeokYeon Hwang <syeon.hwang@samsung.com>
 
-Package: 2.4-emulator-kernel-x86
+Package: 3.0-emulator-kernel-x86
 OS: ubuntu-32, ubuntu-64, windows-32, windows-64, macos-64
 Build-host-os: ubuntu-32
 Description: Tizen x86 Emulator Kernel
 
-#Package: 2.4-emulator-kernel-arm
+#Package: 3.0-emulator-kernel-arm
 #OS: ubuntu-32, ubuntu-64, windows-32, windows-64, macos-64
 #Build-host-os: ubuntu-32
 #Description: Tizen ARM Emulator Kernel

@@ -22,7 +22,7 @@ build()
 # install
 install()
 {
-	KERNEL_DIR=$SRCDIR/package/2.4-emulator-kernel-x86.package.${TARGET_OS}/data/platforms/tizen-2.4/common/emulator/data/kernel
+	KERNEL_DIR=$SRCDIR/package/3.0-emulator-kernel-x86.package.${TARGET_OS}/data/platforms/tizen-3.0/common/emulator/data/kernel
 	mkdir -p $KERNEL_DIR
 
 	cp ./bzImage.i386 $KERNEL_DIR/bzImage.i386
