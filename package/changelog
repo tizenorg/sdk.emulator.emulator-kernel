@@ -1,3 +1,6 @@
+* 3.14.8
+- modify platform version 2.4 -> 3.0
+== Sooyoung Ha <yoosah.ha@samsung.com> 2015-08-03
 * 3.14.7
 - Ready to build for 64bit & extensions
 - Allow smack patches
