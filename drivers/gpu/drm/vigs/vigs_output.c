@@ -4,7 +4,7 @@
 #include <linux/init.h>
 
 #define DPI_DEF_VALUE 3160
-#define DPI_MIN_VALUE 1000
+#define DPI_MIN_VALUE 100
 #define DPI_MAX_VALUE 4800
 
 #ifndef MODULE
@@ -272,14 +272,12 @@ int vigs_output_get_dpi(void)
     int dpi = DPI_DEF_VALUE;
 #ifndef MODULE
     char *str;
-    char dpi_info[16];
 
     str = strstr(saved_command_line, "dpi=");
 
     if (str != NULL) {
         str += 4;
-        strncpy(dpi_info, str, 4);
-        dpi = vigs_atoi(dpi_info);
+        dpi = vigs_atoi(str);
         if ((dpi < DPI_MIN_VALUE) || (dpi > DPI_MAX_VALUE)) {
             dpi = DPI_DEF_VALUE;
         }
