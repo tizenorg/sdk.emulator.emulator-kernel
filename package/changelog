@@ -1,6 +1,9 @@
+* 3.14.9
+- not build security partially when extension supported
+== Jinhyung Choi <jinh0.choi@samsung.com> 2015-07-21
 * 3.14.8
-- modify platform version 2.4 -> 3.0
-== Sooyoung Ha <yoosah.ha@samsung.com> 2015-08-03
+- not build ac97_codec & ac97_pcm when maru_extension config is on
+== Jinhyung Choi <jinh0.choi@samsung.com> 2015-07-21
 * 3.14.7
 - Ready to build for 64bit & extensions
 - Allow smack patches

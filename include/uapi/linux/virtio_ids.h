@@ -54,6 +54,7 @@
 #define VIRTIO_ID_POWER			40 /* virtio power supply */
 #define VIRTIO_ID_VMODEM		41 /* virtio VMODEM */
 #define VIRTIO_ID_ROTARY		42 /* virtio rotary */
+#define VIRTIO_ID_TABLET		43 /* virtio tablet */
 #endif
 
 #endif /* _LINUX_VIRTIO_IDS_H */
