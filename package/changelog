@@ -1,3 +1,6 @@
+* 3.14.10
+- Merge branch 'tizen_2.4_develop' into tizen_3.0_develop
+== Sooyoung Ha <yoosah.ha@samsung.com> 2015-08-19
 * 3.14.9
 - not build security partially when extension supported
 == Jinhyung Choi <jinh0.choi@samsung.com> 2015-07-21
