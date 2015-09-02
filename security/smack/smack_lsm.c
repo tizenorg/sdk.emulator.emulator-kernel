@@ -34,6 +34,7 @@
 #include <net/cipso_ipv4.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
+#include <net/af_unix.h>
 #include <linux/audit.h>
 #include <linux/magic.h>
 #include <linux/dcache.h>
@@ -200,6 +201,84 @@ static int smk_bu_credfile(const struct cred *cred, struct file *file,
 #else
 #define smk_bu_credfile(cred, file, mode, RC) (RC)
 #endif
+
+/**
+ * Helper function when a descriptor passed in a socket
+ * is a socket
+ */
+static int smk_socket_receive(struct socket *socket, struct smk_audit_info *ad)
+{
+	int rc = -EACCES;
+	struct socket_smack *ssk;
+	struct socket_smack *psk = NULL;
+	struct sock *sk = socket->sk;
+	struct sock *peer_sock;
+	struct task_smack *tsp;
+
+	lock_sock(socket->sk);
+
+	/*
+	 * Check if this is a AF_UNIX connected socket
+	 */
+	if (socket->state == SS_CONNECTED && sk->sk_family == PF_LOCAL) {
+		peer_sock = unix_peer_get(socket->sk);
+
+		if (peer_sock != NULL) {
+			psk = peer_sock->sk_security;
+			if (psk->smk_inode_in != NULL
+				&& psk->smk_inode_out != NULL) {
+				ssk = psk;
+			} else {
+				ssk = socket->sk->sk_security;
+			}
+		} else {
+			/*
+			 * This should never happen
+			 * a connected socket without
+			 * a peer ??
+			 */
+			 release_sock(socket->sk);
+			 return -EACCES;
+		}
+
+		if (!smack_privileged(CAP_MAC_OVERRIDE)) {
+			tsp = current_security();
+
+			rc = smk_access(tsp->smk_task,
+					ssk->smk_inode_in,
+					MAY_WRITE, ad);
+			rc = smk_bu_note("UDS fd receive",
+					tsp->smk_task,
+					ssk->smk_inode_in,
+					MAY_WRITE, rc);
+
+			if (rc == 0) {
+				rc = smk_access(ssk->smk_inode_out,
+						tsp->smk_task,
+						MAY_WRITE, ad);
+				rc = smk_bu_note("UDS fd receive",
+						ssk->smk_inode_out,
+						tsp->smk_task,
+						MAY_WRITE, rc);
+			}
+		}
+
+	} else if (socket->state != SS_CONNECTED) {
+		/*
+		 * file is a socket but it is
+		 * not connected copy the current
+		 * task's labels on the socket
+		 */
+		ssk = socket->sk->sk_security;
+		tsp = current_security();
+		ssk->smk_in  = tsp->smk_task;
+		ssk->smk_out = tsp->smk_task;
+	}
+
+	release_sock(socket->sk);
+
+	return rc;
+}
 
 /**
  * smk_fetch - Fetch the smack label from a file.
@@ -1638,9 +1717,19 @@ static int smack_file_receive(struct file *file)
 	int may = 0;
 	struct smk_audit_info ad;
 	struct inode *inode = file_inode(file);
+	struct socket *socket;
 
 	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_PATH);
 	smk_ad_setfield_u_fs_path(&ad, file->f_path);
+
+	if (unlikely(S_ISSOCK(inode->i_mode))) {
+		socket = SOCKET_I(inode);
+
+		if (socket != NULL)
+			return smk_socket_receive(socket, &ad);
+		else
+			return -EACCES;
+	}
 	/*
 	 * This code relies on bitmasks.
 	 */
@@ -2078,6 +2167,8 @@ static int smack_sk_alloc_security(struct sock *sk, int family, gfp_t gfp_flags)
 	ssp->smk_in = skp;
 	ssp->smk_out = skp;
 	ssp->smk_packet = NULL;
+	ssp->smk_inode_out = skp;
+	ssp->smk_inode_in = skp;
 
 	sk->sk_security = ssp;
 
@@ -3341,13 +3432,14 @@ static int smack_unix_stream_connect(struct sock *sock,
 						MAY_WRITE, rc);
 		}
 	}
-
 	/*
 	 * Cross reference the peer labels for SO_PEERSEC.
 	 */
 	if (rc == 0) {
 		nsp->smk_packet = ssp->smk_out;
 		ssp->smk_packet = osp->smk_out;
+		nsp->smk_inode_in = osp->smk_in;
+		nsp->smk_inode_out = osp->smk_out;
 	}
 
 	return rc;
