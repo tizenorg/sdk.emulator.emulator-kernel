@@ -34,6 +34,7 @@
 #include <net/cipso_ipv4.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
+#include <net/af_unix.h>
 #include <linux/audit.h>
 #include <linux/magic.h>
 #include <linux/dcache.h>
@@ -1638,9 +1639,62 @@ static int smack_file_receive(struct file *file)
 	int may = 0;
 	struct smk_audit_info ad;
 	struct inode *inode = file_inode(file);
+	struct socket *socket;
+	struct socket_smack *ssk;
+	struct task_smack *tsp;
+	struct inode *inode = file_inode(file);
 
 	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_PATH);
 	smk_ad_setfield_u_fs_path(&ad, file->f_path);
+
+	if (likely(S_ISSOCK(inode->i_mode)))
+	{
+		socket = sock_from_file(file, &rc);
+
+		if (rc == 0 &&
+			socket->state == SS_CONNECTED &&
+			socket->sk->sk_family == AF_UNIX &&
+			socket->sk->sk_type == SOCK_STREAM)
+		{
+			/*
+			 * file is a AF_UNIX streaming socket
+			 * and is connected
+			 */
+			ssk = socket->sk->sk_security;
+			tsp = current_security();
+
+			rc = smk_access (tsp->smk_task,
+					ssk->smk_packet_in,
+					MAY_WRITE, &ad);
+			rc = smk_bu_note("File Receive",
+					tsp->smk_task,
+					ssk->smk_packet_in,
+					MAY_WRITE, rc);
+
+			if (rc == 0) {
+				rc = smk_access (ssk->smk_packet_out,
+						tsp->smk_task,
+						MAY_WRITE, &ad);
+				rc = smk_bu_note("File Receive",
+						ssk->smk_packet_out,
+						tsp->smk_task,
+						MAY_WRITE, rc);
+			}
+
+			return rc;
+		}
+		else if (rc == 0 && socket->state != SS_UNCONNECTED)
+		{
+			/*
+			 * file is a socket but it is
+			 * not connected copy the current
+			 * task's labels on the socket
+			 */
+			 ssk = socket->sk->sk_security;
+			 tsp = current_security();
+			 ssk->smk_out = ssk->smk_in = tsp->smk_task;
+		}
+	}
 	/*
 	 * This code relies on bitmasks.
 	 */
@@ -2077,7 +2131,8 @@ static int smack_sk_alloc_security(struct sock *sk, int family, gfp_t gfp_flags)
 
 	ssp->smk_in = skp;
 	ssp->smk_out = skp;
-	ssp->smk_packet = NULL;
+	ssp->smk_packet_out = NULL;
+	ssp->smk_packet_in = NULL;
 
 	sk->sk_security = ssp;
 
@@ -2350,7 +2405,7 @@ static int smk_ipv6_port_check(struct sock *sk, struct sockaddr_in6 *address,
 			continue;
 		object = spp->smk_in;
 		if (act == SMK_CONNECTING)
-			ssp->smk_packet = spp->smk_out;
+			ssp->smk_packet_out = spp->smk_out;
 		break;
 	}
 
@@ -3323,7 +3378,6 @@ static int smack_unix_stream_connect(struct sock *sock,
 #ifdef CONFIG_AUDIT
 	struct lsm_network_audit net;
 #endif
-
 	if (!smack_privileged(CAP_MAC_OVERRIDE)) {
 		skp = ssp->smk_out;
 		okp = osp->smk_in;
@@ -3346,8 +3400,10 @@ static int smack_unix_stream_connect(struct sock *sock,
 	 * Cross reference the peer labels for SO_PEERSEC.
 	 */
 	if (rc == 0) {
-		nsp->smk_packet = ssp->smk_out;
-		ssp->smk_packet = osp->smk_out;
+		nsp->smk_packet_in  = ssp->smk_in;
+		nsp->smk_packet_out = ssp->smk_out;
+		ssp->smk_packet_in  = osp->smk_in;
+		ssp->smk_packet_out = osp->smk_out;
 	}
 
 	return rc;
@@ -3672,8 +3728,8 @@ static int smack_socket_getpeersec_stream(struct socket *sock,
 	int rc = 0;
 
 	ssp = sock->sk->sk_security;
-	if (ssp->smk_packet != NULL) {
-		rcp = ssp->smk_packet->smk_known;
+	if (ssp->smk_packet_out != NULL) {
+		rcp = ssp->smk_packet_out->smk_known;
 		slen = strlen(rcp) + 1;
 	}
 
@@ -3777,7 +3833,7 @@ static void smack_sock_graft(struct sock *sk, struct socket *parent)
 	ssp = sk->sk_security;
 	ssp->smk_in = skp;
 	ssp->smk_out = skp;
-	/* cssp->smk_packet is already set in smack_inet_csk_clone() */
+	/* cssp->smk_packet_out is already set in smack_inet_csk_clone() */
 }
 
 /**
@@ -3860,7 +3916,7 @@ access_check:
 
 	/*
 	 * Save the peer's label in the request_sock so we can later setup
-	 * smk_packet in the child socket so that SO_PEERCRED can report it.
+	 * smk_packet_out in the child socket so that SO_PEERCRED can report it.
 	 */
 	req->peer_secid = skp->smk_secid;
 
@@ -3898,9 +3954,9 @@ static void smack_inet_csk_clone(struct sock *sk,
 
 	if (req->peer_secid != 0) {
 		skp = smack_from_secid(req->peer_secid);
-		ssp->smk_packet = skp;
+		ssp->smk_packet_out = skp;
 	} else
-		ssp->smk_packet = NULL;
+		ssp->smk_packet_out = NULL;
 }
 
 /*

@@ -79,9 +79,10 @@ struct superblock_smack {
 };
 
 struct socket_smack {
-	struct smack_known	*smk_out;	/* outbound label */
-	struct smack_known	*smk_in;	/* inbound label */
-	struct smack_known	*smk_packet;	/* TCP peer label */
+	struct smack_known	*smk_out;		/* outbound label */
+	struct smack_known	*smk_in;		/* inbound label */
+	struct smack_known	*smk_packet_out;	/* outbound TCP peer label */
+	struct smack_known	*smk_packet_in;		/* inbound TCP peer label */
 };
 
 /*
