@@ -3,9 +3,9 @@
 #include "drm_crtc_helper.h"
 #include <linux/init.h>
 
-#define DPI_DEF_VALUE 3160
+#define DPI_DEF_VALUE 316
 #define DPI_MIN_VALUE 100
-#define DPI_MAX_VALUE 4800
+#define DPI_MAX_VALUE 600
 
 #ifndef MODULE
 static int vigs_atoi(const char *str)
@@ -288,10 +288,10 @@ int vigs_output_get_dpi(void)
 
 int vigs_output_get_phys_width(int dpi, u32 width)
 {
-    return ((width * 2540 / dpi) + 5) / 10;
+    return ((width * 254 / dpi) + 5) / 10;
 }
 
 int vigs_output_get_phys_height(int dpi, u32 height)
 {
-    return ((height * 2540 / dpi) + 5) / 10;
+    return ((height * 254 / dpi) + 5) / 10;
 }
