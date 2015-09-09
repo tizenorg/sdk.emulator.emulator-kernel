@@ -44,7 +44,9 @@ obj-$(CONFIG_SND_ENS1371) += snd-ens1371.o
 obj-$(CONFIG_SND_ES1938) += snd-es1938.o
 obj-$(CONFIG_SND_ES1968) += snd-es1968.o
 obj-$(CONFIG_SND_FM801) += snd-fm801.o
+ifndef CONFIG_MARU_EXTENSION_SOURCE
 obj-$(CONFIG_SND_INTEL8X0) += snd-intel8x0.o
+endif
 obj-$(CONFIG_SND_INTEL8X0M) += snd-intel8x0m.o
 obj-$(CONFIG_SND_MAESTRO3) += snd-maestro3.o
 obj-$(CONFIG_SND_RME32) += snd-rme32.o
