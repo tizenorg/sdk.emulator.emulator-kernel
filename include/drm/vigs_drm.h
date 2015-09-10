@@ -8,12 +8,7 @@
 /*
  * Bump this whenever driver interface changes.
  */
-/* Temporary W/A for the extension */
-#ifdef CONFIG_MARU_EXTENSION_SOURCE
-#define DRM_VIGS_DRIVER_VERSION 13
-#else
 #define DRM_VIGS_DRIVER_VERSION 14
-#endif
 
 /*
  * Surface access flags.

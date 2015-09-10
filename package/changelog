@@ -1,3 +1,10 @@
+* 3.14.11
+- tablet: added input buffer to virtqueue
+- VIGS: Temporary W/A for the extension
+- tuner: separate dvb_frontend build for tv extension
+- tablet: removed unused codes
+- tablet: added maru tablet driver
+== SeokYeon Hwang <syeon.hwang@samsung.com> 2015-09-10
 * 3.14.10
 - Merge branch 'tizen_2.4_develop' into tizen_3.0_develop
 == Sooyoung Ha <yoosah.ha@samsung.com> 2015-08-19
