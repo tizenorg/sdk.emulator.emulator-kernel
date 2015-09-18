@@ -101,7 +101,16 @@ static int vigs_connector_get_modes(struct drm_connector *connector)
             struct drm_display_mode *preferred_mode =
                 drm_mode_create_from_cmdline_mode(drm_dev,
                                                   &cmdline_mode);
+
+            /* qHD workaround (540x960) */
+            if (cmdline_mode.xres == 540 && cmdline_mode.yres == 960) {
+                preferred_mode->hdisplay = cmdline_mode.xres;
+                preferred_mode->hsync_start = preferred_mode->hsync_start - 1;
+                preferred_mode->hsync_end = preferred_mode->hsync_end - 1;
+            }
+
             preferred_mode->type = DRM_MODE_TYPE_PREFERRED | DRM_MODE_TYPE_DRIVER;
+            drm_mode_set_crtcinfo(preferred_mode, CRTC_INTERLACE_HALVE_V);
             drm_mode_probed_add(connector, preferred_mode);
             return 1;
         }

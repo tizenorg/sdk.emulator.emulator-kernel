@@ -1,3 +1,9 @@
+* 3.12.1
+- workaround for qHD (540x960) video mode
+== GiWoong Kim <giwoong.kim@samsung.com> 2015-03-12
+* 2.0.21
+- brillcodec: modify debugging method.
+== Kitae Kim <kt920.kim@samsung.com> 2015-01-20
 * 2.0.20
 - smack: [PATCH] Fix a bidirectional UDS connect check
 - enable smp feature

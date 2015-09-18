@@ -64,20 +64,17 @@ MODULE_LICENSE("GPL2");
 #define CODEC_IRQ_TASK 0x1f
 
 // DEBUG
-#ifdef CODEC_DEBUG
-#define DEBUG(fmt, ...) \
-	printk(KERN_DEBUG "[%s][%d]: " fmt, DEVICE_NAME, __LINE__, ##__VA_ARGS__)
+int brillcodec_debug = 0;
+module_param(brillcodec_debug, int, 0644);
+MODULE_PARM_DESC(brillcodec_debug, "Turn on/off brillcodec debugging (default:off).");
 
-#define INFO(fmt, ...) \
-	printk(KERN_INFO "[%s][%d]: " fmt, DEVICE_NAME, __LINE__, ##__VA_ARGS__)
-#else
-#define DEBUG(fmt, ...)
+#define CODEC_DBG(level, fmt, ...) \
+	do { \
+		if (brillcodec_debug > 0) { \
+			printk(level "[%s][%d]: " fmt, DEVICE_NAME, __LINE__, ##__VA_ARGS__); \
+		} \
+	} while (0)
 
-#define INFO(fmt, ...)
-#endif
-
-#define ERROR(fmt, ...) \
-	printk(KERN_ERR "[%s][%d]: " fmt, DEVICE_NAME, __LINE__, ##__VA_ARGS__)
 
 /* Define i/o and api values.  */
 enum codec_io_cmd {
@@ -247,23 +244,23 @@ static void codec_bh_func(struct work_struct *work)
 {
 	uint32_t value;
 
-	DEBUG("%s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "%s\n", __func__);
 	do {
 		value =
 			readl(maru_brill_codec->ioaddr + CODEC_CMD_GET_CTX_FROM_QUEUE);
-		DEBUG("read a value from device %x.\n", value);
+		CODEC_DBG(KERN_DEBUG, "read a value from device %x.\n", value);
 		if (value) {
 			context_flags[value] = 1;
 			wake_up_interruptible(&wait_queue);
 		} else {
-			DEBUG("there is no available task\n");
+			CODEC_DBG(KERN_DEBUG, "there is no available task\n");
 		}
 	} while (value);
 }
 
 static void codec_bh(struct maru_brill_codec_device *dev)
 {
-	DEBUG("add bottom-half function to codec_workqueue\n");
+	CODEC_DBG(KERN_DEBUG, "add bottom-half function to codec_workqueue\n");
 	queue_work(codec_bh_workqueue, &codec_bh_work);
 }
 
@@ -283,33 +280,33 @@ static int secure_device_memory(uint32_t ctx_id, uint32_t buf_size,
 	} else if (buf_size < CODEC_L_DEVICE_MEM_SIZE) {
 		index = LARGE;
 	} else {
-		ERROR("invalid buffer size: %x\n", buf_size);
+		CODEC_DBG(KERN_ERR, "invalid buffer size: %x\n", buf_size);
 		return -1;
 	}
 
 	block = &maru_brill_codec->memory_blocks[index];
 
 	// decrease buffer_semaphore
-	DEBUG("before down buffer_sema: %d\n", block->semaphore.count);
+	CODEC_DBG(KERN_DEBUG, "before down buffer_sema: %d\n", block->semaphore.count);
 
 	if (non_blocking) {
 		if (down_trylock(&block->semaphore)) { // if 1
-			DEBUG("buffer is not available now\n");
+			CODEC_DBG(KERN_DEBUG, "buffer is not available now\n");
 			return -1;
 		}
 	} else {
 		if (down_trylock(&block->semaphore)) { // if 1
 			if (down_interruptible(&block->last_buf_semaphore)) { // if -EINTR
-				DEBUG("down_interruptible interrupted\n");
+				CODEC_DBG(KERN_DEBUG, "down_interruptible interrupted\n");
 				return -1;
 			}
 			block->last_buf_secured = 1; // protected under last_buf_semaphore
 			ret = 1;
-			DEBUG("lock last buffer semaphore.\n");
+			CODEC_DBG(KERN_DEBUG, "lock last buffer semaphore.\n");
 		}
 	}
 
-	DEBUG("after down buffer_sema: %d\n", block->semaphore.count);
+	CODEC_DBG(KERN_DEBUG, "after down buffer_sema: %d\n", block->semaphore.count);
 
 	mutex_lock(&block->access_mutex);
 	unit = list_first_entry(&block->available, struct device_mem, entry);
@@ -322,12 +319,12 @@ static int secure_device_memory(uint32_t ctx_id, uint32_t buf_size,
 		} else {
 			up(&block->semaphore);
 		}
-		ERROR("failed to get memory block.\n");
+		CODEC_DBG(KERN_ERR, "failed to get memory block.\n");
 	} else {
 		unit->ctx_id = ctx_id;
 		list_move_tail(&unit->entry, &block->occupied);
 		*offset = unit->mem_offset;
-		DEBUG("get available memory region: 0x%x\n", ret);
+		CODEC_DBG(KERN_DEBUG, "get available memory region: 0x%x\n", ret);
 	}
 	mutex_unlock(&block->access_mutex);
 
@@ -351,7 +348,7 @@ static void release_device_memory(uint32_t mem_offset)
 		index = LARGE;
 	} else {
 		// error
-		ERROR("invalid memory offsset. offset = 0x%x.\n", (uint32_t)mem_offset);
+		CODEC_DBG(KERN_ERR, "invalid memory offsset. offset = 0x%x.\n", (uint32_t)mem_offset);
 		return;
 	}
 
@@ -368,10 +365,10 @@ static void release_device_memory(uint32_t mem_offset)
 				if (block->last_buf_secured) {
 					block->last_buf_secured = 0;
 					up(&block->last_buf_semaphore);
-					DEBUG("unlock last buffer semaphore.\n");
+					CODEC_DBG(KERN_DEBUG, "unlock last buffer semaphore.\n");
 				} else {
 					up(&block->semaphore);
-					DEBUG("unlock semaphore: %d.\n", block->semaphore.count);
+					CODEC_DBG(KERN_DEBUG, "unlock semaphore: %d.\n", block->semaphore.count);
 				}
 
 				found = true;
@@ -380,11 +377,11 @@ static void release_device_memory(uint32_t mem_offset)
 		}
 		if (!found) {
 			// can not enter here...
-			ERROR("cannot find this memory block. offset = 0x%x.\n", (uint32_t)mem_offset);
+			CODEC_DBG(KERN_ERR, "cannot find this memory block. offset = 0x%x.\n", (uint32_t)mem_offset);
 		}
 	} else {
 		// can not enter here...
-		ERROR("there is not any using memory block.\n");
+		CODEC_DBG(KERN_ERR, "there is not any using memory block.\n");
 	}
 	mutex_unlock(&block->access_mutex);
 }
@@ -406,7 +403,7 @@ static void dispose_device_memory(uint32_t context_id)
 				if (unit->ctx_id == context_id) {
 					unit->ctx_id = 0;
 					list_move_tail(&unit->entry, &block->available);
-					INFO("dispose memory block: %x", unit->mem_offset);
+					CODEC_DBG(KERN_INFO, "dispose memory block: %x", unit->mem_offset);
 				}
 			}
 		}
@@ -423,7 +420,7 @@ static void maru_brill_codec_info_cache(void)
 	memaddr = ioremap(maru_brill_codec->mem_start,
 						maru_brill_codec->mem_size);
 	if (!memaddr) {
-		ERROR("ioremap failed\n");
+		CODEC_DBG(KERN_ERR, "ioremap failed\n");
 		return;
 	}
 
@@ -432,7 +429,7 @@ static void maru_brill_codec_info_cache(void)
 	codec_info =
 		kzalloc(codec_info_len, GFP_KERNEL);
 	if (!codec_info) {
-		ERROR("falied to allocate codec_info memory!\n");
+		CODEC_DBG(KERN_ERR, "falied to allocate codec_info memory!\n");
 		return;
 	}
 
@@ -449,15 +446,15 @@ static long put_data_into_buffer(struct codec_buffer_id *opaque) {
 	uint32_t offset = 0;
 	unsigned long flags;
 
-	DEBUG("read data into small buffer\n");
+	CODEC_DBG(KERN_DEBUG, "read data into small buffer\n");
 
     value = secure_device_memory(opaque->buffer_index, opaque->buffer_size, 0, &offset);
 
 	if (value < 0) {
-		DEBUG("failed to get available memory\n");
+		CODEC_DBG(KERN_DEBUG, "failed to get available memory\n");
 		ret = -EINVAL;
 	} else {
-		DEBUG("send a request to pop data from device. %d\n", opaque->buffer_index);
+		CODEC_DBG(KERN_DEBUG, "send a request to pop data from device. %d\n", opaque->buffer_index);
 
 		ENTER_CRITICAL_SECTION(flags);
 		writel((uint32_t)offset,
@@ -489,10 +486,10 @@ static long maru_brill_codec_ioctl(struct file *file,
 	switch (cmd) {
 	case CODEC_CMD_GET_VERSION:
 	{
-		DEBUG("%s version: %d\n", DEVICE_NAME, maru_brill_codec->version);
+		CODEC_DBG(KERN_DEBUG, "%s version: %d\n", DEVICE_NAME, maru_brill_codec->version);
 
 		if (copy_to_user((void *)arg, &maru_brill_codec->version, sizeof(int))) {
-			ERROR("ioctl: failed to copy data to user\n");
+			CODEC_DBG(KERN_ERR, "ioctl: failed to copy data to user\n");
 			ret = -EIO;
 		}
 		break;
@@ -502,13 +499,13 @@ static long maru_brill_codec_ioctl(struct file *file,
 		uint32_t len = 0;
 		unsigned long flags;
 
-		DEBUG("request a device to get codec elements\n");
+		CODEC_DBG(KERN_DEBUG, "request a device to get codec elements\n");
 
 		ENTER_CRITICAL_SECTION(flags);
 		if (!maru_brill_codec->codec_elem_cached) {
 			value = readl(maru_brill_codec->ioaddr + cmd);
 			if (value < 0) {
-				ERROR("ioctl: failed to get elements. %d\n", (int)value);
+				CODEC_DBG(KERN_ERR, "ioctl: failed to get elements. %d\n", (int)value);
 				ret = -EINVAL;
 			}
 			maru_brill_codec_info_cache();
@@ -517,7 +514,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 		LEAVE_CRITICAL_SECTION(flags);
 
 		if (copy_to_user((void *)arg, &len, sizeof(uint32_t))) {
-			ERROR("ioctl: failed to copy data to user\n");
+			CODEC_DBG(KERN_ERR, "ioctl: failed to copy data to user\n");
 			ret = -EIO;
 		}
 		break;
@@ -527,33 +524,33 @@ static long maru_brill_codec_ioctl(struct file *file,
 		void *codec_elem = NULL;
 		uint32_t elem_len = maru_brill_codec->codec_elem.buf_size;
 
-		DEBUG("request codec elements.\n");
+		CODEC_DBG(KERN_DEBUG, "request codec elements.\n");
 
 		codec_elem = maru_brill_codec->codec_elem.buf;
 		if (!codec_elem) {
-			ERROR("ioctl: codec elements is empty\n");
+			CODEC_DBG(KERN_ERR, "ioctl: codec elements is empty\n");
 			ret = -EIO;
 		} else if (copy_to_user((void *)arg, codec_elem, elem_len)) {
-			ERROR("ioctl: failed to copy data to user\n");
+			CODEC_DBG(KERN_ERR, "ioctl: failed to copy data to user\n");
 			ret = -EIO;
 		}
 		break;
 	}
 	case CODEC_CMD_GET_CONTEXT_INDEX:
 	{
-		DEBUG("request a device to get an index of codec context \n");
+		CODEC_DBG(KERN_DEBUG, "request a device to get an index of codec context \n");
 
 		value = readl(maru_brill_codec->ioaddr + cmd);
 		if (value < 1 || value > (CODEC_CONTEXT_SIZE - 1)) {
-			ERROR("ioctl: failed to get proper context. %d\n", (int)value);
+			CODEC_DBG(KERN_ERR, "ioctl: failed to get proper context. %d\n", (int)value);
 			ret = -EINVAL;
 		} else {
 			// task_id & context_id
-			DEBUG("add context. ctx_id: %d\n", (int)value);
+			CODEC_DBG(KERN_DEBUG, "add context. ctx_id: %d\n", (int)value);
 			context_add((uint32_t)file, value);
 
 			if (copy_to_user((void *)arg, &value, sizeof(int))) {
-				ERROR("ioctl: failed to copy data to user\n");
+				CODEC_DBG(KERN_ERR, "ioctl: failed to copy data to user\n");
 				ret = -EIO;
 			}
 		}
@@ -564,7 +561,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 		struct codec_buffer_id opaque;
 
 		if (copy_from_user(&opaque, (void *)arg, sizeof(struct codec_buffer_id))) {
-			ERROR("ioctl: failed to copy data from user\n");
+			CODEC_DBG(KERN_ERR, "ioctl: failed to copy data from user\n");
 			ret = -EIO;
 			break;
 		}
@@ -575,7 +572,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 		}
 
 		if (copy_to_user((void *)arg, &opaque, sizeof(struct codec_buffer_id))) {
-			ERROR("ioctl: failed to copy data to user.\n");
+			CODEC_DBG(KERN_ERR, "ioctl: failed to copy data to user.\n");
 			ret = -EIO;
 		}
 		break;
@@ -585,21 +582,21 @@ static long maru_brill_codec_ioctl(struct file *file,
 		uint32_t offset = 0;
 		struct codec_buffer_id opaque;
 
-		DEBUG("read data into small buffer\n");
+		CODEC_DBG(KERN_DEBUG, "read data into small buffer\n");
 		if (copy_from_user(&opaque, (void *)arg, sizeof(struct codec_buffer_id))) {
-			ERROR("ioctl: failed to copy data from user\n");
+			CODEC_DBG(KERN_ERR, "ioctl: failed to copy data from user\n");
 			ret = -EIO;
 			break;
 		}
 
 		value = secure_device_memory(opaque.buffer_index, opaque.buffer_size, 0, &offset);
 		if (value < 0) {
-			DEBUG("failed to get available memory\n");
+			CODEC_DBG(KERN_DEBUG, "failed to get available memory\n");
 			ret = -EINVAL;
 		} else {
 			opaque.buffer_size = offset;
 			if (copy_to_user((void *)arg, &opaque, sizeof(struct codec_buffer_id))) {
-				ERROR("ioctl: failed to copy data to user.\n");
+				CODEC_DBG(KERN_ERR, "ioctl: failed to copy data to user.\n");
 				ret = -EIO;
 			}
 		}
@@ -610,21 +607,21 @@ static long maru_brill_codec_ioctl(struct file *file,
 		uint32_t offset = 0;
 		struct codec_buffer_id opaque;
 
-		DEBUG("read data into small buffer\n");
+		CODEC_DBG(KERN_DEBUG, "read data into small buffer\n");
 		if (copy_from_user(&opaque, (void *)arg, sizeof(struct codec_buffer_id))) {
-			ERROR("ioctl: failed to copy data from user\n");
+			CODEC_DBG(KERN_ERR, "ioctl: failed to copy data from user\n");
 			ret = -EIO;
 			break;
 		}
 
 		value = secure_device_memory(opaque.buffer_index, opaque.buffer_size, 1, &offset);
 		if (value < 0) {
-			DEBUG("failed to get available memory\n");
+			CODEC_DBG(KERN_DEBUG, "failed to get available memory\n");
 			ret = -EINVAL;
 		} else {
 			opaque.buffer_size = offset;
 			if (copy_to_user((void *)arg, &opaque, sizeof(struct codec_buffer_id))) {
-				ERROR("ioctl: failed to copy data to user.\n");
+				CODEC_DBG(KERN_ERR, "ioctl: failed to copy data to user.\n");
 				ret = -EIO;
 			}
 		}
@@ -635,7 +632,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 		uint32_t mem_offset;
 
 		if (copy_from_user(&mem_offset, (void *)arg, sizeof(uint32_t))) {
-			ERROR("ioctl: failed to copy data from user\n");
+			CODEC_DBG(KERN_ERR, "ioctl: failed to copy data from user\n");
 			ret = -EIO;
 			break;
 		}
@@ -647,7 +644,7 @@ static long maru_brill_codec_ioctl(struct file *file,
 		struct codec_param ioparam = { 0, };
 
 		if (copy_from_user(&ioparam, (void *)arg, sizeof(struct codec_param))) {
-			ERROR("failed to get codec parameter info from user\n");
+			CODEC_DBG(KERN_ERR, "failed to get codec parameter info from user\n");
 			ret = -EIO;
 			break;
 		}
@@ -662,14 +659,14 @@ static long maru_brill_codec_ioctl(struct file *file,
 			}
 
 			if (copy_to_user((void *)arg, &ioparam, sizeof(struct codec_param))) {
-				ERROR("ioctl: failed to copy data to user.\n");
+				CODEC_DBG(KERN_ERR, "ioctl: failed to copy data to user.\n");
 				ret = -EIO;
 			}
 		}
 	}
 		break;
 	default:
-		DEBUG("no available command.");
+		CODEC_DBG(KERN_DEBUG, "no available command.");
 		ret = -EINVAL;
 		break;
 	}
@@ -683,7 +680,7 @@ static int invoke_api_and_release_buffer(void *opaque)
 	int api_index, ctx_index;
 	unsigned long flags;
 
-	DEBUG("enter %s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "enter %s\n", __func__);
 
 	api_index = ioparam->api_index;
 	ctx_index = ioparam->ctx_index;
@@ -720,7 +717,7 @@ static int invoke_api_and_release_buffer(void *opaque)
 		break;
 	}
 	default:
-		DEBUG("invalid API commands: %d", api_index);
+		CODEC_DBG(KERN_DEBUG, "invalid API commands: %d", api_index);
 		return -1;
 	}
 
@@ -731,7 +728,7 @@ static int invoke_api_and_release_buffer(void *opaque)
 		dispose_device_memory(ioparam->ctx_index);
 	}
 
-	DEBUG("leave %s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "leave %s\n", __func__);
 
 	return 0;
 }
@@ -745,7 +742,7 @@ static int maru_brill_codec_mmap(struct file *file, struct vm_area_struct *vm)
 
 	size = vm->vm_end - vm->vm_start;
 	if (size > maru_brill_codec->mem_size) {
-		ERROR("over mapping size\n");
+		CODEC_DBG(KERN_ERR, "over mapping size\n");
 		return -EINVAL;
 	}
 	off = vm->vm_pgoff << PAGE_SHIFT;
@@ -755,7 +752,7 @@ static int maru_brill_codec_mmap(struct file *file, struct vm_area_struct *vm)
 	ret = remap_pfn_range(vm, vm->vm_start, phys_addr,
 			size, vm->vm_page_prot);
 	if (ret < 0) {
-		ERROR("failed to remap page range\n");
+		CODEC_DBG(KERN_ERR, "failed to remap page range\n");
 		return -EAGAIN;
 	}
 
@@ -775,7 +772,7 @@ static irqreturn_t maru_brill_codec_irq_handler(int irq, void *dev_id)
 
 	spin_lock_irqsave(&dev->lock, flags);
 
-	DEBUG("handle an interrupt from codec device.\n");
+	CODEC_DBG(KERN_DEBUG, "handle an interrupt from codec device.\n");
 	codec_bh(dev);
 
 	spin_unlock_irqrestore(&dev->lock, flags);
@@ -790,9 +787,9 @@ static void context_add(uint32_t user_pid, uint32_t ctx_id)
 	struct context_id *cid_elem = NULL;
 	unsigned long flags;
 
-	DEBUG("enter: %s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "enter: %s\n", __func__);
 
-	DEBUG("before inserting context. user_pid: %x, ctx_id: %d\n",
+	CODEC_DBG(KERN_DEBUG, "before inserting context. user_pid: %x, ctx_id: %d\n",
 			user_pid, ctx_id);
 
 	ENTER_CRITICAL_SECTION(flags);
@@ -800,21 +797,21 @@ static void context_add(uint32_t user_pid, uint32_t ctx_id)
 		list_for_each_safe(pos, temp, &maru_brill_codec->user_pid_mgr) {
 			pid_elem = list_entry(pos, struct user_process_id, pid_node);
 
-			DEBUG("add context. pid_elem: %p\n", pid_elem);
+			CODEC_DBG(KERN_DEBUG, "add context. pid_elem: %p\n", pid_elem);
 			if (pid_elem && pid_elem->id == user_pid) {
 
-				DEBUG("add context. user_pid: %x, ctx_id: %d\n",
+				CODEC_DBG(KERN_DEBUG, "add context. user_pid: %x, ctx_id: %d\n",
 						user_pid, ctx_id);
 
 				cid_elem = kzalloc(sizeof(struct context_id), GFP_KERNEL);
 				if (!cid_elem) {
-					ERROR("failed to allocate context_mgr memory\n");
+					CODEC_DBG(KERN_ERR, "failed to allocate context_mgr memory\n");
 					return;
 				}
 
 				INIT_LIST_HEAD(&cid_elem->node);
 
-				DEBUG("add context. user_pid: %x, pid_elem: %p, cid_elem: %p, node: %p\n",
+				CODEC_DBG(KERN_DEBUG, "add context. user_pid: %x, pid_elem: %p, cid_elem: %p, node: %p\n",
 						user_pid, pid_elem, cid_elem, &cid_elem->node);
 
 				cid_elem->id = ctx_id;
@@ -822,11 +819,11 @@ static void context_add(uint32_t user_pid, uint32_t ctx_id)
 			}
 		}
 	} else {
-		DEBUG("user_pid_mgr is empty\n");
+		CODEC_DBG(KERN_DEBUG, "user_pid_mgr is empty\n");
 	}
 	LEAVE_CRITICAL_SECTION(flags);
 
-	DEBUG("leave: %s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "leave: %s\n", __func__);
 }
 
 static void maru_brill_codec_context_remove(struct user_process_id *pid_elem)
@@ -834,31 +831,31 @@ static void maru_brill_codec_context_remove(struct user_process_id *pid_elem)
 	struct list_head *pos, *temp;
 	struct context_id *cid_elem = NULL;
 
-	DEBUG("enter: %s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "enter: %s\n", __func__);
 
 	if (!list_empty(&pid_elem->ctx_id_mgr)) {
 		list_for_each_safe(pos, temp, &pid_elem->ctx_id_mgr) {
 			cid_elem = list_entry(pos, struct context_id, node);
 			if (cid_elem) {
 				if (cid_elem->id > 0 && cid_elem->id < CODEC_CONTEXT_SIZE) {
-					DEBUG("remove context. ctx_id: %d\n", cid_elem->id);
+					CODEC_DBG(KERN_DEBUG, "remove context. ctx_id: %d\n", cid_elem->id);
 					writel(cid_elem->id,
 							maru_brill_codec->ioaddr + CODEC_CMD_RELEASE_CONTEXT);
 					dispose_device_memory(cid_elem->id);
 				}
 
-				DEBUG("delete node from ctx_id_mgr. %p\n", &cid_elem->node);
+				CODEC_DBG(KERN_DEBUG, "delete node from ctx_id_mgr. %p\n", &cid_elem->node);
 				__list_del_entry(&cid_elem->node);
-				DEBUG("release cid_elem. %p\n", cid_elem);
+				CODEC_DBG(KERN_DEBUG, "release cid_elem. %p\n", cid_elem);
 				kfree(cid_elem);
 			} else {
-				DEBUG("no context in the pid_elem\n");
+				CODEC_DBG(KERN_DEBUG, "no context in the pid_elem\n");
 			}
 		}
 	} else {
-		DEBUG("ctx_id_mgr is empty. user_pid: %x\n", pid_elem->id);
+		CODEC_DBG(KERN_DEBUG, "ctx_id_mgr is empty. user_pid: %x\n", pid_elem->id);
 	}
-	DEBUG("leave: %s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "leave: %s\n", __func__);
 }
 
 static void maru_brill_codec_task_add(uint32_t user_pid)
@@ -866,25 +863,25 @@ static void maru_brill_codec_task_add(uint32_t user_pid)
 	struct user_process_id *pid_elem = NULL;
 	unsigned long flags;
 
-	DEBUG("enter: %s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "enter: %s\n", __func__);
 
 	ENTER_CRITICAL_SECTION(flags);
 	pid_elem = kzalloc(sizeof(struct user_process_id), GFP_KERNEL);
 	if (!pid_elem) {
-		ERROR("failed to allocate user_process memory\n");
+		CODEC_DBG(KERN_ERR, "failed to allocate user_process memory\n");
 		return;
 	}
 
 	INIT_LIST_HEAD(&pid_elem->pid_node);
 	INIT_LIST_HEAD(&pid_elem->ctx_id_mgr);
 
-	DEBUG("add task. user_pid: %x, pid_elem: %p, pid_node: %p\n",
+	CODEC_DBG(KERN_DEBUG, "add task. user_pid: %x, pid_elem: %p, pid_node: %p\n",
 		user_pid, pid_elem, &pid_elem->pid_node);
 	pid_elem->id = user_pid;
 	list_add_tail(&pid_elem->pid_node, &maru_brill_codec->user_pid_mgr);
 	LEAVE_CRITICAL_SECTION(flags);
 
-	DEBUG("leave: %s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "leave: %s\n", __func__);
 }
 
 static void maru_brill_codec_task_remove(uint32_t user_pid)
@@ -893,7 +890,7 @@ static void maru_brill_codec_task_remove(uint32_t user_pid)
 	struct user_process_id *pid_elem = NULL;
 	unsigned long flags;
 
-	DEBUG("enter: %s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "enter: %s\n", __func__);
 
 	ENTER_CRITICAL_SECTION(flags);
 	if (!list_empty(&maru_brill_codec->user_pid_mgr)) {
@@ -902,36 +899,36 @@ static void maru_brill_codec_task_remove(uint32_t user_pid)
 			if (pid_elem) {
 				if (pid_elem->id == user_pid) {
 					// remove task and codec contexts that is running in the task.
-					DEBUG("remove task. user_pid: %x, pid_elem: %p\n",
+					CODEC_DBG(KERN_DEBUG, "remove task. user_pid: %x, pid_elem: %p\n",
 							user_pid, pid_elem);
 					maru_brill_codec_context_remove(pid_elem);
 				}
 
-				DEBUG("move pid_node from user_pid_mgr. %p\n", &pid_elem->pid_node);
+				CODEC_DBG(KERN_DEBUG, "move pid_node from user_pid_mgr. %p\n", &pid_elem->pid_node);
 				__list_del_entry(&pid_elem->pid_node);
-				DEBUG("release pid_elem. %p\n", pid_elem);
+				CODEC_DBG(KERN_DEBUG, "release pid_elem. %p\n", pid_elem);
 				kfree(pid_elem);
 			} else {
-				DEBUG("no task in the user_pid_mgr\n");
+				CODEC_DBG(KERN_DEBUG, "no task in the user_pid_mgr\n");
 			}
 		}
 	} else {
-		DEBUG("user_pid_mgr is empty\n");
+		CODEC_DBG(KERN_DEBUG, "user_pid_mgr is empty\n");
 	}
 	LEAVE_CRITICAL_SECTION(flags);
 
-	DEBUG("leave: %s\n", __func__);
+	CODEC_DBG(KERN_DEBUG, "leave: %s\n", __func__);
 }
 
 
 static int maru_brill_codec_open(struct inode *inode, struct file *file)
 {
-	DEBUG("open! struct file: %p\n", file);
+	CODEC_DBG(KERN_DEBUG, "open! struct file: %p\n", file);
 
 	/* register interrupt handler */
 	if (request_irq(maru_brill_codec->dev->irq, maru_brill_codec_irq_handler,
 		IRQF_SHARED, DEVICE_NAME, maru_brill_codec)) {
-		ERROR("failed to register irq handle\n");
+		CODEC_DBG(KERN_ERR, "failed to register irq handle\n");
 		return -EBUSY;
 	}
 
@@ -944,15 +941,15 @@ static int maru_brill_codec_open(struct inode *inode, struct file *file)
 
 static int maru_brill_codec_release(struct inode *inode, struct file *file)
 {
-	DEBUG("close! struct file: %p\n", file);
+	CODEC_DBG(KERN_DEBUG, "close! struct file: %p\n", file);
 
 	/* free irq */
 	if (maru_brill_codec->dev->irq) {
-		DEBUG("free registered irq\n");
+		CODEC_DBG(KERN_DEBUG, "free registered irq\n");
 		free_irq(maru_brill_codec->dev->irq, maru_brill_codec);
 	}
 
-	DEBUG("before removing task: %x\n", (uint32_t)file);
+	CODEC_DBG(KERN_DEBUG, "before removing task: %x\n", (uint32_t)file);
 	/* free resource */
 	maru_brill_codec_task_remove((uint32_t)file);
 
@@ -997,7 +994,7 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	maru_brill_codec =
 		kzalloc(sizeof(struct maru_brill_codec_device), GFP_KERNEL);
 	if (!maru_brill_codec) {
-		ERROR("Failed to allocate memory for codec.\n");
+		CODEC_DBG(KERN_ERR, "Failed to allocate memory for codec.\n");
 		return -ENOMEM;
 	}
 
@@ -1032,7 +1029,7 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	spin_lock_init(&maru_brill_codec->lock);
 
 	if ((ret = pci_enable_device(pci_dev))) {
-		ERROR("pci_enable_device failed\n");
+		CODEC_DBG(KERN_ERR, "pci_enable_device failed\n");
 		return ret;
 	}
 	pci_set_master(pci_dev);
@@ -1040,7 +1037,7 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	maru_brill_codec->mem_start = pci_resource_start(pci_dev, 0);
 	maru_brill_codec->mem_size = pci_resource_len(pci_dev, 0);
 	if (!maru_brill_codec->mem_start) {
-		ERROR("pci_resource_start failed\n");
+		CODEC_DBG(KERN_ERR, "pci_resource_start failed\n");
 		pci_disable_device(pci_dev);
 		return -ENODEV;
 	}
@@ -1048,7 +1045,7 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	if (!request_mem_region(maru_brill_codec->mem_start,
 				maru_brill_codec->mem_size,
 				DEVICE_NAME)) {
-		ERROR("request_mem_region failed\n");
+		CODEC_DBG(KERN_ERR, "request_mem_region failed\n");
 		pci_disable_device(pci_dev);
 		return -EINVAL;
 	}
@@ -1056,7 +1053,7 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	maru_brill_codec->io_start = pci_resource_start(pci_dev, 1);
 	maru_brill_codec->io_size = pci_resource_len(pci_dev, 1);
 	if (!maru_brill_codec->io_start) {
-		ERROR("pci_resource_start failed\n");
+		CODEC_DBG(KERN_ERR, "pci_resource_start failed\n");
 		release_mem_region(maru_brill_codec->mem_start, maru_brill_codec->mem_size);
 		pci_disable_device(pci_dev);
 		return -ENODEV;
@@ -1065,7 +1062,7 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	if (!request_mem_region(maru_brill_codec->io_start,
 				maru_brill_codec->io_size,
 				DEVICE_NAME)) {
-		ERROR("request_io_region failed\n");
+		CODEC_DBG(KERN_ERR, "request_io_region failed\n");
 		release_mem_region(maru_brill_codec->mem_start, maru_brill_codec->mem_size);
 		pci_disable_device(pci_dev);
 		return -EINVAL;
@@ -1074,7 +1071,7 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	maru_brill_codec->ioaddr =
 		ioremap_nocache(maru_brill_codec->io_start, maru_brill_codec->io_size);
 	if (!maru_brill_codec->ioaddr) {
-		ERROR("ioremap failed\n");
+		CODEC_DBG(KERN_ERR, "ioremap failed\n");
 		release_mem_region(maru_brill_codec->io_start, maru_brill_codec->io_size);
 		release_mem_region(maru_brill_codec->mem_start, maru_brill_codec->mem_size);
 		pci_disable_device(pci_dev);
@@ -1084,7 +1081,7 @@ static int maru_brill_codec_probe(struct pci_dev *pci_dev,
 	maru_brill_codec_get_device_version();
 
 	if ((ret = misc_register(&codec_dev))) {
-		ERROR("cannot register codec as misc\n");
+		CODEC_DBG(KERN_ERR, "cannot register codec as misc\n");
 		iounmap(maru_brill_codec->ioaddr);
 		release_mem_region(maru_brill_codec->io_start, maru_brill_codec->io_size);
 		release_mem_region(maru_brill_codec->mem_start, maru_brill_codec->mem_size);
@@ -1159,7 +1156,7 @@ static int __init maru_brill_codec_init(void)
 
 	codec_bh_workqueue = create_workqueue ("maru_brill_codec");
 	if (!codec_bh_workqueue) {
-		ERROR("failed to allocate workqueue\n");
+		CODEC_DBG(KERN_ERR, "failed to allocate workqueue\n");
 		return -ENOMEM;
 	}
 
