@@ -71,10 +71,8 @@ static void maru_proxi_input_work_func(struct work_struct *work) {
 		mutex_unlock(&data->vs->vqlock);
 		if (!ret) {
 			sscanf(sensor_data, "%d", &proxi);
-			if (!proxi)
+			if (proxi)
 				proxi = 1;
-			else
-				proxi = 0;
 
 			LOG(1, "proxi_set %d", proxi);
 
