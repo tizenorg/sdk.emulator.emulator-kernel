@@ -2,6 +2,11 @@
 # clean
 clean()
 {
+	if ["${TARGET_OS}" != "ubuntu-32" ] && ["${TARGET_OS}" != "ubuntu-64" ]
+	then
+		exit 1
+	fi
+
 	rm -rf .git
 }
 
@@ -28,8 +33,3 @@ install()
 	cp ./bzImage.i386 $KERNEL_DIR/bzImage.i386
 	cp ./bzImage.x86_64 $KERNEL_DIR/bzImage.x86_64
 }
-
-[ "$1" = "build" ] && build
-[ "$1" = "install" ] && install
-
-echo "success"

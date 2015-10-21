@@ -4,10 +4,10 @@ Maintainer: SeokYeon Hwang <syeon.hwang@samsung.com>
 
 Package: 3.0-emulator-kernel-x86
 OS: ubuntu-32, ubuntu-64, windows-32, windows-64, macos-64
-Build-host-os: ubuntu-32
+Build-host-os: ubuntu-64
 Description: Tizen x86 Emulator Kernel
 
 #Package: 3.0-emulator-kernel-arm
 #OS: ubuntu-32, ubuntu-64, windows-32, windows-64, macos-64
-#Build-host-os: ubuntu-32
+#Build-host-os: ubuntu-64
 #Description: Tizen ARM Emulator Kernel
