@@ -1186,7 +1186,7 @@ static struct ib_qp *nes_create_qp(struct ib_pd *ibpd,
 					nes_free_resource(nesadapter, nesadapter->allocated_qps, qp_num);
 					kfree(nesqp->allocated_buffer);
 					nes_debug(NES_DBG_QP, "ib_copy_from_udata() Failed \n");
-					return NULL;
+					return ERR_PTR(-EFAULT);
 				}
 				if (req.user_wqe_buffers) {
 					virt_wqs = 1;
@@ -2834,7 +2834,7 @@ static int nes_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	init_attr->qp_context = nesqp->ibqp.qp_context;
 	init_attr->send_cq = nesqp->ibqp.send_cq;
 	init_attr->recv_cq = nesqp->ibqp.recv_cq;
-	init_attr->srq = nesqp->ibqp.srq = nesqp->ibqp.srq;
+	init_attr->srq = nesqp->ibqp.srq;
 	init_attr->cap = attr->cap;
 
 	return 0;

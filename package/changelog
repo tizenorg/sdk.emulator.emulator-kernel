@@ -1,77 +1,72 @@
-* 3.12.1
-- workaround for qHD (540x960) video mode
-== GiWoong Kim <giwoong.kim@samsung.com> 2015-03-12
-* 2.0.21
-- brillcodec: modify debugging method.
-== Kitae Kim <kt920.kim@samsung.com> 2015-01-20
-* 2.0.20
-- smack: [PATCH] Fix a bidirectional UDS connect check
-- enable smp feature
-== Jinhyung Jo <jinhyung.jo@samsung.com> 2015-01-09
-* 2.0.19
-- Revert "smack: [PATCH] Fix a bidirectional UDS connect check"
-== Jinhyung Jo <jinhyung.jo@samsung.com> 2015-01-07
-* 2.0.18
-- smack: [PATCH] Fix a bidirectional UDS connect check
-== Jinhyung Jo <jinhyung.jo@samsung.com> 2014-12-30
-* 2.0.17
-- added pressure, ultraviolet, and hrm sensor drivers
-== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-10-23
-* 2.0.15
-- sensor: added 0 input event handling
-== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-09-16
-* 2.0.14
-- enable ANDROID_INTF_ALARM_DEV
-== Kitae Kim <kt920.kim@samsung.com> 2014-09-04
-* 2.0.13
-- make a vmodem device driver using virtio
-- removed log
-== Sooyoung Ha <yoosah.ha@samsung.com> 2014-09-04
-* 2.0.12
-- added maru_leds
-== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-08-28
-* 2.0.11
-- rollback: disabled SMACK for inhouse development
-== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-08-14
-* 2.0.10
-- disabled SMACK for inhouse development
-== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-08-04
-* 2.0.9
-- Enable FHANDLE config.
-- This option has to be enabled in kernel to use systemd >= 209. Otherwise, udev won't find any devices.
-== Kitae Kim <kt920.kim@samsung.com> 2014-07-31
+* 3.14.7
+- sensor: virtio memory allocation flag changed. (GFP_NOWAIT > GFP_ATOMIC)
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2015-05-08
+* 3.14.6
+- enable CONFIG_ANDROID_INTF_ALARM_DEV
+== SeokYeon Hwang <syeon.hwang@samsung.com> 2015-04-21
+* 3.14.5
+- x86, mm/ASLR: Fix stack randomization on 64-bit systems
+- net: sctp: fix slab corruption from use after free on INIT collisions
+- vfs: read file_handle only once in handle_to_path
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-04-15
+* 3.14.4
+- initramfs: mount devtmpfs before switching root
+== Sooyoung Ha <yoosah.ha@samsung.com> 2015-03-25
+* 3.14.3
+- package: version up
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-03-20
+* 3.14.2
+- sensor: a global sensor mutex for message transfer
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2015-03-12
+* 3.14.1
+- package: version up
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-03-11
 * 2.0.8
-- Revert "Add emulator specific uname"
-== Munkyu Im <munkyu.im@samsung.com> 2014-07-17
+- Merge branch 'tizen_next_linux_3.14' into tizen_next
+== SeokYeon Hwang <syeon.hwang@samsung.com> 2014-12-22
 * 2.0.7
+- config: turn CAN on
+== Alice Liu <alice.liu@intel.com> 2014-11-19
+* 2.0.6
+- v4l2-core: Modified error code in v4l_enumstd()
+- config: turn SMP on
+== Alice Liu <alice.liu@intel.com> 2014-11-10
+* 2.0.5
+- packaging: build only for emulator supported target
+- VIGS: Remove rotation definitions
+- packaging: workaround missing v3.12.18 tag from upstream git
+- packaging: makes repo / tarball name matching and other config fixes
+- perf tools: define _DEFAULT_SOURCE for glibc_2.20
+- sensor: added pressure, ultraviolet, and hrm sensor
+- Revert "uname: Add Emulator specific name"
+- remove IVI specific config file
+- config: enable CONFIG_FHANDLE
+== Alice Liu <alice.liu@intel.com> 2014-11-07
+* 2.0.4
+- packaging: Initial packaging on 3.12.18 for Tizen
+- package: Prevent marking "+" at kernel version
+== Alice Liu <alice.liu@intel.com> 2014-11-07
+* 2.0.3
+- VIGS: Implement plane flip/rotate
+- VIGS: Support YUV420 planar format
+- VIGS: fix DPMS deadlock
+- VIGS: Support DP memory and planar pixel formats
+- brillcodec: add new command for reducing I/O
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2014-08-28
+* 2.0.2
 - Add emulator specific uname
 == Munkyu Im <munkyu.im@samsung.com> 2014-07-11
-* 2.0.6
-- changed to way to print debug messages
-== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-07-07
-* 2.0.5
-- Apply W/A patch to avoid version mismatch with OBS
-== SeokYeon Hwang <syeon.hwang@samsung.com> 2014-07-03
-* 2.0.4
-- added rotation vector sensor
-- sensors: sync with sensor fw
-== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-06-27
-* 2.0.3
-- v4l2-core: Modified the error code.
-== Jinhyung Jo <jinhyung.jo@samsung.com> 2014-06-23
-* 2.0.2
-- sensor device name is changed to maru_sensor_[device]_1
-== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-06-20
 * 2.0.1
-- Sensor device with input event supports
-- haptic sensor is added
-- EVDI driver send emuld connection to qemu
-== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-06-18
+- sensors: re-structure with input_event
+- maru_haptic: force feedback driver is added
+- jack & power driver: MAX buf size to 512
+- evdi: added guest emuld connection message
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2014-06-20
 * 2.0.0
 - Major package version up
 == SeokYeon Hwang <syeon.hwang@samsung.com> 2014-06-10
 * 1.4.36
-- Apply Linux Kernel 3.12
+- Apply Linux Kernel 3.12 
 == GiWoong Kim <giwoong.kim@samsung.com> 2014-05-13
 * 1.4.35
 - set touchscreen resolution
@@ -149,7 +144,7 @@
 * 1.4.3
 - fixed a bug when virtio-keyboard is removed.
 - input_free_device function cannot be used after calling input_unregister_device function.
-== Kitae Kim <kt920.kim@samsung.com> 2012-11-13
+== Kita Kim <kt920.kim@samsung.com> 2012-11-13
 * 1.4.2
 - enable virtio-pci, virtio-touchscreen, net-9p, 9pfs drivers for arm kernel.
 - Those drivers are necessary for host fileshare feature and virtio-touchscreen-pci device on arm emulator.

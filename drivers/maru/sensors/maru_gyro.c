@@ -35,7 +35,6 @@
 struct maru_gyro_data {
 	struct input_dev *input_data;
 	struct delayed_work work;
-	struct mutex data_mutex;
 
 	struct virtio_sensor* vs;
 
@@ -65,17 +64,15 @@ static void maru_gyro_input_work_func(struct work_struct *work) {
 
 	LOG(1, "maru_gyro_input_work_func starts");
 
-	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	enable = atomic_read(&data->enable);
 	poll_time = atomic_read(&data->poll_delay);
 
-	mutex_lock(&data->data_mutex);
-	enable = atomic_read(&data->enable);
-	mutex_unlock(&data->data_mutex);
+	memset(sensor_data, 0, __MAX_BUF_SENSOR);
 
 	if (enable) {
-		mutex_lock(&data->data_mutex);
+		mutex_lock(&data->vs->vqlock);
 		ret = get_sensor_data(sensor_type_gyro, sensor_data);
-		mutex_unlock(&data->data_mutex);
+		mutex_unlock(&data->vs->vqlock);
 		if (!ret) {
 			sscanf(sensor_data, "%d,%d,%d", &gyro_x, &gyro_y, &gyro_z);
 			LOG(1, "gyro_set act %d, %d, %d", gyro_x, gyro_y, gyro_z);
@@ -102,9 +99,7 @@ static void maru_gyro_input_work_func(struct work_struct *work) {
 		}
 	}
 
-	mutex_lock(&data->data_mutex);
 	enable = atomic_read(&data->enable);
-	mutex_unlock(&data->data_mutex);
 
 	LOG(1, "enable: %d, poll_time: %d", enable, poll_time);
 	if (enable) {
@@ -116,7 +111,6 @@ static void maru_gyro_input_work_func(struct work_struct *work) {
 	}
 
 	LOG(1, "maru_gyro_input_work_func ends");
-
 }
 
 static ssize_t maru_name_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -131,7 +125,19 @@ static ssize_t maru_vendor_show(struct device *dev, struct device_attribute *att
 
 static ssize_t maru_enable_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_gyro_enable, buf);
+	char sensor_data[__MAX_BUF_SENSOR];
+	int ret;
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_gyro_data *data = input_get_drvdata(input_data);
+
+	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	mutex_lock(&data->vs->vqlock);
+	ret = get_sensor_data(sensor_type_gyro_enable, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
+	if (ret)
+		return sprintf(buf, "%d", -1);
+
+	return sprintf(buf, "%s", sensor_data);
 }
 
 static ssize_t maru_enable_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -143,7 +149,9 @@ static ssize_t maru_enable_store(struct device *dev, struct device_attribute *at
 	if (value != 0 && value != 1)
 		return count;
 
+	mutex_lock(&data->vs->vqlock);
 	set_sensor_data(sensor_type_gyro_enable, buf);
+	mutex_unlock(&data->vs->vqlock);
 
 	if (value) {
 		if (atomic_read(&data->enable) != 1) {
@@ -163,7 +171,19 @@ static ssize_t maru_enable_store(struct device *dev, struct device_attribute *at
 
 static ssize_t maru_poll_delay_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_gyro_delay, buf);
+	char sensor_data[__MAX_BUF_SENSOR];
+	int ret;
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_gyro_data *data = input_get_drvdata(input_data);
+
+	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	mutex_lock(&data->vs->vqlock);
+	ret = get_sensor_data(sensor_type_gyro_delay, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
+	if (ret)
+		return sprintf(buf, "%d", -1);
+
+	return sprintf(buf, "%s", sensor_data);
 }
 
 static ssize_t maru_poll_delay_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -172,7 +192,12 @@ static ssize_t maru_poll_delay_store(struct device *dev, struct device_attribute
 	struct maru_gyro_data *data = input_get_drvdata(input_data);
 	int value = simple_strtoul(buf, NULL, 10);
 
+	if (value < __MIN_DELAY_SENSOR)
+		return count;
+
+	mutex_lock(&data->vs->vqlock);
 	set_sensor_data(sensor_type_gyro_delay, buf);
+	mutex_unlock(&data->vs->vqlock);
 	atomic_set(&data->poll_delay, value);
 
 	return strnlen(buf, __MAX_BUF_SENSOR);
@@ -200,34 +225,82 @@ static ssize_t gyro_name_show(struct device *dev, struct device_attribute *attr,
 
 static ssize_t gyro_x_raw_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_gyro_x, buf);
+	char sensor_data[__MAX_BUF_SENSOR];
+	int ret;
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_gyro_data *data = input_get_drvdata(input_data);
+
+	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	mutex_lock(&data->vs->vqlock);
+	ret = get_sensor_data(sensor_type_gyro_x, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
+	if (ret)
+		return sprintf(buf, "%d", -1);
+
+	return sprintf(buf, "%s", sensor_data);
 }
 
 static ssize_t gyro_x_raw_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_gyro_data *data = input_get_drvdata(input_data);
+	mutex_lock(&data->vs->vqlock);
 	set_sensor_data(sensor_type_gyro_x, buf);
+	mutex_unlock(&data->vs->vqlock);
 	return strnlen(buf, __MAX_BUF_SENSOR);
 }
 
 static ssize_t gyro_y_raw_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_gyro_y, buf);
+	char sensor_data[__MAX_BUF_SENSOR];
+	int ret;
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_gyro_data *data = input_get_drvdata(input_data);
+
+	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	mutex_lock(&data->vs->vqlock);
+	ret = get_sensor_data(sensor_type_gyro_y, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
+	if (ret)
+		return sprintf(buf, "%d", -1);
+
+	return sprintf(buf, "%s", sensor_data);
 }
 
 static ssize_t gyro_y_raw_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_gyro_data *data = input_get_drvdata(input_data);
+	mutex_lock(&data->vs->vqlock);
 	set_sensor_data(sensor_type_gyro_y, buf);
+	mutex_unlock(&data->vs->vqlock);
 	return strnlen(buf, __MAX_BUF_SENSOR);
 }
 
 static ssize_t gyro_z_raw_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return get_data_for_show(sensor_type_gyro_z, buf);
+	char sensor_data[__MAX_BUF_SENSOR];
+	int ret;
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_gyro_data *data = input_get_drvdata(input_data);
+
+	memset(sensor_data, 0, __MAX_BUF_SENSOR);
+	mutex_lock(&data->vs->vqlock);
+	ret = get_sensor_data(sensor_type_gyro_z, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
+	if (ret)
+		return sprintf(buf, "%d", -1);
+
+	return sprintf(buf, "%s", sensor_data);
 }
 
 static ssize_t gyro_z_raw_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
+	struct input_dev *input_data = to_input_dev(dev);
+	struct maru_gyro_data *data = input_get_drvdata(input_data);
+	mutex_lock(&data->vs->vqlock);
 	set_sensor_data(sensor_type_gyro_z, buf);
+	mutex_unlock(&data->vs->vqlock);
 	return strnlen(buf, __MAX_BUF_SENSOR);
 }
 
@@ -285,7 +358,9 @@ static int set_initial_value(struct maru_gyro_data *data)
 
 	memset(sensor_data, 0, sizeof(sensor_data));
 
+	mutex_lock(&data->vs->vqlock);
 	ret = get_sensor_data(sensor_type_gyro_delay, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
 	if (ret) {
 		ERR("failed to get initial delay time");
 		return ret;
@@ -302,7 +377,9 @@ static int set_initial_value(struct maru_gyro_data *data)
 	memset(sensor_data, 0, sizeof(sensor_data));
 	sensor_data[0] = '0';
 
+	mutex_lock(&data->vs->vqlock);
 	set_sensor_data(sensor_type_gyro_enable, sensor_data);
+	mutex_unlock(&data->vs->vqlock);
 	atomic_set(&data->enable, 0);
 
 	return ret;
@@ -365,8 +442,6 @@ int maru_gyro_init(struct virtio_sensor *vs) {
 
 	vs->gyro_handle = data;
 	data->vs = vs;
-
-	mutex_init(&data->data_mutex);
 
 	INIT_DELAYED_WORK(&data->work, maru_gyro_input_work_func);
 

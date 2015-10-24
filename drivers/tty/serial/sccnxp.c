@@ -667,7 +667,7 @@ static void sccnxp_set_termios(struct uart_port *port,
 	port->read_status_mask = SR_OVR;
 	if (termios->c_iflag & INPCK)
 		port->read_status_mask |= SR_PE | SR_FE;
-	if (termios->c_iflag & (BRKINT | PARMRK))
+	if (termios->c_iflag & (IGNBRK | BRKINT | PARMRK))
 		port->read_status_mask |= SR_BRK;
 
 	/* Set status ignore mask */
@@ -986,6 +986,7 @@ static int sccnxp_probe(struct platform_device *pdev)
 		return 0;
 	}
 
+	uart_unregister_driver(&s->uart);
 err_out:
 	if (!IS_ERR(s->regulator))
 		return regulator_disable(s->regulator);

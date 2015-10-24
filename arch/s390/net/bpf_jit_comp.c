@@ -12,8 +12,8 @@
 #include <linux/random.h>
 #include <linux/init.h>
 #include <asm/cacheflush.h>
-#include <asm/processor.h>
 #include <asm/facility.h>
+#include <asm/dis.h>
 
 /*
  * Conventions:
@@ -156,8 +156,8 @@ static void bpf_jit_prologue(struct bpf_jit *jit)
 		EMIT6(0xeb8ff058, 0x0024);
 		/* lgr %r14,%r15 */
 		EMIT4(0xb90400ef);
-		/* ahi %r15,<offset> */
-		EMIT4_IMM(0xa7fa0000, (jit->seen & SEEN_MEM) ? -112 : -80);
+		/* aghi %r15,<offset> */
+		EMIT4_IMM(0xa7fb0000, (jit->seen & SEEN_MEM) ? -112 : -80);
 		/* stg %r14,152(%r15) */
 		EMIT6(0xe3e0f098, 0x0024);
 	} else if ((jit->seen & SEEN_XREG) && (jit->seen & SEEN_LITERAL))
@@ -276,7 +276,6 @@ static void bpf_jit_noleaks(struct bpf_jit *jit, struct sock_filter *filter)
 	case BPF_S_LD_W_IND:
 	case BPF_S_LD_H_IND:
 	case BPF_S_LD_B_IND:
-	case BPF_S_LDX_B_MSH:
 	case BPF_S_LD_IMM:
 	case BPF_S_LD_MEM:
 	case BPF_S_MISC_TXA:
@@ -812,7 +811,7 @@ static struct bpf_binary_header *bpf_alloc_binary(unsigned int bpfsize,
 		return NULL;
 	memset(header, 0, sz);
 	header->pages = sz / PAGE_SIZE;
-	hole = sz - (bpfsize + sizeof(*header));
+	hole = min(sz - (bpfsize + sizeof(*header)), PAGE_SIZE - sizeof(*header));
 	/* Insert random number of illegal instructions before BPF code
 	 * and make sure the first instruction starts at an even address.
 	 */

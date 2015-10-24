@@ -552,7 +552,7 @@ acpi_ut_copy_esimple_to_isimple(union acpi_object *external_object,
 	*ret_internal_object = internal_object;
 	return_ACPI_STATUS(AE_OK);
 
-      error_exit:
+error_exit:
 	acpi_ut_remove_reference(internal_object);
 	return_ACPI_STATUS(AE_NO_MEMORY);
 }
@@ -899,7 +899,7 @@ acpi_ut_copy_ielement_to_ielement(u8 object_type,
 
 	return (status);
 
-      error_exit:
+error_exit:
 	acpi_ut_remove_reference(target_object);
 	return (status);
 }
@@ -999,6 +999,12 @@ acpi_ut_copy_iobject_to_iobject(union acpi_operand_object *source_desc,
 						      walk_state);
 	} else {
 		status = acpi_ut_copy_simple_object(source_desc, *dest_desc);
+	}
+
+	/* Delete the allocated object if copy failed */
+
+	if (ACPI_FAILURE(status)) {
+		acpi_ut_remove_reference(*dest_desc);
 	}
 
 	return_ACPI_STATUS(status);

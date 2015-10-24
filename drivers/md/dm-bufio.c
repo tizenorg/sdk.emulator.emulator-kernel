@@ -104,6 +104,8 @@ struct dm_bufio_client {
 	struct list_head reserved_buffers;
 	unsigned need_reserved_buffers;
 
+	unsigned minimum_buffers;
+
 	struct hlist_head *cache_hash;
 	wait_queue_head_t free_buffer_wait;
 
@@ -463,6 +465,7 @@ static void __relink_lru(struct dm_buffer *b, int dirty)
 	c->n_buffers[dirty]++;
 	b->list_mode = dirty;
 	list_move(&b->lru_list, &c->lru[dirty]);
+	b->last_accessed = jiffies;
 }
 
 /*----------------------------------------------------------------
@@ -538,7 +541,7 @@ static void use_inline_bio(struct dm_buffer *b, int rw, sector_t block,
 	bio_init(&b->bio);
 	b->bio.bi_io_vec = b->bio_vec;
 	b->bio.bi_max_vecs = DM_BUFIO_INLINE_VECS;
-	b->bio.bi_sector = block << b->c->sectors_per_block_bits;
+	b->bio.bi_iter.bi_sector = block << b->c->sectors_per_block_bits;
 	b->bio.bi_bdev = b->c->bdev;
 	b->bio.bi_end_io = end_io;
 
@@ -861,8 +864,8 @@ static void __get_memory_limit(struct dm_bufio_client *c,
 	buffers = dm_bufio_cache_size_per_client >>
 		  (c->sectors_per_block_bits + SECTOR_SHIFT);
 
-	if (buffers < DM_BUFIO_MIN_BUFFERS)
-		buffers = DM_BUFIO_MIN_BUFFERS;
+	if (buffers < c->minimum_buffers)
+		buffers = c->minimum_buffers;
 
 	*limit_buffers = buffers;
 	*threshold_buffers = buffers * DM_BUFIO_WRITEBACK_PERCENT / 100;
@@ -1350,6 +1353,34 @@ retry:
 }
 EXPORT_SYMBOL_GPL(dm_bufio_release_move);
 
+/*
+ * Free the given buffer.
+ *
+ * This is just a hint, if the buffer is in use or dirty, this function
+ * does nothing.
+ */
+void dm_bufio_forget(struct dm_bufio_client *c, sector_t block)
+{
+	struct dm_buffer *b;
+
+	dm_bufio_lock(c);
+
+	b = __find(c, block);
+	if (b && likely(!b->hold_count) && likely(!b->state)) {
+		__unlink_buffer(b);
+		__free_buffer_wake(b);
+	}
+
+	dm_bufio_unlock(c);
+}
+EXPORT_SYMBOL(dm_bufio_forget);
+
+void dm_bufio_set_minimum_buffers(struct dm_bufio_client *c, unsigned n)
+{
+	c->minimum_buffers = n;
+}
+EXPORT_SYMBOL(dm_bufio_set_minimum_buffers);
+
 unsigned dm_bufio_get_block_size(struct dm_bufio_client *c)
 {
 	return c->block_size;
@@ -1417,9 +1448,9 @@ static void drop_buffers(struct dm_bufio_client *c)
 
 /*
  * Test if the buffer is unused and too old, and commit it.
- * At if noio is set, we must not do any I/O because we hold
- * dm_bufio_clients_lock and we would risk deadlock if the I/O gets rerouted to
- * different bufio client.
+ * And if GFP_NOFS is used, we must not do any I/O because we hold
+ * dm_bufio_clients_lock and we would risk deadlock if the I/O gets
+ * rerouted to different bufio client.
  */
 static int __cleanup_old_buffer(struct dm_buffer *b, gfp_t gfp,
 				unsigned long max_jiffies)
@@ -1427,7 +1458,7 @@ static int __cleanup_old_buffer(struct dm_buffer *b, gfp_t gfp,
 	if (jiffies - b->last_accessed < max_jiffies)
 		return 0;
 
-	if (!(gfp & __GFP_IO)) {
+	if (!(gfp & __GFP_FS)) {
 		if (test_bit(B_READING, &b->state) ||
 		    test_bit(B_WRITING, &b->state) ||
 		    test_bit(B_DIRTY, &b->state))
@@ -1455,9 +1486,9 @@ static long __scan(struct dm_bufio_client *c, unsigned long nr_to_scan,
 		list_for_each_entry_safe_reverse(b, tmp, &c->lru[l], lru_list) {
 			freed += __cleanup_old_buffer(b, gfp_mask, 0);
 			if (!--nr_to_scan)
-				break;
+				return freed;
+			dm_bufio_cond_resched();
 		}
-		dm_bufio_cond_resched();
 	}
 	return freed;
 }
@@ -1469,7 +1500,7 @@ dm_bufio_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 	unsigned long freed;
 
 	c = container_of(shrink, struct dm_bufio_client, shrinker);
-	if (sc->gfp_mask & __GFP_IO)
+	if (sc->gfp_mask & __GFP_FS)
 		dm_bufio_lock(c);
 	else if (!dm_bufio_trylock(c))
 		return SHRINK_STOP;
@@ -1486,7 +1517,7 @@ dm_bufio_shrink_count(struct shrinker *shrink, struct shrink_control *sc)
 	unsigned long count;
 
 	c = container_of(shrink, struct dm_bufio_client, shrinker);
-	if (sc->gfp_mask & __GFP_IO)
+	if (sc->gfp_mask & __GFP_FS)
 		dm_bufio_lock(c);
 	else if (!dm_bufio_trylock(c))
 		return 0;
@@ -1511,7 +1542,7 @@ struct dm_bufio_client *dm_bufio_client_create(struct block_device *bdev, unsign
 	BUG_ON(block_size < 1 << SECTOR_SHIFT ||
 	       (block_size & (block_size - 1)));
 
-	c = kmalloc(sizeof(*c), GFP_KERNEL);
+	c = kzalloc(sizeof(*c), GFP_KERNEL);
 	if (!c) {
 		r = -ENOMEM;
 		goto bad_client;
@@ -1545,6 +1576,8 @@ struct dm_bufio_client *dm_bufio_client_create(struct block_device *bdev, unsign
 	mutex_init(&c->lock);
 	INIT_LIST_HEAD(&c->reserved_buffers);
 	c->need_reserved_buffers = reserved_buffers;
+
+	c->minimum_buffers = DM_BUFIO_MIN_BUFFERS;
 
 	init_waitqueue_head(&c->free_buffer_wait);
 	c->async_write_error = 0;

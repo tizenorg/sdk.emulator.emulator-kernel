@@ -506,7 +506,7 @@ static struct lpc_ich_info lpc_chipset_info[] = {
 		.iTCO_version = 2,
 	},
 	[LPC_WPT_LP] = {
-		.name = "Lynx Point_LP",
+		.name = "Wildcat Point_LP",
 		.iTCO_version = 2,
 	},
 };
@@ -517,7 +517,7 @@ static struct lpc_ich_info lpc_chipset_info[] = {
  * pci_driver, because the I/O Controller Hub has also other
  * functions that probably will be registered by other drivers.
  */
-static DEFINE_PCI_DEVICE_TABLE(lpc_ich_ids) = {
+static const struct pci_device_id lpc_ich_ids[] = {
 	{ PCI_VDEVICE(INTEL, 0x2410), LPC_ICH},
 	{ PCI_VDEVICE(INTEL, 0x2420), LPC_ICH0},
 	{ PCI_VDEVICE(INTEL, 0x2440), LPC_ICH2},
@@ -982,7 +982,6 @@ static int lpc_ich_probe(struct pci_dev *dev,
 	if (!cell_added) {
 		dev_warn(&dev->dev, "No MFD cells added\n");
 		lpc_ich_restore_config_space(dev);
-		pci_set_drvdata(dev, NULL);
 		return -ENODEV;
 	}
 
@@ -993,7 +992,6 @@ static void lpc_ich_remove(struct pci_dev *dev)
 {
 	mfd_remove_devices(&dev->dev);
 	lpc_ich_restore_config_space(dev);
-	pci_set_drvdata(dev, NULL);
 }
 
 static struct pci_driver lpc_ich_driver = {

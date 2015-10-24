@@ -479,6 +479,11 @@ struct scsi_host_template {
 	unsigned no_write_same:1;
 
 	/*
+	 * True if asynchronous aborts are not supported
+	 */
+	unsigned no_async_abort:1;
+
+	/*
 	 * Countdown for host blocking with no commands outstanding.
 	 */
 	unsigned int max_host_blocked;
@@ -601,8 +606,11 @@ struct Scsi_Host {
 	unsigned int host_eh_scheduled;    /* EH scheduled without command */
     
 	unsigned int host_no;  /* Used for IOCTL_GET_IDLUN, /proc/scsi et al. */
-	int resetting; /* if set, it means that last_reset is a valid value */
+
+	/* next two fields are used to bound the time spent in error handling */
+	int eh_deadline;
 	unsigned long last_reset;
+
 
 	/*
 	 * These three parameters can be used to allow for wide scsi,
@@ -685,6 +693,11 @@ struct Scsi_Host {
 	 */
 	char work_q_name[20];
 	struct workqueue_struct *work_q;
+
+	/*
+	 * Task management function work queue
+	 */
+	struct workqueue_struct *tmf_work_q;
 
 	/*
 	 * Host has rejected a command because it was busy.

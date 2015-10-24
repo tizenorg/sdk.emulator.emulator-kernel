@@ -167,8 +167,6 @@ int vigs_gem_wait(struct vigs_gem_object *vigs_gem);
 
 void vigs_gem_free_object(struct drm_gem_object *gem);
 
-int vigs_gem_init_object(struct drm_gem_object *gem);
-
 int vigs_gem_open_object(struct drm_gem_object *gem,
                          struct drm_file *file_priv);
 

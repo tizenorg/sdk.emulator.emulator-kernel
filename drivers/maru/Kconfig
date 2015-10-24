@@ -22,10 +22,6 @@ config MARU_JACK
 	tristate "MARU Jack Driver"
 	depends on MARU != n
 
-config MARU_LEDS
-	tristate "MARU LED Driver"
-	depends on MARU != n && LEDS_CLASS != n
-
 config MARU_POWER_SUPPLY
 	tristate "MARU Power supply Driver"
 	depends on MARU != n && !POWER_SUPPLY
@@ -56,4 +52,8 @@ config MARU_BRILLCODEC
 
 config MARU_VIRTIO_VMODEM
 	tristate "MARU VirtIO Virtual Modem Device Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_ROTARY
+	tristate "MARU VirtIO Virtual Rotary Device Driver"
 	depends on MARU != n

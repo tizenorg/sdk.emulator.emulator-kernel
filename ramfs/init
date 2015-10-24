@@ -1,19 +1,108 @@
-#!/bin/sh
+#!/bin/busybox sh
 # SeokYeon Hwang (syeon.hwang@samsung.com)
 
-COLOR='\033[1;34m' # light blue
-NO_COLOR='\033[0m'
+cmdline() {
+    local value
+    value=" $(/bin/busybox cat /proc/cmdline) "
+    value="${value##* $1=}"
+    value="${value%% *}"
+    [ "$value" != "" ] && echo "$value"
+}
 
-echo -e "${COLOR}Mount proc filesystem${NO_COLOR}"
-mount -t proc proc /proc
+rescue_shell() {
+    echo -e "${COLOR_RED}Error !!! Dropping you to a shell.${NO_COLOR}"
+    /bin/busybox --install -s /bin
+    echo -e "${COLOR_BLUE}Opennng a shell on '/dev/hvc0'.${NO_COLOR}"
+    sh </dev/hvc0 >/dev/hvc0 2>&1 &
 
-echo -e "${COLOR}Mount emulator image${NO_COLOR}"
-mount -o rw /dev/vda /new_root
+    if [ -z $CONSOLE ]; then
+        CONSOLE="console"
+    fi
 
-echo -e "${COLOR}Mount dev filesystem${NO_COLOR}"
-/bin/mkdir -p /new_root/dev
-/bin/mount -t devtmpfs devtmpfs /new_root/dev
-/bin/mkdir -p /new_root/sys
+    echo -e "${COLOR_BLUE}Opening a shell on '/dev/${CONSOLE}'.${NO_COLOR}"
+    export CONSOLE
+    exec setsid sh -c 'exec sh < /dev/${CONSOLE} >/dev/${CONSOLE} 2>&1'
+}
 
-echo -e "${COLOR}Switching root${NO_COLOR}"
-exec switch_root -c /dev/console /new_root /sbin/init
+mount_fs() {
+    /bin/busybox mount -o rw $1 $2 || rescue_shell
+}
+
+/bin/busybox mkdir -p /dev
+/bin/busybox mount -t devtmpfs devtmpfs /dev
+
+exec >/dev/console 2>&1
+
+COLOR_BLUE="\033[1;34m" # light blue
+COLOR_RED="\033[1;31m" # light red
+NO_COLOR="\033[0m"
+
+# for debugging...
+#/bin/busybox ls -la /dev >> /dev/console
+
+echo -e "${COLOR_BLUE}Preparing...${NO_COLOR}"
+/bin/busybox mkdir -p /proc
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mkdir -p /sys
+/bin/busybox mount -t sysfs sys /sys
+
+NEW_ROOT="/new_root"
+INIT=$(cmdline init)
+CONSOLE=$(cmdline console)
+ROOT=$(cmdline root)
+
+# mount image...
+echo -e "${COLOR_BLUE}Mount image...${NO_COLOR}"
+/bin/busybox mkdir -p $NEW_ROOT
+if [ -z $ROOT ]; then
+    # mount rootfs...
+    # find rootfs...
+    ROOT=$(/bin/busybox findfs LABEL=emulator-rootfs)
+    if [ -z $ROOT ]; then
+        # for legacy image...
+        ROOT=$(/bin/busybox findfs LABEL=platform)
+    fi
+    if [ -z $ROOT ]; then
+        # failsafe...
+        ROOT=/dev/vda
+    fi
+
+    mount_fs $ROOT $NEW_ROOT
+
+    # mount system data area...
+    SYSDATA=$(/bin/busybox findfs LABEL=emulator-sysdata)
+    if [ ! -z $SYSDATA ]; then
+        mount_fs $SYSDATA $NEW_ROOT/opt
+    fi
+    # mount user area...
+    USER=$(/bin/busybox findfs LABEL=emulator-user)
+    if [ ! -z $USER ]; then
+        mount_fs $USER $NEW_ROOT/opt/usr
+    fi
+else
+    echo -e "${COLOR_BLUE}Mount ${ROOT}...${NO_COLOR}"
+    mount_fs $ROOT $NEW_ROOT
+fi
+
+# execute prerun scrpits...
+if [ -r $NEW_ROOT/etc/emulator/prerun ]; then
+    echo -e "${COLOR_BLUE}Prerun...${NO_COLOR}"
+    . $NEW_ROOT/etc/emulator/prerun $NEW_ROOT
+fi
+
+# clean up...
+/bin/busybox umount /proc
+/bin/busybox umount /sys
+#/bin/busybox umount /dev
+
+echo -e "${COLOR_BLUE}Switching root...${NO_COLOR}"
+if [ -z $INIT ]; then
+    INIT="/sbin/init"
+fi
+
+/bin/busybox mkdir -p $NEW_ROOT/dev
+/bin/busybox mount -t devtmpfs devtmpfs $NEW_ROOT/dev
+/bin/busybox mkdir -p $NEW_ROOT/sys
+/bin/busybox mount -t sysfs sys $NEW_ROOT/sys
+
+exec /bin/busybox switch_root -c /dev/console $NEW_ROOT $INIT

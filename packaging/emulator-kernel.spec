@@ -14,8 +14,8 @@
 #%undefine _missing_build_ids_terminate_build
 Name: emulator-kernel
 Summary: The Linux Emulator Kernel
-Version: 3.12.18
-Release: 5
+Version: 3.14.25
+Release: 1
 License: GPL-2.0
 Group: System Environment/Kernel
 Vendor: The Linux Community
@@ -28,7 +28,6 @@ ExclusiveArch: %{ix86}
 
 #BuildRequires: linux-glibc-devel
 #BuildRequires: bc
-BuildRequires: emulator-kernel-user-headers
 
 Provides: kernel = %{version}-%{release}
 Provides: kernel-uname-r = %{fullVersion}

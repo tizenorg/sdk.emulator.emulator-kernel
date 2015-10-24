@@ -51,6 +51,9 @@
 #define LOGDEBUG(fmt, ...) \
 	printk(KERN_DEBUG "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
 
+#define LOGINFO(fmt, ...) \
+	printk(KERN_INFO "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
+
 #define LOGERR(fmt, ...) \
 	printk(KERN_ERR "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
 
@@ -59,6 +62,10 @@
 
 /* device protocol */
 #define __MAX_BUF_SIZE	1024
+
+enum ioctl_cmd {
+	IOCTL_CMD_BOOT_DONE,
+};
 
 enum
 {
@@ -250,8 +257,6 @@ static int evdi_open(struct inode* inode, struct file* filp)
 
 	evdi_info->guest_connected = true;
 
-	send_guest_connected_msg(true);
-
 	ret = _make_buf_and_kick();
 	if (ret < 0)
 		return ret;
@@ -393,6 +398,19 @@ static unsigned int evdi_poll(struct file *filp, poll_table *wait)
 	return ret;
 }
 
+static long evdi_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	switch (cmd) {
+		case IOCTL_CMD_BOOT_DONE:
+			LOGINFO("BOOTING DONE.\n");
+			break;
+		default:
+			LOGERR("not available command.\n");
+			return -EIO;
+	}
+	return 0;
+}
+
 static struct file_operations evdi_fops = {
 		.owner = THIS_MODULE,
 		.open = evdi_open,
@@ -400,6 +418,7 @@ static struct file_operations evdi_fops = {
 		.read = evdi_read,
 		.write = evdi_write,
 		.poll  = evdi_poll,
+		.unlocked_ioctl  = evdi_ioctl,
 };
 
 

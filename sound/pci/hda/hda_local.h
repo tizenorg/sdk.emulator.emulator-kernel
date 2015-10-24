@@ -352,14 +352,8 @@ int snd_hda_multi_out_analog_cleanup(struct hda_codec *codec,
 /*
  * generic codec parser
  */
-#ifdef CONFIG_SND_HDA_GENERIC
 int snd_hda_parse_generic_codec(struct hda_codec *codec);
-#else
-static inline int snd_hda_parse_generic_codec(struct hda_codec *codec)
-{
-	return -ENODEV;
-}
-#endif
+int snd_hda_parse_hdmi_codec(struct hda_codec *codec);
 
 /*
  * generic proc interface
@@ -428,6 +422,7 @@ enum {
 	HDA_FIXUP_ACT_PROBE,
 	HDA_FIXUP_ACT_INIT,
 	HDA_FIXUP_ACT_BUILD,
+	HDA_FIXUP_ACT_FREE,
 };
 
 int snd_hda_add_verbs(struct hda_codec *codec, const struct hda_verb *list);
@@ -761,6 +756,10 @@ int snd_hdmi_parse_eld(struct parsed_hdmi_eld *e,
 void snd_hdmi_show_eld(struct parsed_hdmi_eld *e);
 void snd_hdmi_eld_update_pcm_info(struct parsed_hdmi_eld *e,
 			      struct hda_pcm_stream *hinfo);
+
+int snd_hdmi_get_eld_ati(struct hda_codec *codec, hda_nid_t nid,
+			 unsigned char *buf, int *eld_size,
+			 bool rev3_or_later);
 
 #ifdef CONFIG_PROC_FS
 void snd_hdmi_print_eld_info(struct hdmi_eld *eld,
