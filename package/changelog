@@ -1,3 +1,6 @@
+* 3.14.12
+- YaGL: Bump version with the device and platform
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2015-11-06
 * 3.14.11
 - tablet: added input buffer to virtqueue
 - VIGS: Temporary W/A for the extension
