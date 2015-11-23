@@ -1,3 +1,6 @@
+* 3.14.13
+- VIGS: set correct DPI value
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2015-11-23
 * 3.14.12
 - YaGL: Bump version with the device and platform
 == Jinhyung Jo <jinhyung.jo@samsung.com> 2015-11-06
