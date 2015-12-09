@@ -54,6 +54,14 @@ static inline void pat_disable(const char *reason)
 }
 #endif
 
+static int __read_mostly force_pat;
+
+static int __init force_pat_setup(char *str)
+{
+	force_pat = 1;
+	return 0;
+}
+early_param("force_pat", force_pat_setup);
 
 int pat_debug_enable;
 
@@ -85,9 +93,18 @@ void pat_init(void)
 	if (!pat_enabled)
 		return;
 
+force_retry:
 	if (!cpu_has_pat) {
 		if (!boot_pat_state) {
-			pat_disable("PAT not supported by CPU.");
+			if (force_pat) {
+				printk(KERN_WARNING "Force x86 PAT on cpu %d\n",
+				       smp_processor_id());
+				setup_force_cpu_cap(X86_FEATURE_PAT);
+				force_pat = 0;
+				goto force_retry;
+			} else {
+				pat_disable("PAT not supported by CPU.");
+			}
 			return;
 		} else {
 			/*
