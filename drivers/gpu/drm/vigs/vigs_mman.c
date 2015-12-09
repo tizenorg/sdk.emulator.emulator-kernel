@@ -194,7 +194,7 @@ static int vigs_ttm_init_mem_type(struct ttm_bo_device *bo_dev,
         man->flags = TTM_MEMTYPE_FLAG_FIXED |
                      TTM_MEMTYPE_FLAG_MAPPABLE;
         man->available_caching = TTM_PL_MASK_CACHING;
-        man->default_caching = TTM_PL_FLAG_CACHED;
+        man->default_caching = TTM_PL_FLAG_WC;
         break;
     default:
         DRM_ERROR("unsupported memory type: %u\n", (unsigned)type);
@@ -316,7 +316,7 @@ static int vigs_ttm_fault_reserve_notify(struct ttm_buffer_object *bo)
      * It's GPU memory page fault. Move this buffer into VRAM.
      */
 
-    placements[0] = TTM_PL_FLAG_CACHED | TTM_PL_FLAG_VRAM;
+    placements[0] = TTM_PL_FLAG_WC | TTM_PL_FLAG_VRAM;
 
     memset(&placement, 0, sizeof(placement));
 

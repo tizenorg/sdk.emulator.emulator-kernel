@@ -390,8 +390,8 @@ static int vigs_fbdev_probe_once(struct drm_fb_helper *helper,
      * one will attempt to write to /dev/fb0 then he'll probably
      * write to some GEM's memory, but we don't care.
      */
-    vigs_fbdev->kptr = ioremap(vigs_dev->vram_base,
-                               vigs_gem_size(&fb_sfc->gem));
+    vigs_fbdev->kptr = ioremap_wc(vigs_dev->vram_base,
+                                  vigs_gem_size(&fb_sfc->gem));
 
     if (!vigs_fbdev->kptr) {
         goto fail4;

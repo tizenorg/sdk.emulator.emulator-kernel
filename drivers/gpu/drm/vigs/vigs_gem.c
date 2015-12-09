@@ -42,7 +42,7 @@ int vigs_gem_init(struct vigs_gem_object *vigs_gem,
             TTM_PL_FLAG_CACHED | TTM_PL_FLAG_TT | TTM_PL_FLAG_NO_EVICT;
     } else if (type == VIGS_GEM_TYPE_EXECBUFFER) {
         placements[0] =
-            TTM_PL_FLAG_CACHED | TTM_PL_FLAG_PRIV0 | TTM_PL_FLAG_NO_EVICT;
+            TTM_PL_FLAG_WC | TTM_PL_FLAG_PRIV0 | TTM_PL_FLAG_NO_EVICT;
     } else {
         kfree(vigs_gem);
         return -EINVAL;
@@ -118,7 +118,7 @@ int vigs_gem_pin(struct vigs_gem_object *vigs_gem)
     }
 
     placements[0] =
-        TTM_PL_FLAG_CACHED | TTM_PL_FLAG_VRAM | TTM_PL_FLAG_NO_EVICT;
+        TTM_PL_FLAG_WC | TTM_PL_FLAG_VRAM | TTM_PL_FLAG_NO_EVICT;
 
     memset(&placement, 0, sizeof(placement));
 
@@ -166,7 +166,7 @@ void vigs_gem_unpin(struct vigs_gem_object *vigs_gem)
     vigs_gem_kunmap(vigs_gem);
 
     placements[0] =
-        TTM_PL_FLAG_CACHED | TTM_PL_FLAG_VRAM;
+        TTM_PL_FLAG_WC | TTM_PL_FLAG_VRAM;
     placements[1] =
         TTM_PL_FLAG_CACHED | TTM_PL_FLAG_TT | TTM_PL_FLAG_NO_EVICT;
 
