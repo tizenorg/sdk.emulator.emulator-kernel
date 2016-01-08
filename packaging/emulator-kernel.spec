@@ -1,3 +1,5 @@
+%bcond_with emulator
+
 %ifarch %{arm}
 %define config_name arm_tizen_emul_defconfig
 %define buildarch arm
@@ -22,7 +24,11 @@ Vendor: The Linux Community
 URL: http://www.kernel.org
 Source0:   %{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{PACKAGE_VERSION}-root
-ExclusiveArch: %{ix86} x86_64 armv7l
+%if %{with emulator}
+ExclusiveArch: %{ix86} x86_64
+%else
+ExclusiveArch:
+%endif
 
 %define fullVersion %{version}
 
