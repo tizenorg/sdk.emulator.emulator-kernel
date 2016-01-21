@@ -288,7 +288,7 @@ static int __videobuf_mmap_mapper(struct videobuf_queue *q,
 
 	pages = PAGE_ALIGN(vma->vm_end - vma->vm_start);
 
-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
 	retval = remap_pfn_range(vma, vma->vm_start,
 			(((struct marucam_device *)q->priv_data)->mem_base
 			+ vma->vm_pgoff) >> PAGE_SHIFT,
@@ -1231,6 +1231,26 @@ static const struct pci_device_id marucam_pci_id_tbl[] = {
 };
 
 MODULE_DEVICE_TABLE(pci, marucam_pci_id_tbl);
+
+/* The following function already exist in the latest linux stable kernel.
+ * https://git.kernel.org/cgit/linux/kernel/git/stable/linux-stable.git/
+ * commit/?id=c43996f4001de629af4a4d6713782e883677e5b9
+ * This should be removed if emulator-kernel is upgraded.
+ */
+static void __iomem *pci_ioremap_wc_bar(struct pci_dev *pdev, int bar)
+{
+	/*
+	* Make sure the BAR is actually a memory resource, not an IO resource
+	*/
+	if (!(pci_resource_flags(pdev, bar) & IORESOURCE_MEM)) {
+		WARN_ON(1);
+		return NULL;
+	}
+
+	return ioremap_wc(pci_resource_start(pdev, bar),
+			pci_resource_len(pdev, bar));
+}
+
 static int marucam_pci_initdev(struct pci_dev *pdev,
 				const struct pci_device_id *id)
 {
@@ -1289,9 +1309,9 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 		return -EBUSY;
 	}
 
-	dev->args = pci_ioremap_bar(pdev, 1);
+	dev->args = pci_ioremap_wc_bar(pdev, 1);
 	if (!dev->args) {
-		marucam_err("pci_ioremap_bar failed for 1 bar\n");
+		marucam_err("pci_ioremap_wc_bar failed for 1 bar\n");
 		pci_release_region(pdev, 0);
 		pci_release_region(pdev, 1);
 		pci_release_region(pdev, 2);
@@ -1301,9 +1321,9 @@ static int marucam_pci_initdev(struct pci_dev *pdev,
 	}
 	dev->iomem_size = pci_resource_len(pdev, 1);
 
-	dev->mmregs = pci_ioremap_bar(pdev, 2);
+	dev->mmregs = pci_ioremap_wc_bar(pdev, 2);
 	if (!dev->mmregs) {
-		marucam_err("pci_ioremap_bar failed for 2 bar\n");
+		marucam_err("pci_ioremap_wc_bar failed for 2 bar\n");
 		iounmap(dev->args);
 		pci_release_region(pdev, 0);
 		pci_release_region(pdev, 1);
