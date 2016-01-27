@@ -1,3 +1,7 @@
+* 3.14.14
+- PAT: apply PAT features for W/A
+- sensor: modify the proximity value appropriately
+== Sooyoung Ha <yoosah.ha@samsung.com> 2016-01-27
 * 3.14.13
 - VIGS: set correct DPI value
 == Jinhyung Jo <jinhyung.jo@samsung.com> 2015-11-23
