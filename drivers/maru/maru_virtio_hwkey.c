@@ -197,7 +197,7 @@ static int virtio_hwkey_probe(struct virtio_device *vdev)
 	}
 
 	err = virtqueue_add_inbuf(vh->vq, vh->sg,
-			MAX_BUF_COUNT, (void *)MAX_BUF_COUNT, GFP_ATOMIC);
+			MAX_BUF_COUNT, (void *)vh->vbuf, GFP_ATOMIC);
 
 	/* register for input device */
 	vh->idev = input_allocate_device();

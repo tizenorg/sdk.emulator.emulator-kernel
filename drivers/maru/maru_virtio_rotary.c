@@ -157,7 +157,7 @@ static void vq_rotary_handler(struct virtqueue *vq)
 	err = virtqueue_add_inbuf(vq,
 						vrtr->sg,
 						ROTARY_BUF_SIZE,
-						(void *)ROTARY_BUF_SIZE,
+						(void *)vrtr->event,
 						GFP_ATOMIC);
 	if (err < 0) {
 		VR_LOG(KERN_ERR, "failed to add buffer to virtqueue\n");
@@ -214,7 +214,7 @@ static int virtio_rotary_probe(struct virtio_device *vdev)
 	ret = virtqueue_add_inbuf(vrtr->vq,
 							vrtr->sg,
 							ROTARY_BUF_SIZE,
-							(void *)ROTARY_BUF_SIZE,
+							(void *)vrtr->event,
 							GFP_ATOMIC);
 
 	/* register for input device */
