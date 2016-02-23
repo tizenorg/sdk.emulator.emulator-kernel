@@ -47,23 +47,22 @@ MODULE_DESCRIPTION("Emulator Virtio Rotary Driver");
 #define VR_LOG(log_level, fmt, ...) \
 	printk(log_level "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
 
-#define ROTARY_BUF_SIZE		512
-static int vqidx;
-
+#define ROTARY_EVENT_MAX		32
 struct rotary_event {
 	int32_t delta;
 	int32_t type;
 };
 
+#define ROTARY_EVENT_BUF_SIZE	\
+	(ROTARY_EVENT_MAX * sizeof(struct rotary_event))
+
 struct virtio_rotary {
 	struct virtio_device *vdev;
 	struct virtqueue *vq;
 	struct input_dev *idev;
-
-	struct rotary_event event[ROTARY_BUF_SIZE];
-	struct scatterlist sg[ROTARY_BUF_SIZE];
-
 	struct mutex mutex;
+
+	struct rotary_event event[ROTARY_EVENT_MAX];
 };
 
 struct virtio_rotary *vrtr;
@@ -85,6 +84,20 @@ typeof(n) _n = (n) % (div); \
 	_n; \
 })
 
+static int add_inbuf(struct virtqueue *vq, struct rotary_event *event)
+{
+	struct scatterlist sg[1];
+	int ret;
+
+	memset(event, 0x00, ROTARY_EVENT_BUF_SIZE);
+	sg_init_one(sg, event, ROTARY_EVENT_BUF_SIZE);
+
+	ret = virtqueue_add_inbuf(vq, sg, 1, event, GFP_ATOMIC);
+	virtqueue_kick(vq);
+
+	return ret;
+}
+
 static int get_rotary_pos(int value)
 {
 	return REMAINDER(value, 360);
@@ -92,33 +105,38 @@ static int get_rotary_pos(int value)
 
 static void vq_rotary_handler(struct virtqueue *vq)
 {
-	int err = 0, len = 0;
-	void *data;
-	struct rotary_event event;
+	int err = 0;
+	struct rotary_event *data;
+	unsigned int len = 0;
+	size_t j, num_event;
 
-	int i = 0;
-	int pos = 0;
-	int value = 0;
-
-	data = virtqueue_get_buf(vq, &len);
+	data = (struct rotary_event *)virtqueue_get_buf(vq, &len);
 	if (!data) {
 		VR_LOG(KERN_ERR, "there is no available buffer\n");
 		return;
 	}
 
-	while (1) {
-		memcpy(&event, &vrtr->event[vqidx],
+	num_event = (size_t)len / sizeof(struct rotary_event);
+	VR_LOG(KERN_DEBUG, "len(%u), num_event(%zu)\n", len, num_event);
+
+	for (j = 0; j < num_event; j++) {
+		int i = 0;
+		int pos = 0;
+		int value = 0;
+		struct rotary_event event;
+
+		memcpy(&event, &data[j],
 				sizeof(struct rotary_event));
 
 		event.delta %= 360;
 		if (event.delta == 0)
-			break;
+			continue;
 
 		pos = get_rotary_pos(last_pos + event.delta);
 
 		VR_LOG(KERN_DEBUG,
-			"rotary event: vqidx(%d), event.delta(%d), pos(%d)\n",
-			vqidx, event.delta, pos);
+			"rotary event: idx(%zu), event.delta(%d), pos(%d)\n",
+			j, event.delta, pos);
 
 		for (i = 1; i <= abs(event.delta); i++) {
 			value = (event.delta > 0) ? last_pos + i : last_pos - i;
@@ -141,29 +159,18 @@ static void vq_rotary_handler(struct virtqueue *vq)
 				input_sync(vrtr->idev);
 
 				VR_LOG(KERN_INFO,
-						"event: delta(%d), detent(%d)\n",
-						event.delta, last_detent);
+					"rotary event: delta(%d), detent(%d)\n",
+					event.delta, last_detent);
 			}
 		}
-
 		last_pos = pos;
-
-		memset(&vrtr->event[vqidx], 0x00,
-				sizeof(struct rotary_event));
-		vqidx++;
-		if (vqidx == ROTARY_BUF_SIZE)
-			vqidx = 0;
 	}
-	err = virtqueue_add_inbuf(vq,
-						vrtr->sg,
-						ROTARY_BUF_SIZE,
-						(void *)vrtr->event,
-						GFP_ATOMIC);
+
+	err = add_inbuf(vrtr->vq, vrtr->event);
 	if (err < 0) {
 		VR_LOG(KERN_ERR, "failed to add buffer to virtqueue\n");
 		return;
 	}
-
 	virtqueue_kick(vrtr->vq);
 }
 
@@ -181,14 +188,12 @@ static void input_rotary_close(struct input_dev *dev)
 static int virtio_rotary_probe(struct virtio_device *vdev)
 {
 	int ret = 0;
-	int index = 0;
 
 	if (vrtr) {
 		VR_LOG(KERN_ERR, "driver is already exist\n");
 		return -EINVAL;
 	}
 
-	vqidx = 0;
 	vdev->priv = vrtr = kzalloc(sizeof(struct virtio_rotary), GFP_KERNEL);
 	if (!vrtr)
 		return -ENOMEM;
@@ -205,17 +210,6 @@ static int virtio_rotary_probe(struct virtio_device *vdev)
 		vdev->priv = NULL;
 		return ret;
 	}
-
-	for (index = 0; index < ROTARY_BUF_SIZE; index++) {
-		sg_init_one(&vrtr->sg[index],
-					&vrtr->event[index],
-					sizeof(struct rotary_event));
-	}
-	ret = virtqueue_add_inbuf(vrtr->vq,
-							vrtr->sg,
-							ROTARY_BUF_SIZE,
-							(void *)vrtr->event,
-							GFP_ATOMIC);
 
 	/* register for input device */
 	vrtr->idev = input_allocate_device();
@@ -250,7 +244,16 @@ static int virtio_rotary_probe(struct virtio_device *vdev)
 		return ret;
 	}
 
-	virtqueue_kick(vrtr->vq);
+	ret = add_inbuf(vrtr->vq, vrtr->event);
+	if (ret < 0) {
+		VR_LOG(KERN_ERR, "failed to add buffer to virtqueue\n");
+		input_unregister_device(vrtr->idev);
+		input_free_device(vrtr->idev);
+		kfree(vrtr);
+		vdev->priv = NULL;
+		return ret;
+	}
+
 	VR_LOG(KERN_INFO, "driver probe done\n");
 
 	return 0;
@@ -267,9 +270,11 @@ static void virtio_rotary_remove(struct virtio_device *vdev)
 	vdev->config->del_vqs(vdev);
 
 	input_unregister_device(vrtr->idev);
+	input_free_device(vrtr->idev);
 
 	kfree(vrtr);
 	vrtr = NULL;
+	vdev->priv = NULL;
 	VR_LOG(KERN_INFO, "driver is removed\n");
 }
 
