@@ -1,3 +1,6 @@
+* 3.14.15
+- smack: apply patches for socket fd passing
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2016-03-02
 * 3.14.14
 - PAT: apply PAT features for W/A
 - sensor: modify the proximity value appropriately
