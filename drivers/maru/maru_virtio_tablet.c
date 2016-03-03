@@ -4,6 +4,8 @@
  * Copyright (c) 2015 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
+ *  Jinhyung Jo <jinhyung.jo@samsung.com>
+ *  SeokYeon Hwang <syeon.hwang@samsung.com>
  *  Sungmin Ha <sungmin82.ha@samsung.com>
  *  Sangho Park <sangho.p@samsung.com>
  *
@@ -43,8 +45,7 @@ MODULE_AUTHOR("Sungmin Ha <sungmin82.ha@samsung.com>");
 MODULE_DESCRIPTION("Emulator Virtio Tablet driver");
 
 #define DEVICE_NAME "virtio-tablet"
-#define MAX_BUF_COUNT 256
-static int vqidx = 0;
+#define MAX_BUF_COUNT 25
 
 /* This structure must match the qemu definitions */
 typedef struct EmulTabletEvent {
@@ -55,13 +56,15 @@ typedef struct EmulTabletEvent {
 	uint32_t btn_status;
 } EmulTabletEvent;
 
+#define MAX_EVENT_BUF_SIZE (MAX_BUF_COUNT * sizeof(EmulTabletEvent))
+
 typedef struct virtio_tablet
 {
 	struct virtio_device *vdev;
 	struct virtqueue *vq;
 	struct input_dev *idev;
 
-	struct scatterlist sg[MAX_BUF_COUNT];
+	struct scatterlist sg[1];
 	struct EmulTabletEvent vbuf[MAX_BUF_COUNT];
 
 	struct mutex event_mutex;
@@ -98,59 +101,55 @@ static unsigned int index = 0;
 */
 static void vq_tablet_callback(struct virtqueue *vq)
 {
-	struct EmulTabletEvent tablet_event;
+	struct EmulTabletEvent *token = NULL;
 	unsigned int len = 0;
-	void *token = NULL;
+	size_t i, num_event;
 
-	while (1) {
-		memcpy(&tablet_event, &vtb->vbuf[vqidx],
-			sizeof(tablet_event));
-		if (tablet_event.event_type == 0) {
-			break;
-		}
+	token = (struct EmulTabletEvent *)virtqueue_get_buf(vq, &len);
+	if (!token) {
+		printk(KERN_ERR "there is no available buffer\n");
+		return;
+	}
 
-		if (tablet_event.event_type == INPUT_BTN) {
+	num_event = (size_t)len / sizeof(struct EmulTabletEvent);
+
+	for (i = 0; i < num_event; i++) {
+		struct EmulTabletEvent event;
+
+		memcpy(&event, &token[i], sizeof(event));
+		if (event.event_type == 0)
+			continue;
+
+		if (event.event_type == INPUT_BTN) {
 			/* TODO: Implementation for
 			 * the remaining events are required. */
-			if (tablet_event.btn == INPUT_BUTTON_LEFT) {
+			if (event.btn == INPUT_BUTTON_LEFT) {
 				/* 0x90001 is scan code.
 				 * (logitech left click) */
 				input_event(vtb->idev, EV_MSC, MSC_SCAN,
 							0x90001);
 				input_event(vtb->idev, EV_KEY, BTN_LEFT,
-						tablet_event.btn_status);
+						event.btn_status);
 				input_sync(vtb->idev);
 			}
-		} else if (tablet_event.event_type == INPUT_MOVE) {
+		} else if (event.event_type == INPUT_MOVE) {
 			input_event(vtb->idev, EV_ABS, ABS_X,
-						tablet_event.x);
+						event.x);
 			input_event(vtb->idev, EV_ABS, ABS_Y,
-						tablet_event.y);
+						event.y);
 			input_sync(vtb->idev);
 		} else {
 			printk(KERN_ERR "Unknown event type\n");
 			break;
 		}
+	}
+	memset(vtb->vbuf, 0x00, MAX_EVENT_BUF_SIZE);
 
-		memset(&vtb->vbuf[vqidx], 0x00,
-				sizeof(tablet_event));
-		token = virtqueue_get_buf(vtb->vq, &len);
-		if (!token) {
-			printk(KERN_ERR "failed to virtqueue_get_buf\n");
-			return;
-		}
-
-		err = virtqueue_add_inbuf(vtb->vq, vtb->sg,
-				MAX_BUF_COUNT, token, GFP_ATOMIC);
-		if (err < 0) {
-			printk(KERN_ERR "failed to add buffer to virtqueue\n");
-			return;
-		}
-
-		vqidx++;
-		if (vqidx == MAX_BUF_COUNT) {
-			vqidx = 0;
-		}
+	err = virtqueue_add_inbuf(vtb->vq, vtb->sg, 1,
+				(void *)vtb->vbuf, GFP_ATOMIC);
+	if (err < 0) {
+		printk(KERN_ERR "failed to add buffer to virtqueue\n");
+		return;
 	}
 
 	virtqueue_kick(vtb->vq);
@@ -159,7 +158,6 @@ static void vq_tablet_callback(struct virtqueue *vq)
 static int virtio_tablet_probe(struct virtio_device *vdev)
 {
 	int ret = 0;
-	vqidx = 0;
 
 	printk(KERN_INFO "virtio tablet driver is probed\n");
 
@@ -183,24 +181,11 @@ static int virtio_tablet_probe(struct virtio_device *vdev)
 	/* enable callback */
 	virtqueue_enable_cb(vtb->vq);
 
-	sg_init_table(vtb->sg, MAX_BUF_COUNT);
-
 	/* prepare the buffers */
-	for (index = 0; index < MAX_BUF_COUNT; index++) {
-		sg_set_buf(&vtb->sg[index], &vtb->vbuf[index],
-				sizeof(EmulTabletEvent));
+	sg_init_one(vtb->sg, vtb->vbuf, MAX_EVENT_BUF_SIZE);
 
-		if (err < 0) {
-			printk(KERN_ERR "failed to add buffer\n");
-			kfree(vtb);
-			vdev->priv = NULL;
-			return ret;
-		}
-	}
-
-	err = virtqueue_add_inbuf(vtb->vq, vtb->sg,
-			MAX_BUF_COUNT, (void *)MAX_BUF_COUNT,
-			GFP_ATOMIC);
+	err = virtqueue_add_inbuf(vtb->vq, vtb->sg, 1,
+			(void *)vtb->vbuf, GFP_ATOMIC);
 
 	/* register for input device */
 	vtb->idev = input_allocate_device();
