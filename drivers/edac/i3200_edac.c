@@ -242,11 +242,11 @@ static void i3200_process_error_info(struct mem_ctl_info *mci,
 					     -1, -1,
 					     "i3000 UE", "");
 		} else if (log & I3200_ECCERRLOG_CE) {
-			edac_mc_handle_error(HW_EVENT_ERR_UNCORRECTED, mci, 1,
+			edac_mc_handle_error(HW_EVENT_ERR_CORRECTED, mci, 1,
 					     0, 0, eccerrlog_syndrome(log),
 					     eccerrlog_row(channel, log),
 					     -1, -1,
-					     "i3000 UE", "");
+					     "i3000 CE", "");
 		}
 	}
 }
@@ -466,7 +466,7 @@ static void i3200_remove_one(struct pci_dev *pdev)
 	edac_mc_free(mci);
 }
 
-static DEFINE_PCI_DEVICE_TABLE(i3200_pci_tbl) = {
+static const struct pci_device_id i3200_pci_tbl[] = {
 	{
 		PCI_VEND_DEV(INTEL, 3200_HB), PCI_ANY_ID, PCI_ANY_ID, 0, 0,
 		I3200},

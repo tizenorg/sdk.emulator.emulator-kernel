@@ -24,30 +24,10 @@
 static enum htc_phymode ath9k_htc_get_curmode(struct ath9k_htc_priv *priv,
 					      struct ath9k_channel *ichan)
 {
-	enum htc_phymode mode;
+	if (IS_CHAN_5GHZ(ichan))
+		return HTC_MODE_11NA;
 
-	mode = -EINVAL;
-
-	switch (ichan->chanmode) {
-	case CHANNEL_G:
-	case CHANNEL_G_HT20:
-	case CHANNEL_G_HT40PLUS:
-	case CHANNEL_G_HT40MINUS:
-		mode = HTC_MODE_11NG;
-		break;
-	case CHANNEL_A:
-	case CHANNEL_A_HT20:
-	case CHANNEL_A_HT40PLUS:
-	case CHANNEL_A_HT40MINUS:
-		mode = HTC_MODE_11NA;
-		break;
-	default:
-		break;
-	}
-
-	WARN_ON(mode < 0);
-
-	return mode;
+	return HTC_MODE_11NG;
 }
 
 bool ath9k_htc_setpower(struct ath9k_htc_priv *priv,
@@ -935,7 +915,7 @@ static int ath9k_htc_start(struct ieee80211_hw *hw)
 	WMI_CMD(WMI_FLUSH_RECV_CMDID);
 
 	/* setup initial channel */
-	init_channel = ath9k_cmn_get_curchannel(hw, ah);
+	init_channel = ath9k_cmn_get_channel(hw, ah, &hw->conf.chandef);
 
 	ret = ath9k_hw_reset(ah, init_channel, ah->caldata, false);
 	if (ret) {
@@ -1217,9 +1197,7 @@ static int ath9k_htc_config(struct ieee80211_hw *hw, u32 changed)
 		ath_dbg(common, CONFIG, "Set channel: %d MHz\n",
 			curchan->center_freq);
 
-		ath9k_cmn_update_ichannel(&priv->ah->channels[pos],
-					  &hw->conf.chandef);
-
+		ath9k_cmn_get_channel(hw, priv->ah, &hw->conf.chandef);
 		if (ath9k_htc_set_channel(priv, hw, &priv->ah->channels[pos]) < 0) {
 			ath_err(common, "Unable to set channel\n");
 			ret = -EINVAL;
@@ -1292,53 +1270,15 @@ static void ath9k_htc_configure_filter(struct ieee80211_hw *hw,
 	mutex_unlock(&priv->mutex);
 }
 
-static int ath9k_htc_sta_add(struct ieee80211_hw *hw,
-			     struct ieee80211_vif *vif,
-			     struct ieee80211_sta *sta)
+static void ath9k_htc_sta_rc_update_work(struct work_struct *work)
 {
-	struct ath9k_htc_priv *priv = hw->priv;
-	int ret;
-
-	mutex_lock(&priv->mutex);
-	ath9k_htc_ps_wakeup(priv);
-	ret = ath9k_htc_add_station(priv, vif, sta);
-	if (!ret)
-		ath9k_htc_init_rate(priv, sta);
-	ath9k_htc_ps_restore(priv);
-	mutex_unlock(&priv->mutex);
-
-	return ret;
-}
-
-static int ath9k_htc_sta_remove(struct ieee80211_hw *hw,
-				struct ieee80211_vif *vif,
-				struct ieee80211_sta *sta)
-{
-	struct ath9k_htc_priv *priv = hw->priv;
-	struct ath9k_htc_sta *ista;
-	int ret;
-
-	mutex_lock(&priv->mutex);
-	ath9k_htc_ps_wakeup(priv);
-	ista = (struct ath9k_htc_sta *) sta->drv_priv;
-	htc_sta_drain(priv->htc, ista->index);
-	ret = ath9k_htc_remove_station(priv, vif, sta);
-	ath9k_htc_ps_restore(priv);
-	mutex_unlock(&priv->mutex);
-
-	return ret;
-}
-
-static void ath9k_htc_sta_rc_update(struct ieee80211_hw *hw,
-				    struct ieee80211_vif *vif,
-				    struct ieee80211_sta *sta, u32 changed)
-{
-	struct ath9k_htc_priv *priv = hw->priv;
+	struct ath9k_htc_sta *ista =
+	    container_of(work, struct ath9k_htc_sta, rc_update_work);
+	struct ieee80211_sta *sta =
+	    container_of((void *)ista, struct ieee80211_sta, drv_priv);
+	struct ath9k_htc_priv *priv = ista->htc_priv;
 	struct ath_common *common = ath9k_hw_common(priv->ah);
 	struct ath9k_htc_target_rate trate;
-
-	if (!(changed & IEEE80211_RC_SUPP_RATES_CHANGED))
-		return;
 
 	mutex_lock(&priv->mutex);
 	ath9k_htc_ps_wakeup(priv);
@@ -1356,6 +1296,60 @@ static void ath9k_htc_sta_rc_update(struct ieee80211_hw *hw,
 
 	ath9k_htc_ps_restore(priv);
 	mutex_unlock(&priv->mutex);
+}
+
+static int ath9k_htc_sta_add(struct ieee80211_hw *hw,
+			     struct ieee80211_vif *vif,
+			     struct ieee80211_sta *sta)
+{
+	struct ath9k_htc_priv *priv = hw->priv;
+	struct ath9k_htc_sta *ista = (struct ath9k_htc_sta *) sta->drv_priv;
+	int ret;
+
+	mutex_lock(&priv->mutex);
+	ath9k_htc_ps_wakeup(priv);
+	ret = ath9k_htc_add_station(priv, vif, sta);
+	if (!ret) {
+		INIT_WORK(&ista->rc_update_work, ath9k_htc_sta_rc_update_work);
+		ista->htc_priv = priv;
+		ath9k_htc_init_rate(priv, sta);
+	}
+	ath9k_htc_ps_restore(priv);
+	mutex_unlock(&priv->mutex);
+
+	return ret;
+}
+
+static int ath9k_htc_sta_remove(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct ieee80211_sta *sta)
+{
+	struct ath9k_htc_priv *priv = hw->priv;
+	struct ath9k_htc_sta *ista = (struct ath9k_htc_sta *) sta->drv_priv;
+	int ret;
+
+	cancel_work_sync(&ista->rc_update_work);
+
+	mutex_lock(&priv->mutex);
+	ath9k_htc_ps_wakeup(priv);
+	htc_sta_drain(priv->htc, ista->index);
+	ret = ath9k_htc_remove_station(priv, vif, sta);
+	ath9k_htc_ps_restore(priv);
+	mutex_unlock(&priv->mutex);
+
+	return ret;
+}
+
+static void ath9k_htc_sta_rc_update(struct ieee80211_hw *hw,
+				    struct ieee80211_vif *vif,
+				    struct ieee80211_sta *sta, u32 changed)
+{
+	struct ath9k_htc_sta *ista = (struct ath9k_htc_sta *) sta->drv_priv;
+
+	if (!(changed & IEEE80211_RC_SUPP_RATES_CHANGED))
+		return;
+
+	schedule_work(&ista->rc_update_work);
 }
 
 static int ath9k_htc_conf_tx(struct ieee80211_hw *hw,

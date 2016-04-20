@@ -5,7 +5,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2012 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -30,7 +30,7 @@
  *
  * BSD LICENSE
  *
- * Copyright(c) 2012 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2012 - 2014 Intel Corporation. All rights reserved.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -67,8 +67,8 @@
 #include "iwl-agn-hw.h"
 
 /* Highest firmware API version supported */
-#define IWL7260_UCODE_API_MAX	7
-#define IWL3160_UCODE_API_MAX	7
+#define IWL7260_UCODE_API_MAX	9
+#define IWL3160_UCODE_API_MAX	9
 
 /* Oldest version we won't warn about */
 #define IWL7260_UCODE_API_OK	7
@@ -83,12 +83,17 @@
 #define IWL7260_TX_POWER_VERSION	0xffff /* meaningless */
 #define IWL3160_NVM_VERSION		0x709
 #define IWL3160_TX_POWER_VERSION	0xffff /* meaningless */
+#define IWL7265_NVM_VERSION		0x0a1d
+#define IWL7265_TX_POWER_VERSION	0xffff /* meaningless */
 
 #define IWL7260_FW_PRE "iwlwifi-7260-"
 #define IWL7260_MODULE_FIRMWARE(api) IWL7260_FW_PRE __stringify(api) ".ucode"
 
 #define IWL3160_FW_PRE "iwlwifi-3160-"
 #define IWL3160_MODULE_FIRMWARE(api) IWL3160_FW_PRE __stringify(api) ".ucode"
+
+#define IWL7265_FW_PRE "iwlwifi-7265-"
+#define IWL7265_MODULE_FIRMWARE(api) IWL7265_FW_PRE __stringify(api) ".ucode"
 
 static const struct iwl_base_params iwl7000_base_params = {
 	.eeprom_size = OTP_LOW_IMAGE_SIZE,
@@ -103,7 +108,7 @@ static const struct iwl_base_params iwl7000_base_params = {
 };
 
 static const struct iwl_ht_params iwl7000_ht_params = {
-	.use_rts_for_aggregation = true, /* use rts/cts protection */
+	.stbc = true,
 	.ht40_bands = BIT(IEEE80211_BAND_2GHZ) | BIT(IEEE80211_BAND_5GHZ),
 };
 
@@ -189,5 +194,33 @@ const struct iwl_cfg iwl3160_n_cfg = {
 	.host_interrupt_operation_mode = true,
 };
 
+const struct iwl_cfg iwl7265_2ac_cfg = {
+	.name = "Intel(R) Dual Band Wireless AC 7265",
+	.fw_name_pre = IWL7265_FW_PRE,
+	IWL_DEVICE_7000,
+	.ht_params = &iwl7000_ht_params,
+	.nvm_ver = IWL7265_NVM_VERSION,
+	.nvm_calib_ver = IWL7265_TX_POWER_VERSION,
+};
+
+const struct iwl_cfg iwl7265_2n_cfg = {
+	.name = "Intel(R) Dual Band Wireless N 7265",
+	.fw_name_pre = IWL7265_FW_PRE,
+	IWL_DEVICE_7000,
+	.ht_params = &iwl7000_ht_params,
+	.nvm_ver = IWL7265_NVM_VERSION,
+	.nvm_calib_ver = IWL7265_TX_POWER_VERSION,
+};
+
+const struct iwl_cfg iwl7265_n_cfg = {
+	.name = "Intel(R) Wireless N 7265",
+	.fw_name_pre = IWL7265_FW_PRE,
+	IWL_DEVICE_7000,
+	.ht_params = &iwl7000_ht_params,
+	.nvm_ver = IWL7265_NVM_VERSION,
+	.nvm_calib_ver = IWL7265_TX_POWER_VERSION,
+};
+
 MODULE_FIRMWARE(IWL7260_MODULE_FIRMWARE(IWL7260_UCODE_API_OK));
 MODULE_FIRMWARE(IWL3160_MODULE_FIRMWARE(IWL3160_UCODE_API_OK));
+MODULE_FIRMWARE(IWL7265_MODULE_FIRMWARE(IWL7260_UCODE_API_OK));

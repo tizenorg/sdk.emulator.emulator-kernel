@@ -42,7 +42,8 @@
 #define ST_MAGN_FS_AVL_5600MG			5600
 #define ST_MAGN_FS_AVL_8000MG			8000
 #define ST_MAGN_FS_AVL_8100MG			8100
-#define ST_MAGN_FS_AVL_10000MG			10000
+#define ST_MAGN_FS_AVL_12000MG			12000
+#define ST_MAGN_FS_AVL_16000MG			16000
 
 /* CUSTOM VALUES FOR SENSOR 1 */
 #define ST_MAGN_1_WAI_EXP			0x3c
@@ -69,20 +70,20 @@
 #define ST_MAGN_1_FS_AVL_4700_VAL		0x05
 #define ST_MAGN_1_FS_AVL_5600_VAL		0x06
 #define ST_MAGN_1_FS_AVL_8100_VAL		0x07
-#define ST_MAGN_1_FS_AVL_1300_GAIN_XY		1100
-#define ST_MAGN_1_FS_AVL_1900_GAIN_XY		855
-#define ST_MAGN_1_FS_AVL_2500_GAIN_XY		670
-#define ST_MAGN_1_FS_AVL_4000_GAIN_XY		450
-#define ST_MAGN_1_FS_AVL_4700_GAIN_XY		400
-#define ST_MAGN_1_FS_AVL_5600_GAIN_XY		330
-#define ST_MAGN_1_FS_AVL_8100_GAIN_XY		230
-#define ST_MAGN_1_FS_AVL_1300_GAIN_Z		980
-#define ST_MAGN_1_FS_AVL_1900_GAIN_Z		760
-#define ST_MAGN_1_FS_AVL_2500_GAIN_Z		600
-#define ST_MAGN_1_FS_AVL_4000_GAIN_Z		400
-#define ST_MAGN_1_FS_AVL_4700_GAIN_Z		355
-#define ST_MAGN_1_FS_AVL_5600_GAIN_Z		295
-#define ST_MAGN_1_FS_AVL_8100_GAIN_Z		205
+#define ST_MAGN_1_FS_AVL_1300_GAIN_XY		909
+#define ST_MAGN_1_FS_AVL_1900_GAIN_XY		1169
+#define ST_MAGN_1_FS_AVL_2500_GAIN_XY		1492
+#define ST_MAGN_1_FS_AVL_4000_GAIN_XY		2222
+#define ST_MAGN_1_FS_AVL_4700_GAIN_XY		2500
+#define ST_MAGN_1_FS_AVL_5600_GAIN_XY		3030
+#define ST_MAGN_1_FS_AVL_8100_GAIN_XY		4347
+#define ST_MAGN_1_FS_AVL_1300_GAIN_Z		1020
+#define ST_MAGN_1_FS_AVL_1900_GAIN_Z		1315
+#define ST_MAGN_1_FS_AVL_2500_GAIN_Z		1666
+#define ST_MAGN_1_FS_AVL_4000_GAIN_Z		2500
+#define ST_MAGN_1_FS_AVL_4700_GAIN_Z		2816
+#define ST_MAGN_1_FS_AVL_5600_GAIN_Z		3389
+#define ST_MAGN_1_FS_AVL_8100_GAIN_Z		4878
 #define ST_MAGN_1_MULTIREAD_BIT			false
 
 /* CUSTOM VALUES FOR SENSOR 2 */
@@ -105,10 +106,12 @@
 #define ST_MAGN_2_FS_MASK			0x60
 #define ST_MAGN_2_FS_AVL_4000_VAL		0x00
 #define ST_MAGN_2_FS_AVL_8000_VAL		0x01
-#define ST_MAGN_2_FS_AVL_10000_VAL		0x02
-#define ST_MAGN_2_FS_AVL_4000_GAIN		430
-#define ST_MAGN_2_FS_AVL_8000_GAIN		230
-#define ST_MAGN_2_FS_AVL_10000_GAIN		230
+#define ST_MAGN_2_FS_AVL_12000_VAL		0x02
+#define ST_MAGN_2_FS_AVL_16000_VAL		0x03
+#define ST_MAGN_2_FS_AVL_4000_GAIN		146
+#define ST_MAGN_2_FS_AVL_8000_GAIN		292
+#define ST_MAGN_2_FS_AVL_12000_GAIN		438
+#define ST_MAGN_2_FS_AVL_16000_GAIN		584
 #define ST_MAGN_2_MULTIREAD_BIT			false
 #define ST_MAGN_2_OUT_X_L_ADDR			0x28
 #define ST_MAGN_2_OUT_Y_L_ADDR			0x2a
@@ -266,9 +269,14 @@ static const struct st_sensors st_magn_sensors[] = {
 					.gain = ST_MAGN_2_FS_AVL_8000_GAIN,
 				},
 				[2] = {
-					.num = ST_MAGN_FS_AVL_10000MG,
-					.value = ST_MAGN_2_FS_AVL_10000_VAL,
-					.gain = ST_MAGN_2_FS_AVL_10000_GAIN,
+					.num = ST_MAGN_FS_AVL_12000MG,
+					.value = ST_MAGN_2_FS_AVL_12000_VAL,
+					.gain = ST_MAGN_2_FS_AVL_12000_GAIN,
+				},
+				[3] = {
+					.num = ST_MAGN_FS_AVL_16000MG,
+					.value = ST_MAGN_2_FS_AVL_16000_VAL,
+					.gain = ST_MAGN_2_FS_AVL_16000_GAIN,
 				},
 			},
 		},
@@ -348,8 +356,9 @@ static const struct iio_info magn_info = {
 int st_magn_common_probe(struct iio_dev *indio_dev,
 					struct st_sensors_platform_data *pdata)
 {
-	int err;
 	struct st_sensor_data *mdata = iio_priv(indio_dev);
+	int irq = mdata->get_irq_data_ready(indio_dev);
+	int err;
 
 	indio_dev->modes = INDIO_DIRECT_MODE;
 	indio_dev->info = &magn_info;
@@ -357,7 +366,7 @@ int st_magn_common_probe(struct iio_dev *indio_dev,
 	err = st_sensors_check_device_support(indio_dev,
 				ARRAY_SIZE(st_magn_sensors), st_magn_sensors);
 	if (err < 0)
-		goto st_magn_common_probe_error;
+		return err;
 
 	mdata->num_data_channels = ST_MAGN_NUMBER_DATA_CHANNELS;
 	mdata->multiread_bit = mdata->sensor->multi_read_bit;
@@ -370,12 +379,13 @@ int st_magn_common_probe(struct iio_dev *indio_dev,
 
 	err = st_sensors_init_sensor(indio_dev, pdata);
 	if (err < 0)
-		goto st_magn_common_probe_error;
+		return err;
 
-	if (mdata->get_irq_data_ready(indio_dev) > 0) {
-		err = st_magn_allocate_ring(indio_dev);
-		if (err < 0)
-			goto st_magn_common_probe_error;
+	err = st_magn_allocate_ring(indio_dev);
+	if (err < 0)
+		return err;
+
+	if (irq > 0) {
 		err = st_sensors_allocate_trigger(indio_dev, NULL);
 		if (err < 0)
 			goto st_magn_probe_trigger_error;
@@ -385,15 +395,14 @@ int st_magn_common_probe(struct iio_dev *indio_dev,
 	if (err)
 		goto st_magn_device_register_error;
 
-	return err;
+	return 0;
 
 st_magn_device_register_error:
-	if (mdata->get_irq_data_ready(indio_dev) > 0)
+	if (irq > 0)
 		st_sensors_deallocate_trigger(indio_dev);
 st_magn_probe_trigger_error:
-	if (mdata->get_irq_data_ready(indio_dev) > 0)
-		st_magn_deallocate_ring(indio_dev);
-st_magn_common_probe_error:
+	st_magn_deallocate_ring(indio_dev);
+
 	return err;
 }
 EXPORT_SYMBOL(st_magn_common_probe);
@@ -403,10 +412,10 @@ void st_magn_common_remove(struct iio_dev *indio_dev)
 	struct st_sensor_data *mdata = iio_priv(indio_dev);
 
 	iio_device_unregister(indio_dev);
-	if (mdata->get_irq_data_ready(indio_dev) > 0) {
+	if (mdata->get_irq_data_ready(indio_dev) > 0)
 		st_sensors_deallocate_trigger(indio_dev);
-		st_magn_deallocate_ring(indio_dev);
-	}
+
+	st_magn_deallocate_ring(indio_dev);
 }
 EXPORT_SYMBOL(st_magn_common_remove);
 

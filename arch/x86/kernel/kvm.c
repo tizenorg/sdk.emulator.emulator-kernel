@@ -464,7 +464,7 @@ static struct notifier_block kvm_cpu_notifier = {
 
 static void __init kvm_apf_trap_init(void)
 {
-	set_intr_gate(14, &async_page_fault);
+	set_intr_gate(14, async_page_fault);
 }
 
 void __init kvm_guest_init(void)
@@ -705,7 +705,7 @@ static cpumask_t waiting_cpus;
 /* Track spinlock on which a cpu is waiting */
 static DEFINE_PER_CPU(struct kvm_lock_waiting, klock_waiting);
 
-static void kvm_lock_spinning(struct arch_spinlock *lock, __ticket_t want)
+__visible void kvm_lock_spinning(struct arch_spinlock *lock, __ticket_t want)
 {
 	struct kvm_lock_waiting *w;
 	int cpu;

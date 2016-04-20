@@ -17,42 +17,34 @@
  */
 #include "xfs.h"
 #include "xfs_fs.h"
+#include "xfs_shared.h"
 #include "xfs_format.h"
+#include "xfs_log_format.h"
+#include "xfs_trans_resv.h"
 #include "xfs_bit.h"
-#include "xfs_log.h"
 #include "xfs_inum.h"
-#include "xfs_trans.h"
 #include "xfs_sb.h"
 #include "xfs_ag.h"
 #include "xfs_mount.h"
-#include "xfs_error.h"
-#include "xfs_bmap_btree.h"
-#include "xfs_alloc_btree.h"
-#include "xfs_ialloc_btree.h"
-#include "xfs_btree.h"
-#include "xfs_dinode.h"
+#include "xfs_da_format.h"
 #include "xfs_inode.h"
-#include "xfs_inode_item.h"
-#include "xfs_alloc.h"
-#include "xfs_ialloc.h"
+#include "xfs_trans.h"
+#include "xfs_log.h"
 #include "xfs_log_priv.h"
-#include "xfs_buf_item.h"
 #include "xfs_log_recover.h"
+#include "xfs_inode_item.h"
 #include "xfs_extfree_item.h"
 #include "xfs_trans_priv.h"
+#include "xfs_alloc.h"
+#include "xfs_ialloc.h"
 #include "xfs_quota.h"
 #include "xfs_cksum.h"
 #include "xfs_trace.h"
 #include "xfs_icache.h"
-#include "xfs_icreate_item.h"
-
-/* Need all the magic numbers and buffer ops structures from these headers */
-#include "xfs_symlink.h"
-#include "xfs_da_btree.h"
-#include "xfs_dir2_format.h"
+#include "xfs_bmap_btree.h"
+#include "xfs_dinode.h"
+#include "xfs_error.h"
 #include "xfs_dir2.h"
-#include "xfs_attr_leaf.h"
-#include "xfs_attr_remote.h"
 
 #define BLK_AVG(blk1, blk2)	((blk1+blk2) >> 1)
 
@@ -201,7 +193,10 @@ xlog_bread_noalign(
 	bp->b_io_length = nbblks;
 	bp->b_error = 0;
 
-	xfsbdstrat(log->l_mp, bp);
+	if (XFS_FORCED_SHUTDOWN(log->l_mp))
+		return XFS_ERROR(EIO);
+
+	xfs_buf_iorequest(bp);
 	error = xfs_buf_iowait(bp);
 	if (error)
 		xfs_buf_ioerror_alert(bp, __func__);
@@ -305,9 +300,9 @@ xlog_header_check_dump(
 	xfs_mount_t		*mp,
 	xlog_rec_header_t	*head)
 {
-	xfs_debug(mp, "%s:  SB : uuid = %pU, fmt = %d\n",
+	xfs_debug(mp, "%s:  SB : uuid = %pU, fmt = %d",
 		__func__, &mp->m_sb.sb_uuid, XLOG_FMT);
-	xfs_debug(mp, "    log : uuid = %pU, fmt = %d\n",
+	xfs_debug(mp, "    log : uuid = %pU, fmt = %d",
 		&head->h_fs_uuid, be32_to_cpu(head->h_fmt));
 }
 #else
@@ -1659,6 +1654,7 @@ xlog_recover_reorder_trans(
 	int			pass)
 {
 	xlog_recover_item_t	*item, *n;
+	int			error = 0;
 	LIST_HEAD(sort_list);
 	LIST_HEAD(cancel_list);
 	LIST_HEAD(buffer_list);
@@ -1700,9 +1696,17 @@ xlog_recover_reorder_trans(
 				"%s: unrecognized type of log operation",
 				__func__);
 			ASSERT(0);
-			return XFS_ERROR(EIO);
+			/*
+			 * return the remaining items back to the transaction
+			 * item list so they can be freed in caller.
+			 */
+			if (!list_empty(&sort_list))
+				list_splice_init(&sort_list, &trans->r_itemq);
+			error = XFS_ERROR(EIO);
+			goto out;
 		}
 	}
+out:
 	ASSERT(list_empty(&sort_list));
 	if (!list_empty(&buffer_list))
 		list_splice(&buffer_list, &trans->r_itemq);
@@ -1712,7 +1716,7 @@ xlog_recover_reorder_trans(
 		list_splice_tail(&inode_buffer_list, &trans->r_itemq);
 	if (!list_empty(&cancel_list))
 		list_splice_tail(&cancel_list, &trans->r_itemq);
-	return 0;
+	return error;
 }
 
 /*
@@ -2121,6 +2125,17 @@ xlog_recover_validate_buf_type(
 	__uint16_t		magic16;
 	__uint16_t		magicda;
 
+	/*
+	 * We can only do post recovery validation on items on CRC enabled
+	 * fielsystems as we need to know when the buffer was written to be able
+	 * to determine if we should have replayed the item. If we replay old
+	 * metadata over a newer buffer, then it will enter a temporarily
+	 * inconsistent state resulting in verification failures. Hence for now
+	 * just avoid the verification stage for non-crc filesystems
+	 */
+	if (!xfs_sb_version_hascrc(&mp->m_sb))
+		return;
+
 	magic32 = be32_to_cpu(*(__be32 *)bp->b_addr);
 	magic16 = be16_to_cpu(*(__be16*)bp->b_addr);
 	magicda = be16_to_cpu(info->magic);
@@ -2156,8 +2171,6 @@ xlog_recover_validate_buf_type(
 		bp->b_ops = &xfs_agf_buf_ops;
 		break;
 	case XFS_BLFT_AGFL_BUF:
-		if (!xfs_sb_version_hascrc(&mp->m_sb))
-			break;
 		if (magic32 != XFS_AGFL_MAGIC) {
 			xfs_warn(mp, "Bad AGFL block magic!");
 			ASSERT(0);
@@ -2190,10 +2203,6 @@ xlog_recover_validate_buf_type(
 #endif
 		break;
 	case XFS_BLFT_DINO_BUF:
-		/*
-		 * we get here with inode allocation buffers, not buffers that
-		 * track unlinked list changes.
-		 */
 		if (magic16 != XFS_DINODE_MAGIC) {
 			xfs_warn(mp, "Bad INODE block magic!");
 			ASSERT(0);
@@ -2273,8 +2282,6 @@ xlog_recover_validate_buf_type(
 		bp->b_ops = &xfs_attr3_leaf_buf_ops;
 		break;
 	case XFS_BLFT_ATTR_RMT_BUF:
-		if (!xfs_sb_version_hascrc(&mp->m_sb))
-			break;
 		if (magic32 != XFS_ATTR3_RMT_MAGIC) {
 			xfs_warn(mp, "Bad attr remote magic!");
 			ASSERT(0);
@@ -2362,7 +2369,7 @@ xlog_recover_do_reg_buffer(
 					item->ri_buf[i].i_len, __func__);
 				goto next;
 			}
-			error = xfs_qm_dqcheck(mp, item->ri_buf[i].i_addr,
+			error = xfs_dqcheck(mp, item->ri_buf[i].i_addr,
 					       -1, 0, XFS_QMOPT_DOWARN,
 					       "dquot_buf_recover");
 			if (error)
@@ -2381,143 +2388,7 @@ xlog_recover_do_reg_buffer(
 	/* Shouldn't be any more regions */
 	ASSERT(i == item->ri_total);
 
-	/*
-	 * We can only do post recovery validation on items on CRC enabled
-	 * fielsystems as we need to know when the buffer was written to be able
-	 * to determine if we should have replayed the item. If we replay old
-	 * metadata over a newer buffer, then it will enter a temporarily
-	 * inconsistent state resulting in verification failures. Hence for now
-	 * just avoid the verification stage for non-crc filesystems
-	 */
-	if (xfs_sb_version_hascrc(&mp->m_sb))
-		xlog_recover_validate_buf_type(mp, bp, buf_f);
-}
-
-/*
- * Do some primitive error checking on ondisk dquot data structures.
- */
-int
-xfs_qm_dqcheck(
-	struct xfs_mount *mp,
-	xfs_disk_dquot_t *ddq,
-	xfs_dqid_t	 id,
-	uint		 type,	  /* used only when IO_dorepair is true */
-	uint		 flags,
-	char		 *str)
-{
-	xfs_dqblk_t	 *d = (xfs_dqblk_t *)ddq;
-	int		errs = 0;
-
-	/*
-	 * We can encounter an uninitialized dquot buffer for 2 reasons:
-	 * 1. If we crash while deleting the quotainode(s), and those blks got
-	 *    used for user data. This is because we take the path of regular
-	 *    file deletion; however, the size field of quotainodes is never
-	 *    updated, so all the tricks that we play in itruncate_finish
-	 *    don't quite matter.
-	 *
-	 * 2. We don't play the quota buffers when there's a quotaoff logitem.
-	 *    But the allocation will be replayed so we'll end up with an
-	 *    uninitialized quota block.
-	 *
-	 * This is all fine; things are still consistent, and we haven't lost
-	 * any quota information. Just don't complain about bad dquot blks.
-	 */
-	if (ddq->d_magic != cpu_to_be16(XFS_DQUOT_MAGIC)) {
-		if (flags & XFS_QMOPT_DOWARN)
-			xfs_alert(mp,
-			"%s : XFS dquot ID 0x%x, magic 0x%x != 0x%x",
-			str, id, be16_to_cpu(ddq->d_magic), XFS_DQUOT_MAGIC);
-		errs++;
-	}
-	if (ddq->d_version != XFS_DQUOT_VERSION) {
-		if (flags & XFS_QMOPT_DOWARN)
-			xfs_alert(mp,
-			"%s : XFS dquot ID 0x%x, version 0x%x != 0x%x",
-			str, id, ddq->d_version, XFS_DQUOT_VERSION);
-		errs++;
-	}
-
-	if (ddq->d_flags != XFS_DQ_USER &&
-	    ddq->d_flags != XFS_DQ_PROJ &&
-	    ddq->d_flags != XFS_DQ_GROUP) {
-		if (flags & XFS_QMOPT_DOWARN)
-			xfs_alert(mp,
-			"%s : XFS dquot ID 0x%x, unknown flags 0x%x",
-			str, id, ddq->d_flags);
-		errs++;
-	}
-
-	if (id != -1 && id != be32_to_cpu(ddq->d_id)) {
-		if (flags & XFS_QMOPT_DOWARN)
-			xfs_alert(mp,
-			"%s : ondisk-dquot 0x%p, ID mismatch: "
-			"0x%x expected, found id 0x%x",
-			str, ddq, id, be32_to_cpu(ddq->d_id));
-		errs++;
-	}
-
-	if (!errs && ddq->d_id) {
-		if (ddq->d_blk_softlimit &&
-		    be64_to_cpu(ddq->d_bcount) >
-				be64_to_cpu(ddq->d_blk_softlimit)) {
-			if (!ddq->d_btimer) {
-				if (flags & XFS_QMOPT_DOWARN)
-					xfs_alert(mp,
-			"%s : Dquot ID 0x%x (0x%p) BLK TIMER NOT STARTED",
-					str, (int)be32_to_cpu(ddq->d_id), ddq);
-				errs++;
-			}
-		}
-		if (ddq->d_ino_softlimit &&
-		    be64_to_cpu(ddq->d_icount) >
-				be64_to_cpu(ddq->d_ino_softlimit)) {
-			if (!ddq->d_itimer) {
-				if (flags & XFS_QMOPT_DOWARN)
-					xfs_alert(mp,
-			"%s : Dquot ID 0x%x (0x%p) INODE TIMER NOT STARTED",
-					str, (int)be32_to_cpu(ddq->d_id), ddq);
-				errs++;
-			}
-		}
-		if (ddq->d_rtb_softlimit &&
-		    be64_to_cpu(ddq->d_rtbcount) >
-				be64_to_cpu(ddq->d_rtb_softlimit)) {
-			if (!ddq->d_rtbtimer) {
-				if (flags & XFS_QMOPT_DOWARN)
-					xfs_alert(mp,
-			"%s : Dquot ID 0x%x (0x%p) RTBLK TIMER NOT STARTED",
-					str, (int)be32_to_cpu(ddq->d_id), ddq);
-				errs++;
-			}
-		}
-	}
-
-	if (!errs || !(flags & XFS_QMOPT_DQREPAIR))
-		return errs;
-
-	if (flags & XFS_QMOPT_DOWARN)
-		xfs_notice(mp, "Re-initializing dquot ID 0x%x", id);
-
-	/*
-	 * Typically, a repair is only requested by quotacheck.
-	 */
-	ASSERT(id != -1);
-	ASSERT(flags & XFS_QMOPT_DQREPAIR);
-	memset(d, 0, sizeof(xfs_dqblk_t));
-
-	d->dd_diskdq.d_magic = cpu_to_be16(XFS_DQUOT_MAGIC);
-	d->dd_diskdq.d_version = XFS_DQUOT_VERSION;
-	d->dd_diskdq.d_flags = type;
-	d->dd_diskdq.d_id = cpu_to_be32(id);
-
-	if (xfs_sb_version_hascrc(&mp->m_sb)) {
-		uuid_copy(&d->dd_uuid, &mp->m_sb.sb_uuid);
-		xfs_update_cksum((char *)d, sizeof(struct xfs_dqblk),
-				 XFS_DQUOT_CRC_OFF);
-	}
-
-	return errs;
+	xlog_recover_validate_buf_type(mp, bp, buf_f);
 }
 
 /*
@@ -2625,12 +2496,29 @@ xlog_recover_buffer_pass2(
 	}
 
 	/*
-	 * recover the buffer only if we get an LSN from it and it's less than
+	 * Recover the buffer only if we get an LSN from it and it's less than
 	 * the lsn of the transaction we are replaying.
+	 *
+	 * Note that we have to be extremely careful of readahead here.
+	 * Readahead does not attach verfiers to the buffers so if we don't
+	 * actually do any replay after readahead because of the LSN we found
+	 * in the buffer if more recent than that current transaction then we
+	 * need to attach the verifier directly. Failure to do so can lead to
+	 * future recovery actions (e.g. EFI and unlinked list recovery) can
+	 * operate on the buffers and they won't get the verifier attached. This
+	 * can lead to blocks on disk having the correct content but a stale
+	 * CRC.
+	 *
+	 * It is safe to assume these clean buffers are currently up to date.
+	 * If the buffer is dirtied by a later transaction being replayed, then
+	 * the verifier will be reset to match whatever recover turns that
+	 * buffer into.
 	 */
 	lsn = xlog_recover_get_buf_lsn(mp, bp);
-	if (lsn && lsn != -1 && XFS_LSN_CMP(lsn, current_lsn) >= 0)
+	if (lsn && lsn != -1 && XFS_LSN_CMP(lsn, current_lsn) >= 0) {
+		xlog_recover_validate_buf_type(mp, bp, buf_f);
 		goto out_release;
+	}
 
 	if (buf_f->blf_flags & XFS_BLF_INODE_BUF) {
 		error = xlog_recover_do_inode_buffer(mp, item, bp, buf_f);
@@ -2649,19 +2537,19 @@ xlog_recover_buffer_pass2(
 	 *
 	 * Also make sure that only inode buffers with good sizes stay in
 	 * the buffer cache.  The kernel moves inodes in buffers of 1 block
-	 * or XFS_INODE_CLUSTER_SIZE bytes, whichever is bigger.  The inode
+	 * or mp->m_inode_cluster_size bytes, whichever is bigger.  The inode
 	 * buffers in the log can be a different size if the log was generated
 	 * by an older kernel using unclustered inode buffers or a newer kernel
 	 * running with a different inode cluster size.  Regardless, if the
-	 * the inode buffer size isn't MAX(blocksize, XFS_INODE_CLUSTER_SIZE)
-	 * for *our* value of XFS_INODE_CLUSTER_SIZE, then we need to keep
+	 * the inode buffer size isn't MAX(blocksize, mp->m_inode_cluster_size)
+	 * for *our* value of mp->m_inode_cluster_size, then we need to keep
 	 * the buffer out of the buffer cache so that the buffer won't
 	 * overlap with future reads of those inodes.
 	 */
 	if (XFS_DINODE_MAGIC ==
 	    be16_to_cpu(*((__be16 *)xfs_buf_offset(bp, 0))) &&
 	    (BBTOB(bp->b_io_length) != MAX(log->l_mp->m_sb.sb_blocksize,
-			(__uint32_t)XFS_INODE_CLUSTER_SIZE(log->l_mp)))) {
+			(__uint32_t)log->l_mp->m_inode_cluster_size))) {
 		xfs_buf_stale(bp);
 		error = xfs_bwrite(bp);
 	} else {
@@ -3125,7 +3013,7 @@ xlog_recover_dquot_pass2(
 	 */
 	dq_f = item->ri_buf[0].i_addr;
 	ASSERT(dq_f);
-	error = xfs_qm_dqcheck(mp, recddq, dq_f->qlf_id, 0, XFS_QMOPT_DOWARN,
+	error = xfs_dqcheck(mp, recddq, dq_f->qlf_id, 0, XFS_QMOPT_DOWARN,
 			   "xlog_recover_dquot_pass2 (log copy)");
 	if (error)
 		return XFS_ERROR(EIO);
@@ -3145,7 +3033,7 @@ xlog_recover_dquot_pass2(
 	 * was among a chunk of dquots created earlier, and we did some
 	 * minimal initialization then.
 	 */
-	error = xfs_qm_dqcheck(mp, ddq, dq_f->qlf_id, 0, XFS_QMOPT_DOWARN,
+	error = xfs_dqcheck(mp, ddq, dq_f->qlf_id, 0, XFS_QMOPT_DOWARN,
 			   "xlog_recover_dquot_pass2");
 	if (error) {
 		xfs_buf_relse(bp);
@@ -3334,10 +3222,10 @@ xlog_recover_do_icreate_pass2(
 	}
 
 	/* existing allocation is fixed value */
-	ASSERT(count == XFS_IALLOC_INODES(mp));
-	ASSERT(length == XFS_IALLOC_BLOCKS(mp));
-	if (count != XFS_IALLOC_INODES(mp) ||
-	     length != XFS_IALLOC_BLOCKS(mp)) {
+	ASSERT(count == mp->m_ialloc_inos);
+	ASSERT(length == mp->m_ialloc_blks);
+	if (count != mp->m_ialloc_inos ||
+	     length != mp->m_ialloc_blks) {
 		xfs_warn(log->l_mp, "xlog_recover_do_icreate_trans: bad count 2");
 		return EINVAL;
 	}
@@ -3743,8 +3631,10 @@ xlog_recover_process_data(
 				error = XFS_ERROR(EIO);
 				break;
 			}
-			if (error)
+			if (error) {
+				xlog_recover_free_trans(trans);
 				return error;
+			}
 		}
 		dp += be32_to_cpu(ohead->oh_len);
 		num_logops--;
@@ -4077,7 +3967,7 @@ xlog_unpack_data_crc(
 	if (crc != rhead->h_crc) {
 		if (rhead->h_crc || xfs_sb_version_hascrc(&log->l_mp->m_sb)) {
 			xfs_alert(log->l_mp,
-		"log record CRC mismatch: found 0x%x, expected 0x%x.\n",
+		"log record CRC mismatch: found 0x%x, expected 0x%x.",
 					le32_to_cpu(rhead->h_crc),
 					le32_to_cpu(crc));
 			xfs_hex_dump(dp, 32);
@@ -4532,7 +4422,13 @@ xlog_do_recover(
 	XFS_BUF_READ(bp);
 	XFS_BUF_UNASYNC(bp);
 	bp->b_ops = &xfs_sb_buf_ops;
-	xfsbdstrat(log->l_mp, bp);
+
+	if (XFS_FORCED_SHUTDOWN(log->l_mp)) {
+		xfs_buf_relse(bp);
+		return XFS_ERROR(EIO);
+	}
+
+	xfs_buf_iorequest(bp);
 	error = xfs_buf_iowait(bp);
 	if (error) {
 		xfs_buf_ioerror_alert(bp, __func__);

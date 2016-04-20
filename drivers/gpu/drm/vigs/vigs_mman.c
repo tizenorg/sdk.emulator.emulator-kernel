@@ -1,6 +1,7 @@
 #include "vigs_mman.h"
 #include "vigs_fence.h"
 #include <ttm/ttm_placement.h>
+#include <ttm/ttm_page_alloc.h>
 
 /*
  * This is TTM-based memory manager for VIGS, it supports 4 memory placements:
@@ -158,15 +159,6 @@ static struct ttm_tt *vigs_ttm_tt_create(struct ttm_bo_device *bo_dev,
     return &dma_tt->ttm;
 }
 
-static int vigs_ttm_tt_populate(struct ttm_tt *tt)
-{
-    return 0;
-}
-
-static void vigs_ttm_tt_unpopulate(struct ttm_tt *tt)
-{
-}
-
 /*
  * @}
  */
@@ -202,7 +194,7 @@ static int vigs_ttm_init_mem_type(struct ttm_bo_device *bo_dev,
         man->flags = TTM_MEMTYPE_FLAG_FIXED |
                      TTM_MEMTYPE_FLAG_MAPPABLE;
         man->available_caching = TTM_PL_MASK_CACHING;
-        man->default_caching = TTM_PL_FLAG_CACHED;
+        man->default_caching = TTM_PL_FLAG_WC;
         break;
     default:
         DRM_ERROR("unsupported memory type: %u\n", (unsigned)type);
@@ -324,7 +316,7 @@ static int vigs_ttm_fault_reserve_notify(struct ttm_buffer_object *bo)
      * It's GPU memory page fault. Move this buffer into VRAM.
      */
 
-    placements[0] = TTM_PL_FLAG_CACHED | TTM_PL_FLAG_VRAM;
+    placements[0] = TTM_PL_FLAG_WC | TTM_PL_FLAG_VRAM;
 
     memset(&placement, 0, sizeof(placement));
 
@@ -389,8 +381,8 @@ static void vigs_ttm_io_mem_free(struct ttm_bo_device *bo_dev,
 static struct ttm_bo_driver vigs_ttm_bo_driver =
 {
     .ttm_tt_create = &vigs_ttm_tt_create, /* Needed for ttm_bo_type_kernel and TTM_PL_TT */
-    .ttm_tt_populate = &vigs_ttm_tt_populate, /* Needed for TTM_PL_TT */
-    .ttm_tt_unpopulate = &vigs_ttm_tt_unpopulate, /* Needed for TTM_PL_TT */
+    .ttm_tt_populate = &ttm_pool_populate, /* Needed for TTM_PL_TT */
+    .ttm_tt_unpopulate = &ttm_pool_unpopulate, /* Needed for TTM_PL_TT */
     .invalidate_caches = &vigs_ttm_invalidate_caches,
     .init_mem_type = &vigs_ttm_init_mem_type,
     .evict_flags = &vigs_ttm_evict_flags,

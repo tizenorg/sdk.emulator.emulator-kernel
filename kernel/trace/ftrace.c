@@ -331,11 +331,11 @@ static void update_ftrace_function(void)
 		func = ftrace_ops_list_func;
 	}
 
+	update_function_graph_func();
+
 	/* If there's no change, then do nothing more here */
 	if (ftrace_trace_function == func)
 		return;
-
-	update_function_graph_func();
 
 	/*
 	 * If we are using the list function, it doesn't care
@@ -1115,19 +1115,6 @@ static __init void ftrace_profile_debugfs(struct dentry *d_tracer)
 #endif /* CONFIG_FUNCTION_PROFILER */
 
 static struct pid * const ftrace_swapper_pid = &init_struct_pid;
-
-loff_t
-ftrace_filter_lseek(struct file *file, loff_t offset, int whence)
-{
-	loff_t ret;
-
-	if (file->f_mode & FMODE_READ)
-		ret = seq_lseek(file, offset, whence);
-	else
-		file->f_pos = ret = 1;
-
-	return ret;
-}
 
 #ifdef CONFIG_DYNAMIC_FTRACE
 
@@ -2810,7 +2797,7 @@ static void ftrace_filter_reset(struct ftrace_hash *hash)
  * routine, you can use ftrace_filter_write() for the write
  * routine if @flag has FTRACE_ITER_FILTER set, or
  * ftrace_notrace_write() if @flag has FTRACE_ITER_NOTRACE set.
- * ftrace_filter_lseek() should be used as the lseek routine, and
+ * tracing_lseek() should be used as the lseek routine, and
  * release must call ftrace_regex_release().
  */
 int
@@ -3378,7 +3365,11 @@ void unregister_ftrace_function_probe_all(char *glob)
 static LIST_HEAD(ftrace_commands);
 static DEFINE_MUTEX(ftrace_cmd_mutex);
 
-int register_ftrace_command(struct ftrace_func_command *cmd)
+/*
+ * Currently we only register ftrace commands from __init, so mark this
+ * __init too.
+ */
+__init int register_ftrace_command(struct ftrace_func_command *cmd)
 {
 	struct ftrace_func_command *p;
 	int ret = 0;
@@ -3397,7 +3388,11 @@ int register_ftrace_command(struct ftrace_func_command *cmd)
 	return ret;
 }
 
-int unregister_ftrace_command(struct ftrace_func_command *cmd)
+/*
+ * Currently we only unregister ftrace commands from __init, so mark
+ * this __init too.
+ */
+__init int unregister_ftrace_command(struct ftrace_func_command *cmd)
 {
 	struct ftrace_func_command *p, *n;
 	int ret = -ENODEV;
@@ -3712,7 +3707,7 @@ __setup("ftrace_filter=", set_ftrace_filter);
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 static char ftrace_graph_buf[FTRACE_FILTER_SIZE] __initdata;
-static int ftrace_set_func(unsigned long *array, int *idx, char *buffer);
+static int ftrace_set_func(unsigned long *array, int *idx, int size, char *buffer);
 
 static int __init set_graph_function(char *str)
 {
@@ -3730,7 +3725,7 @@ static void __init set_ftrace_early_graph(char *buf)
 		func = strsep(&buf, ",");
 		/* we allow only one expression at a time */
 		ret = ftrace_set_func(ftrace_graph_funcs, &ftrace_graph_count,
-				      func);
+				      FTRACE_GRAPH_MAX_FUNCS, func);
 		if (ret)
 			printk(KERN_DEBUG "ftrace: function %s not "
 					  "traceable\n", func);
@@ -3830,7 +3825,7 @@ static const struct file_operations ftrace_filter_fops = {
 	.open = ftrace_filter_open,
 	.read = seq_read,
 	.write = ftrace_filter_write,
-	.llseek = ftrace_filter_lseek,
+	.llseek = tracing_lseek,
 	.release = ftrace_regex_release,
 };
 
@@ -3838,7 +3833,7 @@ static const struct file_operations ftrace_notrace_fops = {
 	.open = ftrace_notrace_open,
 	.read = seq_read,
 	.write = ftrace_notrace_write,
-	.llseek = ftrace_filter_lseek,
+	.llseek = tracing_lseek,
 	.release = ftrace_regex_release,
 };
 
@@ -3847,15 +3842,25 @@ static const struct file_operations ftrace_notrace_fops = {
 static DEFINE_MUTEX(graph_lock);
 
 int ftrace_graph_count;
-int ftrace_graph_filter_enabled;
+int ftrace_graph_notrace_count;
 unsigned long ftrace_graph_funcs[FTRACE_GRAPH_MAX_FUNCS] __read_mostly;
+unsigned long ftrace_graph_notrace_funcs[FTRACE_GRAPH_MAX_FUNCS] __read_mostly;
+
+struct ftrace_graph_data {
+	unsigned long *table;
+	size_t size;
+	int *count;
+	const struct seq_operations *seq_ops;
+};
 
 static void *
 __g_next(struct seq_file *m, loff_t *pos)
 {
-	if (*pos >= ftrace_graph_count)
+	struct ftrace_graph_data *fgd = m->private;
+
+	if (*pos >= *fgd->count)
 		return NULL;
-	return &ftrace_graph_funcs[*pos];
+	return &fgd->table[*pos];
 }
 
 static void *
@@ -3867,10 +3872,12 @@ g_next(struct seq_file *m, void *v, loff_t *pos)
 
 static void *g_start(struct seq_file *m, loff_t *pos)
 {
+	struct ftrace_graph_data *fgd = m->private;
+
 	mutex_lock(&graph_lock);
 
 	/* Nothing, tell g_show to print all functions are enabled */
-	if (!ftrace_graph_filter_enabled && !*pos)
+	if (!*fgd->count && !*pos)
 		return (void *)1;
 
 	return __g_next(m, pos);
@@ -3906,38 +3913,88 @@ static const struct seq_operations ftrace_graph_seq_ops = {
 };
 
 static int
-ftrace_graph_open(struct inode *inode, struct file *file)
+__ftrace_graph_open(struct inode *inode, struct file *file,
+		    struct ftrace_graph_data *fgd)
 {
 	int ret = 0;
-
-	if (unlikely(ftrace_disabled))
-		return -ENODEV;
 
 	mutex_lock(&graph_lock);
 	if ((file->f_mode & FMODE_WRITE) &&
 	    (file->f_flags & O_TRUNC)) {
-		ftrace_graph_filter_enabled = 0;
-		ftrace_graph_count = 0;
-		memset(ftrace_graph_funcs, 0, sizeof(ftrace_graph_funcs));
+		*fgd->count = 0;
+		memset(fgd->table, 0, fgd->size * sizeof(*fgd->table));
 	}
 	mutex_unlock(&graph_lock);
 
-	if (file->f_mode & FMODE_READ)
-		ret = seq_open(file, &ftrace_graph_seq_ops);
+	if (file->f_mode & FMODE_READ) {
+		ret = seq_open(file, fgd->seq_ops);
+		if (!ret) {
+			struct seq_file *m = file->private_data;
+			m->private = fgd;
+		}
+	} else
+		file->private_data = fgd;
 
 	return ret;
 }
 
 static int
+ftrace_graph_open(struct inode *inode, struct file *file)
+{
+	struct ftrace_graph_data *fgd;
+
+	if (unlikely(ftrace_disabled))
+		return -ENODEV;
+
+	fgd = kmalloc(sizeof(*fgd), GFP_KERNEL);
+	if (fgd == NULL)
+		return -ENOMEM;
+
+	fgd->table = ftrace_graph_funcs;
+	fgd->size = FTRACE_GRAPH_MAX_FUNCS;
+	fgd->count = &ftrace_graph_count;
+	fgd->seq_ops = &ftrace_graph_seq_ops;
+
+	return __ftrace_graph_open(inode, file, fgd);
+}
+
+static int
+ftrace_graph_notrace_open(struct inode *inode, struct file *file)
+{
+	struct ftrace_graph_data *fgd;
+
+	if (unlikely(ftrace_disabled))
+		return -ENODEV;
+
+	fgd = kmalloc(sizeof(*fgd), GFP_KERNEL);
+	if (fgd == NULL)
+		return -ENOMEM;
+
+	fgd->table = ftrace_graph_notrace_funcs;
+	fgd->size = FTRACE_GRAPH_MAX_FUNCS;
+	fgd->count = &ftrace_graph_notrace_count;
+	fgd->seq_ops = &ftrace_graph_seq_ops;
+
+	return __ftrace_graph_open(inode, file, fgd);
+}
+
+static int
 ftrace_graph_release(struct inode *inode, struct file *file)
 {
-	if (file->f_mode & FMODE_READ)
+	if (file->f_mode & FMODE_READ) {
+		struct seq_file *m = file->private_data;
+
+		kfree(m->private);
 		seq_release(inode, file);
+	} else {
+		kfree(file->private_data);
+	}
+
 	return 0;
 }
 
 static int
-ftrace_set_func(unsigned long *array, int *idx, char *buffer)
+ftrace_set_func(unsigned long *array, int *idx, int size, char *buffer)
 {
 	struct dyn_ftrace *rec;
 	struct ftrace_page *pg;
@@ -3950,7 +4007,7 @@ ftrace_set_func(unsigned long *array, int *idx, char *buffer)
 
 	/* decode regex */
 	type = filter_parse_regex(buffer, strlen(buffer), &search, &not);
-	if (!not && *idx >= FTRACE_GRAPH_MAX_FUNCS)
+	if (!not && *idx >= size)
 		return -EBUSY;
 
 	search_len = strlen(search);
@@ -3978,7 +4035,7 @@ ftrace_set_func(unsigned long *array, int *idx, char *buffer)
 				fail = 0;
 				if (!exists) {
 					array[(*idx)++] = rec->ip;
-					if (*idx >= FTRACE_GRAPH_MAX_FUNCS)
+					if (*idx >= size)
 						goto out;
 				}
 			} else {
@@ -3996,8 +4053,6 @@ out:
 	if (fail)
 		return -EINVAL;
 
-	ftrace_graph_filter_enabled = !!(*idx);
-
 	return 0;
 }
 
@@ -4006,36 +4061,33 @@ ftrace_graph_write(struct file *file, const char __user *ubuf,
 		   size_t cnt, loff_t *ppos)
 {
 	struct trace_parser parser;
-	ssize_t read, ret;
+	ssize_t read, ret = 0;
+	struct ftrace_graph_data *fgd = file->private_data;
 
 	if (!cnt)
 		return 0;
 
-	mutex_lock(&graph_lock);
-
-	if (trace_parser_get_init(&parser, FTRACE_BUFF_MAX)) {
-		ret = -ENOMEM;
-		goto out_unlock;
-	}
+	if (trace_parser_get_init(&parser, FTRACE_BUFF_MAX))
+		return -ENOMEM;
 
 	read = trace_get_user(&parser, ubuf, cnt, ppos);
 
 	if (read >= 0 && trace_parser_loaded((&parser))) {
 		parser.buffer[parser.idx] = 0;
 
+		mutex_lock(&graph_lock);
+
 		/* we allow only one expression at a time */
-		ret = ftrace_set_func(ftrace_graph_funcs, &ftrace_graph_count,
-					parser.buffer);
-		if (ret)
-			goto out_free;
+		ret = ftrace_set_func(fgd->table, fgd->count, fgd->size,
+				      parser.buffer);
+
+		mutex_unlock(&graph_lock);
 	}
 
-	ret = read;
+	if (!ret)
+		ret = read;
 
-out_free:
 	trace_parser_put(&parser);
-out_unlock:
-	mutex_unlock(&graph_lock);
 
 	return ret;
 }
@@ -4044,7 +4096,15 @@ static const struct file_operations ftrace_graph_fops = {
 	.open		= ftrace_graph_open,
 	.read		= seq_read,
 	.write		= ftrace_graph_write,
-	.llseek		= ftrace_filter_lseek,
+	.llseek		= tracing_lseek,
+	.release	= ftrace_graph_release,
+};
+
+static const struct file_operations ftrace_graph_notrace_fops = {
+	.open		= ftrace_graph_notrace_open,
+	.read		= seq_read,
+	.write		= ftrace_graph_write,
+	.llseek		= tracing_lseek,
 	.release	= ftrace_graph_release,
 };
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
@@ -4068,6 +4128,9 @@ static __init int ftrace_init_dyn_debugfs(struct dentry *d_tracer)
 	trace_create_file("set_graph_function", 0444, d_tracer,
 				    NULL,
 				    &ftrace_graph_fops);
+	trace_create_file("set_graph_notrace", 0444, d_tracer,
+				    NULL,
+				    &ftrace_graph_notrace_fops);
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
 
 	return 0;
@@ -4252,16 +4315,11 @@ static void ftrace_init_module(struct module *mod,
 	ftrace_process_locs(mod, start, end);
 }
 
-static int ftrace_module_notify_enter(struct notifier_block *self,
-				      unsigned long val, void *data)
+void ftrace_module_init(struct module *mod)
 {
-	struct module *mod = data;
-
-	if (val == MODULE_STATE_COMING)
-		ftrace_init_module(mod, mod->ftrace_callsites,
-				   mod->ftrace_callsites +
-				   mod->num_ftrace_callsites);
-	return 0;
+	ftrace_init_module(mod, mod->ftrace_callsites,
+			   mod->ftrace_callsites +
+			   mod->num_ftrace_callsites);
 }
 
 static int ftrace_module_notify_exit(struct notifier_block *self,
@@ -4275,22 +4333,12 @@ static int ftrace_module_notify_exit(struct notifier_block *self,
 	return 0;
 }
 #else
-static int ftrace_module_notify_enter(struct notifier_block *self,
-				      unsigned long val, void *data)
-{
-	return 0;
-}
 static int ftrace_module_notify_exit(struct notifier_block *self,
 				     unsigned long val, void *data)
 {
 	return 0;
 }
 #endif /* CONFIG_MODULES */
-
-struct notifier_block ftrace_module_enter_nb = {
-	.notifier_call = ftrace_module_notify_enter,
-	.priority = INT_MAX,	/* Run before anything that can use kprobes */
-};
 
 struct notifier_block ftrace_module_exit_nb = {
 	.notifier_call = ftrace_module_notify_exit,
@@ -4327,10 +4375,6 @@ void __init ftrace_init(void)
 	ret = ftrace_process_locs(NULL,
 				  __start_mcount_loc,
 				  __stop_mcount_loc);
-
-	ret = register_module_notifier(&ftrace_module_enter_nb);
-	if (ret)
-		pr_warning("Failed to register trace ftrace module enter notifier\n");
 
 	ret = register_module_notifier(&ftrace_module_exit_nb);
 	if (ret)
@@ -4394,12 +4438,21 @@ ftrace_ops_control_func(unsigned long ip, unsigned long parent_ip,
 	 */
 	preempt_disable_notrace();
 	trace_recursion_set(TRACE_CONTROL_BIT);
+
+	/*
+	 * Control funcs (perf) uses RCU. Only trace if
+	 * RCU is currently active.
+	 */
+	if (!rcu_is_watching())
+		goto out;
+
 	do_for_each_ftrace_op(op, ftrace_control_list) {
 		if (!(op->flags & FTRACE_OPS_FL_STUB) &&
 		    !ftrace_function_local_disabled(op) &&
 		    ftrace_ops_test(op, ip, regs))
 			op->func(ip, parent_ip, op, regs);
 	} while_for_each_ftrace_op(op);
+ out:
 	trace_recursion_clear(TRACE_CONTROL_BIT);
 	preempt_enable_notrace();
 }
@@ -4705,7 +4758,7 @@ static const struct file_operations ftrace_pid_fops = {
 	.open		= ftrace_pid_open,
 	.write		= ftrace_pid_write,
 	.read		= seq_read,
-	.llseek		= ftrace_filter_lseek,
+	.llseek		= tracing_lseek,
 	.release	= ftrace_pid_release,
 };
 

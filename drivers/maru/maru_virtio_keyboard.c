@@ -88,8 +88,8 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 		return;
 	}
 
-        VKBD_LOG(KERN_DEBUG, "vqidx: %d\n", vqidx);
-        while (1) {
+	VKBD_LOG(KERN_DEBUG, "vqidx: %d\n", vqidx);
+	while (1) {
 		memcpy(&kbdevent, &vkbd->kbdevt[vqidx], sizeof(kbdevent));
 #if 1
 		if (kbdevent.code == 0) {
@@ -106,7 +106,7 @@ static void vq_keyboard_handle(struct virtqueue *vq)
 			vqidx = 0;
 		}
 	}
-	err = virtqueue_add_inbuf(vq, vkbd->sg, KBD_BUF_SIZE, (void *)KBD_BUF_SIZE, GFP_ATOMIC);
+	err = virtqueue_add_inbuf(vq, vkbd->sg, KBD_BUF_SIZE, (void *)vkbd->kbdevt, GFP_ATOMIC);
 	if (err < 0) {
 		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
 		return;
@@ -177,7 +177,7 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 				sizeof(struct EmulKbdEvent));
 	}
 
-	ret = virtqueue_add_inbuf(vkbd->vq, vkbd->sg, KBD_BUF_SIZE, (void *)KBD_BUF_SIZE, GFP_ATOMIC);
+	ret = virtqueue_add_inbuf(vkbd->vq, vkbd->sg, KBD_BUF_SIZE, (void *)vkbd->kbdevt, GFP_ATOMIC);
 	if (ret < 0) {
 		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
 		kfree(vkbd);

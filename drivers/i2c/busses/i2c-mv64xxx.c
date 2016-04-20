@@ -748,8 +748,7 @@ mv64xxx_of_config(struct mv64xxx_i2c_data *drv_data,
 	}
 	tclk = clk_get_rate(drv_data->clk);
 
-	rc = of_property_read_u32(np, "clock-frequency", &bus_freq);
-	if (rc)
+	if (of_property_read_u32(np, "clock-frequency", &bus_freq))
 		bus_freq = 100000; /* 100kHz by default */
 
 	if (!mv64xxx_find_baud_factors(bus_freq, tclk,
@@ -911,7 +910,7 @@ static struct platform_driver mv64xxx_i2c_driver = {
 	.driver	= {
 		.owner	= THIS_MODULE,
 		.name	= MV64XXX_I2C_CTLR_NAME,
-		.of_match_table = of_match_ptr(mv64xxx_i2c_of_match_table),
+		.of_match_table = mv64xxx_i2c_of_match_table,
 	},
 };
 

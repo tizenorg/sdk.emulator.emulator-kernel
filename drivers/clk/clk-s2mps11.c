@@ -60,7 +60,7 @@ static int s2mps11_clk_prepare(struct clk_hw *hw)
 	struct s2mps11_clk *s2mps11 = to_s2mps11_clk(hw);
 	int ret;
 
-	ret = regmap_update_bits(s2mps11->iodev->regmap,
+	ret = regmap_update_bits(s2mps11->iodev->regmap_pmic,
 				S2MPS11_REG_RTC_CTRL,
 				 s2mps11->mask, s2mps11->mask);
 	if (!ret)
@@ -74,7 +74,7 @@ static void s2mps11_clk_unprepare(struct clk_hw *hw)
 	struct s2mps11_clk *s2mps11 = to_s2mps11_clk(hw);
 	int ret;
 
-	ret = regmap_update_bits(s2mps11->iodev->regmap, S2MPS11_REG_RTC_CTRL,
+	ret = regmap_update_bits(s2mps11->iodev->regmap_pmic, S2MPS11_REG_RTC_CTRL,
 			   s2mps11->mask, ~s2mps11->mask);
 
 	if (!ret)
@@ -130,7 +130,7 @@ static struct device_node *s2mps11_clk_parse_dt(struct platform_device *pdev)
 	int i;
 
 	if (!iodev->dev->of_node)
-		return NULL;
+		return ERR_PTR(-EINVAL);
 
 	clk_np = of_find_node_by_name(iodev->dev->of_node, "clocks");
 	if (!clk_np) {
@@ -174,7 +174,7 @@ static int s2mps11_clk_probe(struct platform_device *pdev)
 		s2mps11_clk->hw.init = &s2mps11_clks_init[i];
 		s2mps11_clk->mask = 1 << i;
 
-		ret = regmap_read(s2mps11_clk->iodev->regmap,
+		ret = regmap_read(s2mps11_clk->iodev->regmap_pmic,
 				  S2MPS11_REG_RTC_CTRL, &val);
 		if (ret < 0)
 			goto err_reg;
@@ -190,15 +190,12 @@ static int s2mps11_clk_probe(struct platform_device *pdev)
 			goto err_reg;
 		}
 
-		s2mps11_clk->lookup = devm_kzalloc(&pdev->dev,
-					sizeof(struct clk_lookup), GFP_KERNEL);
+		s2mps11_clk->lookup = clkdev_alloc(s2mps11_clk->clk,
+					s2mps11_name(s2mps11_clk), NULL);
 		if (!s2mps11_clk->lookup) {
 			ret = -ENOMEM;
 			goto err_lup;
 		}
-
-		s2mps11_clk->lookup->con_id = s2mps11_name(s2mps11_clk);
-		s2mps11_clk->lookup->clk = s2mps11_clk->clk;
 
 		clkdev_add(s2mps11_clk->lookup);
 	}

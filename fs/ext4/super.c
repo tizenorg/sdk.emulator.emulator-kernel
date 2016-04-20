@@ -140,8 +140,7 @@ static __le32 ext4_superblock_csum(struct super_block *sb,
 int ext4_superblock_csum_verify(struct super_block *sb,
 				struct ext4_super_block *es)
 {
-	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				       EXT4_FEATURE_RO_COMPAT_METADATA_CSUM))
+	if (!ext4_has_metadata_csum(sb))
 		return 1;
 
 	return es->s_checksum == ext4_superblock_csum(sb, es);
@@ -151,8 +150,7 @@ void ext4_superblock_csum_set(struct super_block *sb)
 {
 	struct ext4_super_block *es = EXT4_SB(sb)->s_es;
 
-	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
-		EXT4_FEATURE_RO_COMPAT_METADATA_CSUM))
+	if (!ext4_has_metadata_csum(sb))
 		return;
 
 	es->s_checksum = ext4_superblock_csum(sb, es);
@@ -411,20 +409,26 @@ static void ext4_handle_error(struct super_block *sb)
 			sb->s_id);
 }
 
+#define ext4_error_ratelimit(sb)					\
+		___ratelimit(&(EXT4_SB(sb)->s_err_ratelimit_state),	\
+			     "EXT4-fs error")
+
 void __ext4_error(struct super_block *sb, const char *function,
 		  unsigned int line, const char *fmt, ...)
 {
 	struct va_format vaf;
 	va_list args;
 
-	va_start(args, fmt);
-	vaf.fmt = fmt;
-	vaf.va = &args;
-	printk(KERN_CRIT "EXT4-fs error (device %s): %s:%d: comm %s: %pV\n",
-	       sb->s_id, function, line, current->comm, &vaf);
-	va_end(args);
+	if (ext4_error_ratelimit(sb)) {
+		va_start(args, fmt);
+		vaf.fmt = fmt;
+		vaf.va = &args;
+		printk(KERN_CRIT
+		       "EXT4-fs error (device %s): %s:%d: comm %s: %pV\n",
+		       sb->s_id, function, line, current->comm, &vaf);
+		va_end(args);
+	}
 	save_error_info(sb, function, line);
-
 	ext4_handle_error(sb);
 }
 
@@ -438,22 +442,23 @@ void __ext4_error_inode(struct inode *inode, const char *function,
 
 	es->s_last_error_ino = cpu_to_le32(inode->i_ino);
 	es->s_last_error_block = cpu_to_le64(block);
+	if (ext4_error_ratelimit(inode->i_sb)) {
+		va_start(args, fmt);
+		vaf.fmt = fmt;
+		vaf.va = &args;
+		if (block)
+			printk(KERN_CRIT "EXT4-fs error (device %s): %s:%d: "
+			       "inode #%lu: block %llu: comm %s: %pV\n",
+			       inode->i_sb->s_id, function, line, inode->i_ino,
+			       block, current->comm, &vaf);
+		else
+			printk(KERN_CRIT "EXT4-fs error (device %s): %s:%d: "
+			       "inode #%lu: comm %s: %pV\n",
+			       inode->i_sb->s_id, function, line, inode->i_ino,
+			       current->comm, &vaf);
+		va_end(args);
+	}
 	save_error_info(inode->i_sb, function, line);
-	va_start(args, fmt);
-	vaf.fmt = fmt;
-	vaf.va = &args;
-	if (block)
-		printk(KERN_CRIT "EXT4-fs error (device %s): %s:%d: "
-		       "inode #%lu: block %llu: comm %s: %pV\n",
-		       inode->i_sb->s_id, function, line, inode->i_ino,
-		       block, current->comm, &vaf);
-	else
-		printk(KERN_CRIT "EXT4-fs error (device %s): %s:%d: "
-		       "inode #%lu: comm %s: %pV\n",
-		       inode->i_sb->s_id, function, line, inode->i_ino,
-		       current->comm, &vaf);
-	va_end(args);
-
 	ext4_handle_error(inode->i_sb);
 }
 
@@ -469,27 +474,28 @@ void __ext4_error_file(struct file *file, const char *function,
 
 	es = EXT4_SB(inode->i_sb)->s_es;
 	es->s_last_error_ino = cpu_to_le32(inode->i_ino);
+	if (ext4_error_ratelimit(inode->i_sb)) {
+		path = d_path(&(file->f_path), pathname, sizeof(pathname));
+		if (IS_ERR(path))
+			path = "(unknown)";
+		va_start(args, fmt);
+		vaf.fmt = fmt;
+		vaf.va = &args;
+		if (block)
+			printk(KERN_CRIT
+			       "EXT4-fs error (device %s): %s:%d: inode #%lu: "
+			       "block %llu: comm %s: path %s: %pV\n",
+			       inode->i_sb->s_id, function, line, inode->i_ino,
+			       block, current->comm, path, &vaf);
+		else
+			printk(KERN_CRIT
+			       "EXT4-fs error (device %s): %s:%d: inode #%lu: "
+			       "comm %s: path %s: %pV\n",
+			       inode->i_sb->s_id, function, line, inode->i_ino,
+			       current->comm, path, &vaf);
+		va_end(args);
+	}
 	save_error_info(inode->i_sb, function, line);
-	path = d_path(&(file->f_path), pathname, sizeof(pathname));
-	if (IS_ERR(path))
-		path = "(unknown)";
-	va_start(args, fmt);
-	vaf.fmt = fmt;
-	vaf.va = &args;
-	if (block)
-		printk(KERN_CRIT
-		       "EXT4-fs error (device %s): %s:%d: inode #%lu: "
-		       "block %llu: comm %s: path %s: %pV\n",
-		       inode->i_sb->s_id, function, line, inode->i_ino,
-		       block, current->comm, path, &vaf);
-	else
-		printk(KERN_CRIT
-		       "EXT4-fs error (device %s): %s:%d: inode #%lu: "
-		       "comm %s: path %s: %pV\n",
-		       inode->i_sb->s_id, function, line, inode->i_ino,
-		       current->comm, path, &vaf);
-	va_end(args);
-
 	ext4_handle_error(inode->i_sb);
 }
 
@@ -543,11 +549,13 @@ void __ext4_std_error(struct super_block *sb, const char *function,
 	    (sb->s_flags & MS_RDONLY))
 		return;
 
-	errstr = ext4_decode_error(sb, errno, nbuf);
-	printk(KERN_CRIT "EXT4-fs error (device %s) in %s:%d: %s\n",
-	       sb->s_id, function, line, errstr);
-	save_error_info(sb, function, line);
+	if (ext4_error_ratelimit(sb)) {
+		errstr = ext4_decode_error(sb, errno, nbuf);
+		printk(KERN_CRIT "EXT4-fs error (device %s) in %s:%d: %s\n",
+		       sb->s_id, function, line, errstr);
+	}
 
+	save_error_info(sb, function, line);
 	ext4_handle_error(sb);
 }
 
@@ -597,6 +605,9 @@ void __ext4_msg(struct super_block *sb,
 	struct va_format vaf;
 	va_list args;
 
+	if (!___ratelimit(&(EXT4_SB(sb)->s_msg_ratelimit_state), "EXT4-fs"))
+		return;
+
 	va_start(args, fmt);
 	vaf.fmt = fmt;
 	vaf.va = &args;
@@ -609,6 +620,10 @@ void __ext4_warning(struct super_block *sb, const char *function,
 {
 	struct va_format vaf;
 	va_list args;
+
+	if (!___ratelimit(&(EXT4_SB(sb)->s_warning_ratelimit_state),
+			  "EXT4-fs warning"))
+		return;
 
 	va_start(args, fmt);
 	vaf.fmt = fmt;
@@ -633,18 +648,20 @@ __acquires(bitlock)
 	es->s_last_error_block = cpu_to_le64(block);
 	__save_error_info(sb, function, line);
 
-	va_start(args, fmt);
-
-	vaf.fmt = fmt;
-	vaf.va = &args;
-	printk(KERN_CRIT "EXT4-fs error (device %s): %s:%d: group %u, ",
-	       sb->s_id, function, line, grp);
-	if (ino)
-		printk(KERN_CONT "inode %lu: ", ino);
-	if (block)
-		printk(KERN_CONT "block %llu:", (unsigned long long) block);
-	printk(KERN_CONT "%pV\n", &vaf);
-	va_end(args);
+	if (ext4_error_ratelimit(sb)) {
+		va_start(args, fmt);
+		vaf.fmt = fmt;
+		vaf.va = &args;
+		printk(KERN_CRIT "EXT4-fs error (device %s): %s:%d: group %u, ",
+		       sb->s_id, function, line, grp);
+		if (ino)
+			printk(KERN_CONT "inode %lu: ", ino);
+		if (block)
+			printk(KERN_CONT "block %llu:",
+			       (unsigned long long) block);
+		printk(KERN_CONT "%pV\n", &vaf);
+		va_end(args);
+	}
 
 	if (test_opt(sb, ERRORS_CONT)) {
 		ext4_commit_super(sb, 0);
@@ -977,7 +994,7 @@ static struct inode *ext4_nfs_get_inode(struct super_block *sb,
 	 * Currently we don't know the generation for parent directory, so
 	 * a generation of 0 means "accept any"
 	 */
-	inode = ext4_iget(sb, ino);
+	inode = ext4_iget_normal(sb, ino);
 	if (IS_ERR(inode))
 		return ERR_CAST(inode);
 	if (generation && inode->i_generation != generation) {
@@ -1500,8 +1517,6 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
 			arg = JBD2_DEFAULT_MAX_COMMIT_AGE;
 		sbi->s_commit_interval = HZ * arg;
 	} else if (token == Opt_max_batch_time) {
-		if (arg == 0)
-			arg = EXT4_DEF_MAX_BATCH_TIME;
 		sbi->s_max_batch_time = arg;
 	} else if (token == Opt_min_batch_time) {
 		sbi->s_min_batch_time = arg;
@@ -1687,13 +1702,6 @@ static int parse_options(char *options, struct super_block *sb,
 		if (!sbi->s_jquota_fmt) {
 			ext4_msg(sb, KERN_ERR, "journaled quota format "
 					"not specified");
-			return 0;
-		}
-	} else {
-		if (sbi->s_jquota_fmt) {
-			ext4_msg(sb, KERN_ERR, "journaled quota format "
-					"specified with no journaling "
-					"enabled");
 			return 0;
 		}
 	}
@@ -1993,8 +2001,7 @@ static __le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 block_group,
 	__u16 crc = 0;
 	__le32 le_group = cpu_to_le32(block_group);
 
-	if ((sbi->s_es->s_feature_ro_compat &
-	     cpu_to_le32(EXT4_FEATURE_RO_COMPAT_METADATA_CSUM))) {
+	if (ext4_has_metadata_csum(sbi->s_sb)) {
 		/* Use new metadata_csum algorithm */
 		__le16 save_csum;
 		__u32 csum32;
@@ -2012,6 +2019,10 @@ static __le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 block_group,
 	}
 
 	/* old crc16 code */
+	if (!(sbi->s_es->s_feature_ro_compat &
+	      cpu_to_le32(EXT4_FEATURE_RO_COMPAT_GDT_CSUM)))
+		return 0;
+
 	offset = offsetof(struct ext4_group_desc, bg_checksum);
 
 	crc = crc16(~0, sbi->s_es->s_uuid, sizeof(sbi->s_es->s_uuid));
@@ -2606,6 +2617,12 @@ EXT4_RW_ATTR_SBI_UI(mb_group_prealloc, s_mb_group_prealloc);
 EXT4_DEPRECATED_ATTR(max_writeback_mb_bump, 128);
 EXT4_RW_ATTR_SBI_UI(extent_max_zeroout_kb, s_extent_max_zeroout_kb);
 EXT4_ATTR(trigger_fs_error, 0200, NULL, trigger_test_error);
+EXT4_RW_ATTR_SBI_UI(err_ratelimit_interval_ms, s_err_ratelimit_state.interval);
+EXT4_RW_ATTR_SBI_UI(err_ratelimit_burst, s_err_ratelimit_state.burst);
+EXT4_RW_ATTR_SBI_UI(warning_ratelimit_interval_ms, s_warning_ratelimit_state.interval);
+EXT4_RW_ATTR_SBI_UI(warning_ratelimit_burst, s_warning_ratelimit_state.burst);
+EXT4_RW_ATTR_SBI_UI(msg_ratelimit_interval_ms, s_msg_ratelimit_state.interval);
+EXT4_RW_ATTR_SBI_UI(msg_ratelimit_burst, s_msg_ratelimit_state.burst);
 
 static struct attribute *ext4_attrs[] = {
 	ATTR_LIST(delayed_allocation_blocks),
@@ -2623,6 +2640,12 @@ static struct attribute *ext4_attrs[] = {
 	ATTR_LIST(max_writeback_mb_bump),
 	ATTR_LIST(extent_max_zeroout_kb),
 	ATTR_LIST(trigger_fs_error),
+	ATTR_LIST(err_ratelimit_interval_ms),
+	ATTR_LIST(err_ratelimit_burst),
+	ATTR_LIST(warning_ratelimit_interval_ms),
+	ATTR_LIST(warning_ratelimit_burst),
+	ATTR_LIST(msg_ratelimit_interval_ms),
+	ATTR_LIST(msg_ratelimit_burst),
 	NULL,
 };
 
@@ -2762,10 +2785,11 @@ static void print_daily_error_info(unsigned long arg)
 	es = sbi->s_es;
 
 	if (es->s_error_count)
-		ext4_msg(sb, KERN_NOTICE, "error count: %u",
+		/* fsck newer than v1.41.13 is needed to clean this condition. */
+		ext4_msg(sb, KERN_NOTICE, "error count since last fsck: %u",
 			 le32_to_cpu(es->s_error_count));
 	if (es->s_first_error_time) {
-		printk(KERN_NOTICE "EXT4-fs (%s): initial error at %u: %.*s:%d",
+		printk(KERN_NOTICE "EXT4-fs (%s): initial error at time %u: %.*s:%d",
 		       sb->s_id, le32_to_cpu(es->s_first_error_time),
 		       (int) sizeof(es->s_first_error_func),
 		       es->s_first_error_func,
@@ -2779,7 +2803,7 @@ static void print_daily_error_info(unsigned long arg)
 		printk("\n");
 	}
 	if (es->s_last_error_time) {
-		printk(KERN_NOTICE "EXT4-fs (%s): last error at %u: %.*s:%d",
+		printk(KERN_NOTICE "EXT4-fs (%s): last error at time %u: %.*s:%d",
 		       sb->s_id, le32_to_cpu(es->s_last_error_time),
 		       (int) sizeof(es->s_last_error_func),
 		       es->s_last_error_func,
@@ -3037,7 +3061,6 @@ static struct ext4_li_request *ext4_li_request_new(struct super_block *sb,
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct ext4_li_request *elr;
-	unsigned long rnd;
 
 	elr = kzalloc(sizeof(*elr), GFP_KERNEL);
 	if (!elr)
@@ -3052,10 +3075,8 @@ static struct ext4_li_request *ext4_li_request_new(struct super_block *sb,
 	 * spread the inode table initialization requests
 	 * better.
 	 */
-	get_random_bytes(&rnd, sizeof(rnd));
-	elr->lr_next_sched = jiffies + (unsigned long)rnd %
-			     (EXT4_DEF_LI_MAX_START_DELAY * HZ);
-
+	elr->lr_next_sched = jiffies + (prandom_u32() %
+				(EXT4_DEF_LI_MAX_START_DELAY * HZ));
 	return elr;
 }
 
@@ -3140,11 +3161,10 @@ static int set_journal_csum_feature_set(struct super_block *sb)
 	int compat, incompat;
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 
-	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				       EXT4_FEATURE_RO_COMPAT_METADATA_CSUM)) {
-		/* journal checksum v2 */
+	if (ext4_has_metadata_csum(sb)) {
+		/* journal checksum v3 */
 		compat = 0;
-		incompat = JBD2_FEATURE_INCOMPAT_CSUM_V2;
+		incompat = JBD2_FEATURE_INCOMPAT_CSUM_V3;
 	} else {
 		/* journal checksum v1 */
 		compat = JBD2_FEATURE_COMPAT_CHECKSUM;
@@ -3166,6 +3186,7 @@ static int set_journal_csum_feature_set(struct super_block *sb)
 		jbd2_journal_clear_features(sbi->s_journal,
 				JBD2_FEATURE_COMPAT_CHECKSUM, 0,
 				JBD2_FEATURE_INCOMPAT_ASYNC_COMMIT |
+				JBD2_FEATURE_INCOMPAT_CSUM_V3 |
 				JBD2_FEATURE_INCOMPAT_CSUM_V2);
 	}
 
@@ -3447,8 +3468,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	/* Precompute checksum seed for all metadata */
-	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-			EXT4_FEATURE_RO_COMPAT_METADATA_CSUM))
+	if (ext4_has_metadata_csum(sb))
 		sbi->s_csum_seed = ext4_chksum(sbi, ~0, es->s_uuid,
 					       sizeof(es->s_uuid));
 
@@ -3466,6 +3486,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 #ifdef CONFIG_EXT4_FS_POSIX_ACL
 	set_opt(sb, POSIX_ACL);
 #endif
+	/* don't forget to enable journal_csum when metadata_csum is enabled. */
+	if (ext4_has_metadata_csum(sb))
+		set_opt(sb, JOURNAL_CHECKSUM);
+
 	if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_DATA)
 		set_opt(sb, JOURNAL_DATA);
 	else if ((def_mount_opts & EXT4_DEFM_JMODE) == EXT4_DEFM_JMODE_ORDERED)
@@ -4132,6 +4156,11 @@ no_journal:
 
 	if (es->s_error_count)
 		mod_timer(&sbi->s_err_report, jiffies + 300*HZ); /* 5 minutes */
+
+	/* Enable message ratelimiting. Default is 10 messages per 5 secs. */
+	ratelimit_state_init(&sbi->s_err_ratelimit_state, 5 * HZ, 10);
+	ratelimit_state_init(&sbi->s_warning_ratelimit_state, 5 * HZ, 10);
+	ratelimit_state_init(&sbi->s_msg_ratelimit_state, 5 * HZ, 10);
 
 	kfree(orig_data);
 	return 0;

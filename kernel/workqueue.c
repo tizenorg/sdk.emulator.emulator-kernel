@@ -521,14 +521,21 @@ static inline void debug_work_activate(struct work_struct *work) { }
 static inline void debug_work_deactivate(struct work_struct *work) { }
 #endif
 
-/* allocate ID and assign it to @pool */
+/**
+ * worker_pool_assign_id - allocate ID and assing it to @pool
+ * @pool: the pool pointer of interest
+ *
+ * Returns 0 if ID in [0, WORK_OFFQ_POOL_NONE) is allocated and assigned
+ * successfully, -errno on failure.
+ */
 static int worker_pool_assign_id(struct worker_pool *pool)
 {
 	int ret;
 
 	lockdep_assert_held(&wq_pool_mutex);
 
-	ret = idr_alloc(&worker_pool_idr, pool, 0, 0, GFP_KERNEL);
+	ret = idr_alloc(&worker_pool_idr, pool, 0, WORK_OFFQ_POOL_NONE,
+			GFP_KERNEL);
 	if (ret >= 0) {
 		pool->id = ret;
 		return 0;
@@ -1323,7 +1330,7 @@ static void __queue_work(int cpu, struct workqueue_struct *wq,
 
 	debug_work_activate(work);
 
-	/* if dying, only works from the same workqueue are allowed */
+	/* if draining, only works from the same workqueue are allowed */
 	if (unlikely(wq->flags & __WQ_DRAINING) &&
 	    WARN_ON_ONCE(!is_chained_work(wq)))
 		return;
@@ -1739,15 +1746,16 @@ static struct worker *create_worker(struct worker_pool *pool)
 	if (IS_ERR(worker->task))
 		goto fail;
 
+	set_user_nice(worker->task, pool->attrs->nice);
+
+	/* prevent userland from meddling with cpumask of workqueue workers */
+	worker->task->flags |= PF_NO_SETAFFINITY;
+
 	/*
 	 * set_cpus_allowed_ptr() will fail if the cpumask doesn't have any
 	 * online CPUs.  It'll be re-applied when any of the CPUs come up.
 	 */
-	set_user_nice(worker->task, pool->attrs->nice);
 	set_cpus_allowed_ptr(worker->task, pool->attrs->cpumask);
-
-	/* prevent userland from meddling with cpumask of workqueue workers */
-	worker->task->flags |= PF_NO_SETAFFINITY;
 
 	/*
 	 * The caller is responsible for ensuring %POOL_DISASSOCIATED
@@ -1901,6 +1909,12 @@ static void send_mayday(struct work_struct *work)
 
 	/* mayday mayday mayday */
 	if (list_empty(&pwq->mayday_node)) {
+		/*
+		 * If @pwq is for an unbound wq, its base ref may be put at
+		 * any time due to an attribute change.  Pin @pwq until the
+		 * rescuer is done with it.
+		 */
+		get_pwq(pwq);
 		list_add_tail(&pwq->mayday_node, &wq->maydays);
 		wake_up_process(wq->rescuer->task);
 	}
@@ -2383,6 +2397,7 @@ static int rescuer_thread(void *__rescuer)
 	struct worker *rescuer = __rescuer;
 	struct workqueue_struct *wq = rescuer->rescue_wq;
 	struct list_head *scheduled = &rescuer->scheduled;
+	bool should_stop;
 
 	set_user_nice(current, RESCUER_NICE_LEVEL);
 
@@ -2394,11 +2409,15 @@ static int rescuer_thread(void *__rescuer)
 repeat:
 	set_current_state(TASK_INTERRUPTIBLE);
 
-	if (kthread_should_stop()) {
-		__set_current_state(TASK_RUNNING);
-		rescuer->task->flags &= ~PF_WQ_WORKER;
-		return 0;
-	}
+	/*
+	 * By the time the rescuer is requested to stop, the workqueue
+	 * shouldn't have any work pending, but @wq->maydays may still have
+	 * pwq(s) queued.  This can happen by non-rescuer workers consuming
+	 * all the work items before the rescuer got to them.  Go through
+	 * @wq->maydays processing before acting on should_stop so that the
+	 * list is always empty on exit.
+	 */
+	should_stop = kthread_should_stop();
 
 	/* see whether any pwq is asking for help */
 	spin_lock_irq(&wq_mayday_lock);
@@ -2430,6 +2449,12 @@ repeat:
 		process_scheduled_works(rescuer);
 
 		/*
+		 * Put the reference grabbed by send_mayday().  @pool won't
+		 * go away while we're holding its lock.
+		 */
+		put_pwq(pwq);
+
+		/*
 		 * Leave this pool.  If keep_working() is %true, notify a
 		 * regular worker; otherwise, we end up with 0 concurrency
 		 * and stalling the execution.
@@ -2443,6 +2468,12 @@ repeat:
 	}
 
 	spin_unlock_irq(&wq_mayday_lock);
+
+	if (should_stop) {
+		__set_current_state(TASK_RUNNING);
+		rescuer->task->flags &= ~PF_WQ_WORKER;
+		return 0;
+	}
 
 	/* rescuers should never participate in concurrency management */
 	WARN_ON_ONCE(!(rescuer->flags & WORKER_NOT_RUNNING));
@@ -2850,19 +2881,6 @@ already_gone:
 	return false;
 }
 
-static bool __flush_work(struct work_struct *work)
-{
-	struct wq_barrier barr;
-
-	if (start_flush_work(work, &barr)) {
-		wait_for_completion(&barr.done);
-		destroy_work_on_stack(&barr.work);
-		return true;
-	} else {
-		return false;
-	}
-}
-
 /**
  * flush_work - wait for a work to finish executing the last queueing instance
  * @work: the work to flush
@@ -2876,10 +2894,18 @@ static bool __flush_work(struct work_struct *work)
  */
 bool flush_work(struct work_struct *work)
 {
+	struct wq_barrier barr;
+
 	lock_map_acquire(&work->lockdep_map);
 	lock_map_release(&work->lockdep_map);
 
-	return __flush_work(work);
+	if (start_flush_work(work, &barr)) {
+		wait_for_completion(&barr.done);
+		destroy_work_on_stack(&barr.work);
+		return true;
+	} else {
+		return false;
+	}
 }
 EXPORT_SYMBOL_GPL(flush_work);
 
@@ -3389,6 +3415,7 @@ int workqueue_sysfs_register(struct workqueue_struct *wq)
 		}
 	}
 
+	dev_set_uevent_suppress(&wq_dev->dev, false);
 	kobject_uevent(&wq_dev->dev.kobj, KOBJ_ADD);
 	return 0;
 }
@@ -4090,7 +4117,8 @@ static void wq_update_unbound_numa(struct workqueue_struct *wq, int cpu,
 	if (!pwq) {
 		pr_warning("workqueue: allocation failed while updating NUMA affinity of \"%s\"\n",
 			   wq->name);
-		goto out_unlock;
+		mutex_lock(&wq->mutex);
+		goto use_dfl_pwq;
 	}
 
 	/*
@@ -4793,6 +4821,7 @@ static int workqueue_cpu_down_callback(struct notifier_block *nfb,
 
 		/* wait for per-cpu unbinding to finish */
 		flush_work(&unbind_work);
+		destroy_work_on_stack(&unbind_work);
 		break;
 	}
 	return NOTIFY_OK;
@@ -4831,14 +4860,8 @@ long work_on_cpu(int cpu, long (*fn)(void *), void *arg)
 
 	INIT_WORK_ONSTACK(&wfc.work, work_for_cpu_fn);
 	schedule_work_on(cpu, &wfc.work);
-
-	/*
-	 * The work item is on-stack and can't lead to deadlock through
-	 * flushing.  Use __flush_work() to avoid spurious lockdep warnings
-	 * when work_on_cpu()s are nested.
-	 */
-	__flush_work(&wfc.work);
-
+	flush_work(&wfc.work);
+	destroy_work_on_stack(&wfc.work);
 	return wfc.ret;
 }
 EXPORT_SYMBOL_GPL(work_on_cpu);
@@ -5004,7 +5027,7 @@ static void __init wq_numa_init(void)
 	BUG_ON(!tbl);
 
 	for_each_node(node)
-		BUG_ON(!alloc_cpumask_var_node(&tbl[node], GFP_KERNEL,
+		BUG_ON(!zalloc_cpumask_var_node(&tbl[node], GFP_KERNEL,
 				node_online(node) ? node : NUMA_NO_NODE));
 
 	for_each_possible_cpu(cpu) {
@@ -5025,10 +5048,6 @@ static int __init init_workqueues(void)
 {
 	int std_nice[NR_STD_WORKER_POOLS] = { 0, HIGHPRI_NICE_LEVEL };
 	int i, cpu;
-
-	/* make sure we have enough bits for OFFQ pool ID */
-	BUILD_BUG_ON((1LU << (BITS_PER_LONG - WORK_OFFQ_POOL_SHIFT)) <
-		     WORK_CPU_END * NR_STD_WORKER_POOLS);
 
 	WARN_ON(__alignof__(struct pool_workqueue) < __alignof__(long long));
 

@@ -8,9 +8,9 @@
 /*
  * Bump this whenever protocol changes.
  */
-#define VIGS_PROTOCOL_VERSION 20
+#define VIGS_PROTOCOL_VERSION 21
 
-#define VIGS_MAX_PLANES 2
+#define VIGS_MAX_PLANES 3
 
 typedef signed char vigsp_s8;
 typedef signed short vigsp_s16;

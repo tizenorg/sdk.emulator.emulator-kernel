@@ -21,9 +21,7 @@
 	GNU General Public License for more details.
 
 	You should have received a copy of the GNU General Public License
-	along with this program; if not, write to the
-	Free Software Foundation, Inc.,
-	59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+	along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -54,6 +52,7 @@
  * RF5592 2.4G/5G 2T2R
  * RF3070 2.4G 1T1R
  * RF5360 2.4G 1T1R
+ * RF5362 2.4G 1T1R
  * RF5370 2.4G 1T1R
  * RF5390 2.4G 1T1R
  */
@@ -74,6 +73,7 @@
 #define RF3070				0x3070
 #define RF3290				0x3290
 #define RF5360				0x5360
+#define RF5362				0x5362
 #define RF5370				0x5370
 #define RF5372				0x5372
 #define RF5390				0x5390
@@ -124,7 +124,7 @@
 /*
  * MAC_CSR0_3290: MAC_CSR0 for RT3290 to identity MAC version number.
  */
-#define MAC_CSR0_3290				0x0000
+#define MAC_CSR0_3290			0x0000
 
 /*
  * E2PROM_CSR: PCI EEPROM control register.
@@ -213,17 +213,17 @@
 /*
  * COEX_CFG_0
  */
-#define COEX_CFG0			0x0040
+#define COEX_CFG0		0x0040
 #define COEX_CFG_ANT		FIELD32(0xff000000)
 /*
  * COEX_CFG_1
  */
-#define COEX_CFG1			0x0044
+#define COEX_CFG1		0x0044
 
 /*
  * COEX_CFG_2
  */
-#define COEX_CFG2			0x0048
+#define COEX_CFG2		0x0048
 #define BT_COEX_CFG1		FIELD32(0xff000000)
 #define BT_COEX_CFG0		FIELD32(0x00ff0000)
 #define WL_COEX_CFG1		FIELD32(0x0000ff00)
@@ -237,8 +237,8 @@
 #define PLL_RESERVED_INPUT2	FIELD32(0x0000ff00)
 #define PLL_CONTROL		FIELD32(0x00070000)
 #define PLL_LPF_R1		FIELD32(0x00080000)
-#define PLL_LPF_C1_CTRL	FIELD32(0x00300000)
-#define PLL_LPF_C2_CTRL	FIELD32(0x00c00000)
+#define PLL_LPF_C1_CTRL		FIELD32(0x00300000)
+#define PLL_LPF_C2_CTRL		FIELD32(0x00c00000)
 #define PLL_CP_CURRENT_CTRL	FIELD32(0x03000000)
 #define PLL_PFD_DELAY_CTRL	FIELD32(0x0c000000)
 #define PLL_LOCK_CTRL		FIELD32(0x70000000)
@@ -2041,7 +2041,7 @@ struct mac_iveiv_entry {
  * 2 - drop tx power by 12dBm,
  * 3 - increase tx power by 6dBm
  */
-#define BBP1_TX_POWER_CTRL		FIELD8(0x07)
+#define BBP1_TX_POWER_CTRL		FIELD8(0x03)
 #define BBP1_TX_ANTENNA			FIELD8(0x18)
 
 /*
@@ -2147,7 +2147,7 @@ struct mac_iveiv_entry {
 /* Bits [7-4] for RF3320 (RT3370/RT3390), on other chipsets reserved */
 #define RFCSR3_PA1_BIAS_CCK		FIELD8(0x70)
 #define RFCSR3_PA2_CASCODE_BIAS_CCKK	FIELD8(0x80)
-/* Bits for RF3290/RF5360/RF5370/RF5372/RF5390/RF5392 */
+/* Bits for RF3290/RF5360/RF5362/RF5370/RF5372/RF5390/RF5392 */
 #define RFCSR3_VCOCAL_EN		FIELD8(0x80)
 /* Bits for RF3050 */
 #define RFCSR3_BIT1			FIELD8(0x02)
@@ -2166,7 +2166,7 @@ struct mac_iveiv_entry {
  */
 #define RFCSR6_R1			FIELD8(0x03)
 #define RFCSR6_R2			FIELD8(0x40)
-#define RFCSR6_TXDIV		FIELD8(0x0c)
+#define RFCSR6_TXDIV			FIELD8(0x0c)
 /* bits for RF3053 */
 #define RFCSR6_VCO_IC			FIELD8(0xc0)
 
@@ -2204,13 +2204,13 @@ struct mac_iveiv_entry {
  * RFCSR 12:
  */
 #define RFCSR12_TX_POWER		FIELD8(0x1f)
-#define RFCSR12_DR0				FIELD8(0xe0)
+#define RFCSR12_DR0			FIELD8(0xe0)
 
 /*
  * RFCSR 13:
  */
 #define RFCSR13_TX_POWER		FIELD8(0x1f)
-#define RFCSR13_DR0				FIELD8(0xe0)
+#define RFCSR13_DR0			FIELD8(0xe0)
 
 /*
  * RFCSR 15:
@@ -2228,7 +2228,7 @@ struct mac_iveiv_entry {
 #define RFCSR17_TXMIXER_GAIN		FIELD8(0x07)
 #define RFCSR17_TX_LO1_EN		FIELD8(0x08)
 #define RFCSR17_R			FIELD8(0x20)
-#define RFCSR17_CODE                   FIELD8(0x7f)
+#define RFCSR17_CODE			FIELD8(0x7f)
 
 /* RFCSR 18 */
 #define RFCSR18_XO_TUNE_BYPASS		FIELD8(0x40)
@@ -2451,7 +2451,7 @@ enum rt2800_eeprom_word {
  */
 #define EEPROM_NIC_CONF0_RXPATH		FIELD16(0x000f)
 #define EEPROM_NIC_CONF0_TXPATH		FIELD16(0x00f0)
-#define EEPROM_NIC_CONF0_RF_TYPE		FIELD16(0x0f00)
+#define EEPROM_NIC_CONF0_RF_TYPE	FIELD16(0x0f00)
 
 /*
  * EEPROM NIC Configuration 1
@@ -2473,18 +2473,18 @@ enum rt2800_eeprom_word {
  * DAC_TEST: 0: disable, 1: enable
  */
 #define EEPROM_NIC_CONF1_HW_RADIO		FIELD16(0x0001)
-#define EEPROM_NIC_CONF1_EXTERNAL_TX_ALC		FIELD16(0x0002)
-#define EEPROM_NIC_CONF1_EXTERNAL_LNA_2G		FIELD16(0x0004)
-#define EEPROM_NIC_CONF1_EXTERNAL_LNA_5G		FIELD16(0x0008)
+#define EEPROM_NIC_CONF1_EXTERNAL_TX_ALC	FIELD16(0x0002)
+#define EEPROM_NIC_CONF1_EXTERNAL_LNA_2G	FIELD16(0x0004)
+#define EEPROM_NIC_CONF1_EXTERNAL_LNA_5G	FIELD16(0x0008)
 #define EEPROM_NIC_CONF1_CARDBUS_ACCEL		FIELD16(0x0010)
 #define EEPROM_NIC_CONF1_BW40M_SB_2G		FIELD16(0x0020)
 #define EEPROM_NIC_CONF1_BW40M_SB_5G		FIELD16(0x0040)
 #define EEPROM_NIC_CONF1_WPS_PBC		FIELD16(0x0080)
 #define EEPROM_NIC_CONF1_BW40M_2G		FIELD16(0x0100)
 #define EEPROM_NIC_CONF1_BW40M_5G		FIELD16(0x0200)
-#define EEPROM_NIC_CONF1_BROADBAND_EXT_LNA		FIELD16(0x400)
+#define EEPROM_NIC_CONF1_BROADBAND_EXT_LNA	FIELD16(0x400)
 #define EEPROM_NIC_CONF1_ANT_DIVERSITY		FIELD16(0x1800)
-#define EEPROM_NIC_CONF1_INTERNAL_TX_ALC		FIELD16(0x2000)
+#define EEPROM_NIC_CONF1_INTERNAL_TX_ALC	FIELD16(0x2000)
 #define EEPROM_NIC_CONF1_BT_COEXIST		FIELD16(0x4000)
 #define EEPROM_NIC_CONF1_DAC_TEST		FIELD16(0x8000)
 
@@ -2523,9 +2523,9 @@ enum rt2800_eeprom_word {
  * TX_STREAM: 0: Reserved, 1: 1 Stream, 2: 2 Stream
  * CRYSTAL: 00: Reserved, 01: One crystal, 10: Two crystal, 11: Reserved
  */
-#define EEPROM_NIC_CONF2_RX_STREAM		FIELD16(0x000f)
-#define EEPROM_NIC_CONF2_TX_STREAM		FIELD16(0x00f0)
-#define EEPROM_NIC_CONF2_CRYSTAL		FIELD16(0x0600)
+#define EEPROM_NIC_CONF2_RX_STREAM	FIELD16(0x000f)
+#define EEPROM_NIC_CONF2_TX_STREAM	FIELD16(0x00f0)
+#define EEPROM_NIC_CONF2_CRYSTAL	FIELD16(0x0600)
 
 /*
  * EEPROM LNA
@@ -2792,7 +2792,7 @@ enum rt2800_eeprom_word {
 #define MCU_CURRENT			0x36
 #define MCU_LED				0x50
 #define MCU_LED_STRENGTH		0x51
-#define MCU_LED_AG_CONF		0x52
+#define MCU_LED_AG_CONF			0x52
 #define MCU_LED_ACT_CONF		0x53
 #define MCU_LED_LED_POLARITY		0x54
 #define MCU_RADAR			0x60
@@ -2801,7 +2801,7 @@ enum rt2800_eeprom_word {
 #define MCU_FREQ_OFFSET			0x74
 #define MCU_BBP_SIGNAL			0x80
 #define MCU_POWER_SAVE			0x83
-#define MCU_BAND_SELECT		0x91
+#define MCU_BAND_SELECT			0x91
 
 /*
  * MCU mailbox tokens

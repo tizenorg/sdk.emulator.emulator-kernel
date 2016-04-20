@@ -276,7 +276,7 @@ static void class_cleanup (void)
 
 		device_unregister(power_device);
 
-		device_destroy(power_class, (dev_t)NULL);
+		device_destroy(power_class, MKDEV(0,0));
 	}
 
 	class_destroy(power_class);
@@ -286,7 +286,7 @@ static void class_cleanup (void)
 static int init_device(void)
 {
 	int err = 0, i = 0;
-	power_device = device_create(power_class, NULL, (dev_t)NULL, NULL, "battery");
+	power_device = device_create(power_class, NULL, MKDEV(0,0), NULL, "battery");
 
 	for (i = 0; i < 3; i++) {
 		err = device_create_file(power_device, &ps_device_attributes[i]);

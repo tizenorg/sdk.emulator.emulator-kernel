@@ -166,6 +166,10 @@ source "drivers/reset/Kconfig"
 
 source "drivers/fmc/Kconfig"
 
+source "drivers/phy/Kconfig"
+
+source "drivers/powercap/Kconfig"
+
 # for maru board
 source "drivers/maru/Kconfig"
 

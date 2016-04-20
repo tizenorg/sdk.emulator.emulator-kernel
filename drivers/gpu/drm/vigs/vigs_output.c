@@ -3,9 +3,9 @@
 #include "drm_crtc_helper.h"
 #include <linux/init.h>
 
-#define DPI_DEF_VALUE 3160
-#define DPI_MIN_VALUE 1000
-#define DPI_MAX_VALUE 4800
+#define DPI_DEF_VALUE 316
+#define DPI_MIN_VALUE 100
+#define DPI_MAX_VALUE 600
 
 #ifndef MODULE
 static int vigs_atoi(const char *str)
@@ -101,7 +101,16 @@ static int vigs_connector_get_modes(struct drm_connector *connector)
             struct drm_display_mode *preferred_mode =
                 drm_mode_create_from_cmdline_mode(drm_dev,
                                                   &cmdline_mode);
+
+            /* qHD workaround (540x960) */
+            if (cmdline_mode.xres == 540 && cmdline_mode.yres == 960) {
+                preferred_mode->hdisplay = cmdline_mode.xres;
+                preferred_mode->hsync_start = preferred_mode->hsync_start - 1;
+                preferred_mode->hsync_end = preferred_mode->hsync_end - 1;
+            }
+
             preferred_mode->type = DRM_MODE_TYPE_PREFERRED | DRM_MODE_TYPE_DRIVER;
+            drm_mode_set_crtcinfo(preferred_mode, CRTC_INTERLACE_HALVE_V);
             drm_mode_probed_add(connector, preferred_mode);
             return 1;
         }
@@ -263,14 +272,12 @@ int vigs_output_get_dpi(void)
     int dpi = DPI_DEF_VALUE;
 #ifndef MODULE
     char *str;
-    char dpi_info[16];
 
     str = strstr(saved_command_line, "dpi=");
 
     if (str != NULL) {
         str += 4;
-        strncpy(dpi_info, str, 4);
-        dpi = vigs_atoi(dpi_info);
+        dpi = vigs_atoi(str);
         if ((dpi < DPI_MIN_VALUE) || (dpi > DPI_MAX_VALUE)) {
             dpi = DPI_DEF_VALUE;
         }
@@ -281,10 +288,10 @@ int vigs_output_get_dpi(void)
 
 int vigs_output_get_phys_width(int dpi, u32 width)
 {
-    return ((width * 2540 / dpi) + 5) / 10;
+    return ((width * 254 / dpi) + 5) / 10;
 }
 
 int vigs_output_get_phys_height(int dpi, u32 height)
 {
-    return ((height * 2540 / dpi) + 5) / 10;
+    return ((height * 254 / dpi) + 5) / 10;
 }

@@ -1,0 +1,35 @@
+#!/bin/sh -xe
+# clean
+clean()
+{
+	if ["${TARGET_OS}" != "ubuntu-32" ] && ["${TARGET_OS}" != "ubuntu-64" ]
+	then
+		exit 1
+	fi
+
+	rm -rf .git
+}
+
+# build
+build()
+{
+	# for i386 (32bit) kernel
+	./build-i386.sh
+	mv arch/x86/boot/bzImage ./bzImage.i386
+
+	make distclean
+
+	# for x86-64 (64bit) kernel
+	./build-x86_64.sh
+	mv arch/x86/boot/bzImage ./bzImage.x86_64
+}
+
+# install
+install()
+{
+	KERNEL_DIR=$SRCDIR/package/3.0-emulator-kernel-x86.package.${TARGET_OS}/data/platforms/tizen-3.0/common/emulator/data/kernel
+	mkdir -p $KERNEL_DIR
+
+	cp ./bzImage.i386 $KERNEL_DIR/bzImage.i386
+	cp ./bzImage.x86_64 $KERNEL_DIR/bzImage.x86_64
+}

@@ -174,11 +174,7 @@ extern void evergreen_pcie_gen2_enable(struct radeon_device *rdev);
 extern void evergreen_program_aspm(struct radeon_device *rdev);
 extern void sumo_rlc_fini(struct radeon_device *rdev);
 extern int sumo_rlc_init(struct radeon_device *rdev);
-extern void cayman_dma_vm_set_page(struct radeon_device *rdev,
-				   struct radeon_ib *ib,
-				   uint64_t pe,
-				   uint64_t addr, unsigned count,
-				   uint32_t incr, uint32_t flags);
+extern void evergreen_gpu_pci_config_reset(struct radeon_device *rdev);
 
 /* Firmware Names */
 MODULE_FIRMWARE("radeon/BARTS_pfp.bin");
@@ -1394,10 +1390,60 @@ static void cayman_cp_enable(struct radeon_device *rdev, bool enable)
 	if (enable)
 		WREG32(CP_ME_CNTL, 0);
 	else {
-		radeon_ttm_set_active_vram_size(rdev, rdev->mc.visible_vram_size);
+		if (rdev->asic->copy.copy_ring_index == RADEON_RING_TYPE_GFX_INDEX)
+			radeon_ttm_set_active_vram_size(rdev, rdev->mc.visible_vram_size);
 		WREG32(CP_ME_CNTL, (CP_ME_HALT | CP_PFP_HALT));
 		WREG32(SCRATCH_UMSK, 0);
 		rdev->ring[RADEON_RING_TYPE_GFX_INDEX].ready = false;
+	}
+}
+
+u32 cayman_gfx_get_rptr(struct radeon_device *rdev,
+			struct radeon_ring *ring)
+{
+	u32 rptr;
+
+	if (rdev->wb.enabled)
+		rptr = rdev->wb.wb[ring->rptr_offs/4];
+	else {
+		if (ring->idx == RADEON_RING_TYPE_GFX_INDEX)
+			rptr = RREG32(CP_RB0_RPTR);
+		else if (ring->idx == CAYMAN_RING_TYPE_CP1_INDEX)
+			rptr = RREG32(CP_RB1_RPTR);
+		else
+			rptr = RREG32(CP_RB2_RPTR);
+	}
+
+	return rptr;
+}
+
+u32 cayman_gfx_get_wptr(struct radeon_device *rdev,
+			struct radeon_ring *ring)
+{
+	u32 wptr;
+
+	if (ring->idx == RADEON_RING_TYPE_GFX_INDEX)
+		wptr = RREG32(CP_RB0_WPTR);
+	else if (ring->idx == CAYMAN_RING_TYPE_CP1_INDEX)
+		wptr = RREG32(CP_RB1_WPTR);
+	else
+		wptr = RREG32(CP_RB2_WPTR);
+
+	return wptr;
+}
+
+void cayman_gfx_set_wptr(struct radeon_device *rdev,
+			 struct radeon_ring *ring)
+{
+	if (ring->idx == RADEON_RING_TYPE_GFX_INDEX) {
+		WREG32(CP_RB0_WPTR, ring->wptr);
+		(void)RREG32(CP_RB0_WPTR);
+	} else if (ring->idx == CAYMAN_RING_TYPE_CP1_INDEX) {
+		WREG32(CP_RB1_WPTR, ring->wptr);
+		(void)RREG32(CP_RB1_WPTR);
+	} else {
+		WREG32(CP_RB2_WPTR, ring->wptr);
+		(void)RREG32(CP_RB2_WPTR);
 	}
 }
 
@@ -1529,6 +1575,16 @@ static int cayman_cp_resume(struct radeon_device *rdev)
 		CP_RB1_BASE,
 		CP_RB2_BASE
 	};
+	static const unsigned cp_rb_rptr[] = {
+		CP_RB0_RPTR,
+		CP_RB1_RPTR,
+		CP_RB2_RPTR
+	};
+	static const unsigned cp_rb_wptr[] = {
+		CP_RB0_WPTR,
+		CP_RB1_WPTR,
+		CP_RB2_WPTR
+	};
 	struct radeon_ring *ring;
 	int i, r;
 
@@ -1587,8 +1643,8 @@ static int cayman_cp_resume(struct radeon_device *rdev)
 		WREG32_P(cp_rb_cntl[i], RB_RPTR_WR_ENA, ~RB_RPTR_WR_ENA);
 
 		ring->rptr = ring->wptr = 0;
-		WREG32(ring->rptr_reg, ring->rptr);
-		WREG32(ring->wptr_reg, ring->wptr);
+		WREG32(cp_rb_rptr[i], ring->rptr);
+		WREG32(cp_rb_wptr[i], ring->wptr);
 
 		mdelay(1);
 		WREG32_P(cp_rb_cntl[i], 0, ~RB_RPTR_WR_ENA);
@@ -1607,6 +1663,9 @@ static int cayman_cp_resume(struct radeon_device *rdev)
 		rdev->ring[CAYMAN_RING_TYPE_CP2_INDEX].ready = false;
 		return r;
 	}
+
+	if (rdev->asic->copy.copy_ring_index == RADEON_RING_TYPE_GFX_INDEX)
+		radeon_ttm_set_active_vram_size(rdev, rdev->mc.real_vram_size);
 
 	return 0;
 }
@@ -1834,8 +1893,10 @@ int cayman_asic_reset(struct radeon_device *rdev)
 
 	reset_mask = cayman_gpu_check_soft_reset(rdev);
 
-	if (!reset_mask)
-		r600_set_bios_scratch_engine_hung(rdev, false);
+	if (reset_mask)
+		evergreen_gpu_pci_config_reset(rdev);
+
+	r600_set_bios_scratch_engine_hung(rdev, false);
 
 	return 0;
 }
@@ -1881,7 +1942,7 @@ static int cayman_startup(struct radeon_device *rdev)
 
 	evergreen_mc_program(rdev);
 
-	if (!(rdev->flags & RADEON_IS_IGP)) {
+	if (!(rdev->flags & RADEON_IS_IGP) && !rdev->pm.dpm_enabled) {
 		r = ni_mc_load_microcode(rdev);
 		if (r) {
 			DRM_ERROR("Failed to load MC firmware!\n");
@@ -1968,23 +2029,18 @@ static int cayman_startup(struct radeon_device *rdev)
 	evergreen_irq_set(rdev);
 
 	r = radeon_ring_init(rdev, ring, ring->ring_size, RADEON_WB_CP_RPTR_OFFSET,
-			     CP_RB0_RPTR, CP_RB0_WPTR,
 			     RADEON_CP_PACKET2);
 	if (r)
 		return r;
 
 	ring = &rdev->ring[R600_RING_TYPE_DMA_INDEX];
 	r = radeon_ring_init(rdev, ring, ring->ring_size, R600_WB_DMA_RPTR_OFFSET,
-			     DMA_RB_RPTR + DMA0_REGISTER_OFFSET,
-			     DMA_RB_WPTR + DMA0_REGISTER_OFFSET,
 			     DMA_PACKET(DMA_PACKET_NOP, 0, 0, 0));
 	if (r)
 		return r;
 
 	ring = &rdev->ring[CAYMAN_RING_TYPE_DMA1_INDEX];
 	r = radeon_ring_init(rdev, ring, ring->ring_size, CAYMAN_WB_DMA1_RPTR_OFFSET,
-			     DMA_RB_RPTR + DMA1_REGISTER_OFFSET,
-			     DMA_RB_WPTR + DMA1_REGISTER_OFFSET,
 			     DMA_PACKET(DMA_PACKET_NOP, 0, 0, 0));
 	if (r)
 		return r;
@@ -2003,7 +2059,6 @@ static int cayman_startup(struct radeon_device *rdev)
 	ring = &rdev->ring[R600_RING_TYPE_UVD_INDEX];
 	if (ring->ring_size) {
 		r = radeon_ring_init(rdev, ring, ring->ring_size, 0,
-				     UVD_RBC_RB_RPTR, UVD_RBC_RB_WPTR,
 				     RADEON_CP_PACKET2);
 		if (!r)
 			r = uvd_v1_0_init(rdev);
@@ -2050,6 +2105,9 @@ int cayman_resume(struct radeon_device *rdev)
 	/* init golden registers */
 	ni_init_golden_registers(rdev);
 
+	if (rdev->pm.pm_method == PM_METHOD_DPM)
+		radeon_pm_resume(rdev);
+
 	rdev->accel_working = true;
 	r = cayman_startup(rdev);
 	if (r) {
@@ -2062,6 +2120,7 @@ int cayman_resume(struct radeon_device *rdev)
 
 int cayman_suspend(struct radeon_device *rdev)
 {
+	radeon_pm_suspend(rdev);
 	if (ASIC_IS_DCE6(rdev))
 		dce6_audio_fini(rdev);
 	else
@@ -2150,6 +2209,9 @@ int cayman_init(struct radeon_device *rdev)
 		}
 	}
 
+	/* Initialize power management */
+	radeon_pm_init(rdev);
+
 	ring->ring_obj = NULL;
 	r600_ring_init(rdev, ring, 1024 * 1024);
 
@@ -2209,6 +2271,7 @@ int cayman_init(struct radeon_device *rdev)
 
 void cayman_fini(struct radeon_device *rdev)
 {
+	radeon_pm_fini(rdev);
 	cayman_cp_fini(rdev);
 	cayman_dma_fini(rdev);
 	r600_irq_fini(rdev);
@@ -2410,77 +2473,6 @@ void cayman_vm_decode_fault(struct radeon_device *rdev,
 	       protections, vmid, addr,
 	       (status & MEMORY_CLIENT_RW_MASK) ? "write" : "read",
 	       block, mc_id);
-}
-
-#define R600_ENTRY_VALID   (1 << 0)
-#define R600_PTE_SYSTEM    (1 << 1)
-#define R600_PTE_SNOOPED   (1 << 2)
-#define R600_PTE_READABLE  (1 << 5)
-#define R600_PTE_WRITEABLE (1 << 6)
-
-uint32_t cayman_vm_page_flags(struct radeon_device *rdev, uint32_t flags)
-{
-	uint32_t r600_flags = 0;
-	r600_flags |= (flags & RADEON_VM_PAGE_VALID) ? R600_ENTRY_VALID : 0;
-	r600_flags |= (flags & RADEON_VM_PAGE_READABLE) ? R600_PTE_READABLE : 0;
-	r600_flags |= (flags & RADEON_VM_PAGE_WRITEABLE) ? R600_PTE_WRITEABLE : 0;
-	if (flags & RADEON_VM_PAGE_SYSTEM) {
-		r600_flags |= R600_PTE_SYSTEM;
-		r600_flags |= (flags & RADEON_VM_PAGE_SNOOPED) ? R600_PTE_SNOOPED : 0;
-	}
-	return r600_flags;
-}
-
-/**
- * cayman_vm_set_page - update the page tables using the CP
- *
- * @rdev: radeon_device pointer
- * @ib: indirect buffer to fill with commands
- * @pe: addr of the page entry
- * @addr: dst addr to write into pe
- * @count: number of page entries to update
- * @incr: increase next addr by incr bytes
- * @flags: access flags
- *
- * Update the page tables using the CP (cayman/TN).
- */
-void cayman_vm_set_page(struct radeon_device *rdev,
-			struct radeon_ib *ib,
-			uint64_t pe,
-			uint64_t addr, unsigned count,
-			uint32_t incr, uint32_t flags)
-{
-	uint32_t r600_flags = cayman_vm_page_flags(rdev, flags);
-	uint64_t value;
-	unsigned ndw;
-
-	if (rdev->asic->vm.pt_ring_index == RADEON_RING_TYPE_GFX_INDEX) {
-		while (count) {
-			ndw = 1 + count * 2;
-			if (ndw > 0x3FFF)
-				ndw = 0x3FFF;
-
-			ib->ptr[ib->length_dw++] = PACKET3(PACKET3_ME_WRITE, ndw);
-			ib->ptr[ib->length_dw++] = pe;
-			ib->ptr[ib->length_dw++] = upper_32_bits(pe) & 0xff;
-			for (; ndw > 1; ndw -= 2, --count, pe += 8) {
-				if (flags & RADEON_VM_PAGE_SYSTEM) {
-					value = radeon_vm_map_gart(rdev, addr);
-					value &= 0xFFFFFFFFFFFFF000ULL;
-				} else if (flags & RADEON_VM_PAGE_VALID) {
-					value = addr;
-				} else {
-					value = 0;
-				}
-				addr += incr;
-				value |= r600_flags;
-				ib->ptr[ib->length_dw++] = value;
-				ib->ptr[ib->length_dw++] = upper_32_bits(value);
-			}
-		}
-	} else {
-		cayman_dma_vm_set_page(rdev, ib, pe, addr, count, incr, flags);
-	}
 }
 
 /**

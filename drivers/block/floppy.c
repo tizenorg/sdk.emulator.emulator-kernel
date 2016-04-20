@@ -2351,7 +2351,7 @@ static void rw_interrupt(void)
 /* Compute maximal contiguous buffer size. */
 static int buffer_chain_size(void)
 {
-	struct bio_vec *bv;
+	struct bio_vec bv;
 	int size;
 	struct req_iterator iter;
 	char *base;
@@ -2360,10 +2360,10 @@ static int buffer_chain_size(void)
 	size = 0;
 
 	rq_for_each_segment(bv, current_req, iter) {
-		if (page_address(bv->bv_page) + bv->bv_offset != base + size)
+		if (page_address(bv.bv_page) + bv.bv_offset != base + size)
 			break;
 
-		size += bv->bv_len;
+		size += bv.bv_len;
 	}
 
 	return size >> 9;
@@ -2389,7 +2389,7 @@ static int transfer_size(int ssize, int max_sector, int max_size)
 static void copy_buffer(int ssize, int max_sector, int max_sector_2)
 {
 	int remaining;		/* number of transferred 512-byte sectors */
-	struct bio_vec *bv;
+	struct bio_vec bv;
 	char *buffer;
 	char *dma_buffer;
 	int size;
@@ -2427,10 +2427,10 @@ static void copy_buffer(int ssize, int max_sector, int max_sector_2)
 		if (!remaining)
 			break;
 
-		size = bv->bv_len;
+		size = bv.bv_len;
 		SUPBOUND(size, remaining);
 
-		buffer = page_address(bv->bv_page) + bv->bv_offset;
+		buffer = page_address(bv.bv_page) + bv.bv_offset;
 		if (dma_buffer + size >
 		    floppy_track_buffer + (max_buffer_sectors << 10) ||
 		    dma_buffer < floppy_track_buffer) {
@@ -2886,9 +2886,9 @@ static void do_fd_request(struct request_queue *q)
 		return;
 
 	if (WARN(atomic_read(&usage_count) == 0,
-		 "warning: usage count=0, current_req=%p sect=%ld type=%x flags=%x\n",
+		 "warning: usage count=0, current_req=%p sect=%ld type=%x flags=%llx\n",
 		 current_req, (long)blk_rq_pos(current_req), current_req->cmd_type,
-		 current_req->cmd_flags))
+		 (unsigned long long) current_req->cmd_flags))
 		return;
 
 	if (test_and_set_bit(0, &fdc_busy)) {
@@ -3053,7 +3053,10 @@ static int raw_cmd_copyout(int cmd, void __user *param,
 	int ret;
 
 	while (ptr) {
-		ret = copy_to_user(param, ptr, sizeof(*ptr));
+		struct floppy_raw_cmd cmd = *ptr;
+		cmd.next = NULL;
+		cmd.kernel_data = NULL;
+		ret = copy_to_user(param, &cmd, sizeof(cmd));
 		if (ret)
 			return -EFAULT;
 		param += sizeof(struct floppy_raw_cmd);
@@ -3107,10 +3110,11 @@ loop:
 		return -ENOMEM;
 	*rcmd = ptr;
 	ret = copy_from_user(ptr, param, sizeof(*ptr));
-	if (ret)
-		return -EFAULT;
 	ptr->next = NULL;
 	ptr->buffer_length = 0;
+	ptr->kernel_data = NULL;
+	if (ret)
+		return -EFAULT;
 	param += sizeof(struct floppy_raw_cmd);
 	if (ptr->cmd_count > 33)
 			/* the command may now also take up the space
@@ -3126,7 +3130,6 @@ loop:
 	for (i = 0; i < 16; i++)
 		ptr->reply[i] = 0;
 	ptr->resultcode = 0;
-	ptr->kernel_data = NULL;
 
 	if (ptr->flags & (FD_RAW_READ | FD_RAW_WRITE)) {
 		if (ptr->length <= 0)
@@ -3792,9 +3795,9 @@ static int __floppy_read_block_0(struct block_device *bdev, int drive)
 	bio_vec.bv_len = size;
 	bio_vec.bv_offset = 0;
 	bio.bi_vcnt = 1;
-	bio.bi_size = size;
+	bio.bi_iter.bi_size = size;
 	bio.bi_bdev = bdev;
-	bio.bi_sector = 0;
+	bio.bi_iter.bi_sector = 0;
 	bio.bi_flags = (1 << BIO_QUIET);
 	bio.bi_private = &cbdata;
 	bio.bi_end_io = floppy_rb0_cb;

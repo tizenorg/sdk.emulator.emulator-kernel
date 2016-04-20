@@ -257,6 +257,7 @@ struct sock_xprt {
 	void			(*old_data_ready)(struct sock *, int);
 	void			(*old_state_change)(struct sock *);
 	void			(*old_write_space)(struct sock *);
+	void			(*old_error_report)(struct sock *);
 };
 
 /*
@@ -273,6 +274,11 @@ struct sock_xprt {
  * TCP RPC flags
  */
 #define TCP_RPC_REPLY		(1UL << 6)
+
+static inline struct rpc_xprt *xprt_from_sock(struct sock *sk)
+{
+	return (struct rpc_xprt *) sk->sk_user_data;
+}
 
 static inline struct sockaddr *xs_addr(struct rpc_xprt *xprt)
 {
@@ -803,6 +809,7 @@ static void xs_save_old_callbacks(struct sock_xprt *transport, struct sock *sk)
 	transport->old_data_ready = sk->sk_data_ready;
 	transport->old_state_change = sk->sk_state_change;
 	transport->old_write_space = sk->sk_write_space;
+	transport->old_error_report = sk->sk_error_report;
 }
 
 static void xs_restore_old_callbacks(struct sock_xprt *transport, struct sock *sk)
@@ -810,6 +817,36 @@ static void xs_restore_old_callbacks(struct sock_xprt *transport, struct sock *s
 	sk->sk_data_ready = transport->old_data_ready;
 	sk->sk_state_change = transport->old_state_change;
 	sk->sk_write_space = transport->old_write_space;
+	sk->sk_error_report = transport->old_error_report;
+}
+
+/**
+ * xs_error_report - callback to handle TCP socket state errors
+ * @sk: socket
+ *
+ * Note: we don't call sock_error() since there may be a rpc_task
+ * using the socket, and so we don't want to clear sk->sk_err.
+ */
+static void xs_error_report(struct sock *sk)
+{
+	struct rpc_xprt *xprt;
+	int err;
+
+	read_lock_bh(&sk->sk_callback_lock);
+	if (!(xprt = xprt_from_sock(sk)))
+		goto out;
+
+	err = -sk->sk_err;
+	if (err == 0)
+		goto out;
+	dprintk("RPC:       xs_error_report client %p, error=%d...\n",
+			xprt, -err);
+	trace_rpc_socket_error(xprt, sk->sk_socket, err);
+	if (test_bit(XPRT_CONNECTION_REUSE, &xprt->state))
+		goto out;
+	xprt_wake_pending_tasks(xprt, err);
+ out:
+	read_unlock_bh(&sk->sk_callback_lock);
 }
 
 static void xs_reset_transport(struct sock_xprt *transport)
@@ -874,14 +911,6 @@ static void xs_tcp_close(struct rpc_xprt *xprt)
 		xs_tcp_shutdown(xprt);
 }
 
-static void xs_local_destroy(struct rpc_xprt *xprt)
-{
-	xs_close(xprt);
-	xs_free_peer_addresses(xprt);
-	xprt_free(xprt);
-	module_put(THIS_MODULE);
-}
-
 /**
  * xs_destroy - prepare to shutdown a transport
  * @xprt: doomed transport
@@ -891,12 +920,10 @@ static void xs_destroy(struct rpc_xprt *xprt)
 {
 	dprintk("RPC:       xs_destroy xprt %p\n", xprt);
 
-	xs_local_destroy(xprt);
-}
-
-static inline struct rpc_xprt *xprt_from_sock(struct sock *sk)
-{
-	return (struct rpc_xprt *) sk->sk_user_data;
+	xs_close(xprt);
+	xs_free_peer_addresses(xprt);
+	xprt_free(xprt);
+	module_put(THIS_MODULE);
 }
 
 static int xs_local_copy_to_xdr(struct xdr_buf *xdr, struct sk_buff *skb)
@@ -1527,6 +1554,7 @@ static void xs_tcp_state_change(struct sock *sk)
 			transport->tcp_copied = 0;
 			transport->tcp_flags =
 				TCP_RCV_COPY_FRAGHDR | TCP_RCV_COPY_XID;
+			xprt->connect_cookie++;
 
 			xprt_wake_pending_tasks(xprt, -EAGAIN);
 		}
@@ -1682,7 +1710,7 @@ static void xs_udp_timer(struct rpc_xprt *xprt, struct rpc_task *task)
 static unsigned short xs_get_random_port(void)
 {
 	unsigned short range = xprt_max_resvport - xprt_min_resvport;
-	unsigned short rand = (unsigned short) net_random() % range;
+	unsigned short rand = (unsigned short) prandom_u32() % range;
 	return rand + xprt_min_resvport;
 }
 
@@ -1877,6 +1905,7 @@ static int xs_local_finish_connecting(struct rpc_xprt *xprt,
 		sk->sk_user_data = xprt;
 		sk->sk_data_ready = xs_local_data_ready;
 		sk->sk_write_space = xs_udp_write_space;
+		sk->sk_error_report = xs_error_report;
 		sk->sk_allocation = GFP_ATOMIC;
 
 		xprt_clear_connected(xprt);
@@ -2132,6 +2161,19 @@ static int xs_tcp_finish_connecting(struct rpc_xprt *xprt, struct socket *sock)
 
 	if (!transport->inet) {
 		struct sock *sk = sock->sk;
+		unsigned int keepidle = xprt->timeout->to_initval / HZ;
+		unsigned int keepcnt = xprt->timeout->to_retries + 1;
+		unsigned int opt_on = 1;
+
+		/* TCP Keepalive options */
+		kernel_setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE,
+				(char *)&opt_on, sizeof(opt_on));
+		kernel_setsockopt(sock, SOL_TCP, TCP_KEEPIDLE,
+				(char *)&keepidle, sizeof(keepidle));
+		kernel_setsockopt(sock, SOL_TCP, TCP_KEEPINTVL,
+				(char *)&keepidle, sizeof(keepidle));
+		kernel_setsockopt(sock, SOL_TCP, TCP_KEEPCNT,
+				(char *)&keepcnt, sizeof(keepcnt));
 
 		write_lock_bh(&sk->sk_callback_lock);
 
@@ -2141,6 +2183,7 @@ static int xs_tcp_finish_connecting(struct rpc_xprt *xprt, struct socket *sock)
 		sk->sk_data_ready = xs_tcp_data_ready;
 		sk->sk_state_change = xs_tcp_state_change;
 		sk->sk_write_space = xs_tcp_write_space;
+		sk->sk_error_report = xs_error_report;
 		sk->sk_allocation = GFP_ATOMIC;
 
 		/* socket options */
@@ -2171,7 +2214,6 @@ static int xs_tcp_finish_connecting(struct rpc_xprt *xprt, struct socket *sock)
 	case 0:
 	case -EINPROGRESS:
 		/* SYN_SENT! */
-		xprt->connect_cookie++;
 		if (xprt->reestablish_timeout < XS_TCP_INIT_REEST_TO)
 			xprt->reestablish_timeout = XS_TCP_INIT_REEST_TO;
 	}
@@ -2211,7 +2253,9 @@ static void xs_tcp_setup_socket(struct work_struct *work)
 		abort_and_exit = test_and_clear_bit(XPRT_CONNECTION_ABORT,
 				&xprt->state);
 		/* "close" the socket, preserving the local port */
+		set_bit(XPRT_CONNECTION_REUSE, &xprt->state);
 		xs_tcp_reuse_connection(transport);
+		clear_bit(XPRT_CONNECTION_REUSE, &xprt->state);
 
 		if (abort_and_exit)
 			goto out_eagain;
@@ -2518,7 +2562,7 @@ static struct rpc_xprt_ops xs_local_ops = {
 	.send_request		= xs_local_send_request,
 	.set_retrans_timeout	= xprt_set_retrans_timeout_def,
 	.close			= xs_close,
-	.destroy		= xs_local_destroy,
+	.destroy		= xs_destroy,
 	.print_stats		= xs_local_print_stats,
 };
 
@@ -2882,8 +2926,8 @@ static struct rpc_xprt *xs_setup_bc_tcp(struct xprt_create *args)
 	if (args->bc_xprt->xpt_bc_xprt) {
 		/*
 		 * This server connection already has a backchannel
-		 * export; we can't create a new one, as we wouldn't be
-		 * able to match replies based on xid any more.  So,
+		 * transport; we can't create a new one, as we wouldn't
+		 * be able to match replies based on xid any more.  So,
 		 * reuse the already-existing one:
 		 */
 		 return args->bc_xprt->xpt_bc_xprt;
@@ -2928,10 +2972,9 @@ static struct rpc_xprt *xs_setup_bc_tcp(struct xprt_create *args)
 
 	/*
 	 * Once we've associated a backchannel xprt with a connection,
-	 * we want to keep it around as long as long as the connection
-	 * lasts, in case we need to start using it for a backchannel
-	 * again; this reference won't be dropped until bc_xprt is
-	 * destroyed.
+	 * we want to keep it around as long as the connection lasts,
+	 * in case we need to start using it for a backchannel again;
+	 * this reference won't be dropped until bc_xprt is destroyed.
 	 */
 	xprt_get(xprt);
 	args->bc_xprt->xpt_bc_xprt = xprt;

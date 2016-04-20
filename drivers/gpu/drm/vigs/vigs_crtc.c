@@ -272,7 +272,7 @@ static int vigs_crtc_page_flip(struct drm_crtc *crtc,
         if (ret != 0) {
             crtc->fb = old_fb;
             spin_lock_irqsave(&vigs_dev->drm_dev->event_lock, flags);
-            if (atomic_read(&vigs_dev->drm_dev->vblank_refcount[0]) > 0) {
+            if (atomic_read(&vigs_dev->drm_dev->vblank[0].refcount) > 0) {
                 /*
                  * Only do this if event wasn't already processed.
                  */

@@ -30,6 +30,10 @@ config MARU_VIRTIO_HWKEY
 	tristate "MARU Virtio HW Key Driver"
 	depends on MARU != n
 
+config MARU_VIRTIO_TABLET
+	tristate "MARU Virtio Tablet Driver"
+	depends on MARU != n
+
 config MARU_VIRTIO_KEYBOARD
 	tristate "MARU Virtio Keyboard Driver"
 	depends on MARU != n
@@ -53,3 +57,15 @@ config MARU_BRILLCODEC
 config MARU_VIRTIO_VMODEM
 	tristate "MARU VirtIO Virtual Modem Device Driver"
 	depends on MARU != n
+
+config MARU_VIRTIO_ROTARY
+	tristate "MARU VirtIO Virtual Rotary Device Driver"
+	depends on MARU != n
+
+config MARU_EXTENSION_SOURCE
+	tristate "MARU Extension source"
+	depends on MARU != n
+
+config MARU_EXTENSION_SOURCE_PATH
+	string "MARU Extension source path"
+	depends on MARU != n && MARU_EXTENSION_SOURCE != n

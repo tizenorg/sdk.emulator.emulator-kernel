@@ -10,6 +10,7 @@
 #include <linux/slab.h>
 #include <linux/backing-dev.h>
 #include <linux/mm.h>
+#include <linux/vmacache.h>
 #include <linux/shm.h>
 #include <linux/mman.h>
 #include <linux/pagemap.h>
@@ -86,6 +87,7 @@ EXPORT_SYMBOL(vm_get_page_prot);
 
 int sysctl_overcommit_memory __read_mostly = OVERCOMMIT_GUESS;  /* heuristic overcommit */
 int sysctl_overcommit_ratio __read_mostly = 50;	/* default is 50% */
+unsigned long sysctl_overcommit_kbytes __read_mostly;
 int sysctl_max_map_count __read_mostly = DEFAULT_MAX_MAP_COUNT;
 unsigned long sysctl_user_reserve_kbytes __read_mostly = 1UL << 17; /* 128MB */
 unsigned long sysctl_admin_reserve_kbytes __read_mostly = 1UL << 13; /* 8MB */
@@ -179,14 +181,12 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 		goto error;
 	}
 
-	allowed = (totalram_pages - hugetlb_total_pages())
-	       	* sysctl_overcommit_ratio / 100;
+	allowed = vm_commit_limit();
 	/*
 	 * Reserve some for root
 	 */
 	if (!cap_sys_admin)
 		allowed -= sysctl_admin_reserve_kbytes >> (PAGE_SHIFT - 10);
-	allowed += total_swap_pages;
 
 	/*
 	 * Don't let a single process grow so big a user can't recover
@@ -682,8 +682,9 @@ __vma_unlink(struct mm_struct *mm, struct vm_area_struct *vma,
 	prev->vm_next = next = vma->vm_next;
 	if (next)
 		next->vm_prev = prev;
-	if (mm->mmap_cache == vma)
-		mm->mmap_cache = prev;
+
+	/* Kill the cache */
+	vmacache_invalidate(mm);
 }
 
 /*
@@ -1200,6 +1201,24 @@ static inline unsigned long round_hint_to_min(unsigned long hint)
 	return hint;
 }
 
+static inline int mlock_future_check(struct mm_struct *mm,
+				     unsigned long flags,
+				     unsigned long len)
+{
+	unsigned long locked, lock_limit;
+
+	/*  mlock MCL_FUTURE? */
+	if (flags & VM_LOCKED) {
+		locked = len >> PAGE_SHIFT;
+		locked += mm->locked_vm;
+		lock_limit = rlimit(RLIMIT_MEMLOCK);
+		lock_limit >>= PAGE_SHIFT;
+		if (locked > lock_limit && !capable(CAP_IPC_LOCK))
+			return -EAGAIN;
+	}
+	return 0;
+}
+
 /*
  * The caller must hold down_write(&current->mm->mmap_sem).
  */
@@ -1261,16 +1280,8 @@ unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 		if (!can_do_mlock())
 			return -EPERM;
 
-	/* mlock MCL_FUTURE? */
-	if (vm_flags & VM_LOCKED) {
-		unsigned long locked, lock_limit;
-		locked = len >> PAGE_SHIFT;
-		locked += mm->locked_vm;
-		lock_limit = rlimit(RLIMIT_MEMLOCK);
-		lock_limit >>= PAGE_SHIFT;
-		if (locked > lock_limit && !capable(CAP_IPC_LOCK))
-			return -EAGAIN;
-	}
+	if (mlock_future_check(mm, vm_flags, len))
+		return -EAGAIN;
 
 	if (file) {
 		struct inode *inode = file_inode(file);
@@ -1307,7 +1318,7 @@ unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 				vm_flags &= ~VM_MAYEXEC;
 			}
 
-			if (!file->f_op || !file->f_op->mmap)
+			if (!file->f_op->mmap)
 				return -ENODEV;
 			if (vm_flags & (VM_GROWSDOWN|VM_GROWSUP))
 				return -EINVAL;
@@ -1880,7 +1891,7 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 
 	info.flags = 0;
 	info.length = len;
-	info.low_limit = TASK_UNMAPPED_BASE;
+	info.low_limit = mm->mmap_base;
 	info.high_limit = TASK_SIZE;
 	info.align_mask = 0;
 	return vm_unmapped_area(&info);
@@ -1959,7 +1970,7 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
 		return -ENOMEM;
 
 	get_area = current->mm->get_unmapped_area;
-	if (file && file->f_op && file->f_op->get_unmapped_area)
+	if (file && file->f_op->get_unmapped_area)
 		get_area = file->f_op->get_unmapped_area;
 	addr = get_area(file, addr, len, pgoff, flags);
 	if (IS_ERR_VALUE(addr))
@@ -1980,34 +1991,33 @@ EXPORT_SYMBOL(get_unmapped_area);
 /* Look up the first VMA which satisfies  addr < vm_end,  NULL if none. */
 struct vm_area_struct *find_vma(struct mm_struct *mm, unsigned long addr)
 {
-	struct vm_area_struct *vma = NULL;
+	struct rb_node *rb_node;
+	struct vm_area_struct *vma;
 
 	/* Check the cache first. */
-	/* (Cache hit rate is typically around 35%.) */
-	vma = ACCESS_ONCE(mm->mmap_cache);
-	if (!(vma && vma->vm_end > addr && vma->vm_start <= addr)) {
-		struct rb_node *rb_node;
+	vma = vmacache_find(mm, addr);
+	if (likely(vma))
+		return vma;
 
-		rb_node = mm->mm_rb.rb_node;
-		vma = NULL;
+	rb_node = mm->mm_rb.rb_node;
+	vma = NULL;
 
-		while (rb_node) {
-			struct vm_area_struct *vma_tmp;
+	while (rb_node) {
+		struct vm_area_struct *tmp;
 
-			vma_tmp = rb_entry(rb_node,
-					   struct vm_area_struct, vm_rb);
+		tmp = rb_entry(rb_node, struct vm_area_struct, vm_rb);
 
-			if (vma_tmp->vm_end > addr) {
-				vma = vma_tmp;
-				if (vma_tmp->vm_start <= addr)
-					break;
-				rb_node = rb_node->rb_left;
-			} else
-				rb_node = rb_node->rb_right;
-		}
-		if (vma)
-			mm->mmap_cache = vma;
+		if (tmp->vm_end > addr) {
+			vma = tmp;
+			if (tmp->vm_start <= addr)
+				break;
+			rb_node = rb_node->rb_left;
+		} else
+			rb_node = rb_node->rb_right;
 	}
+
+	if (vma)
+		vmacache_update(addr, vma);
 	return vma;
 }
 
@@ -2379,7 +2389,9 @@ detach_vmas_to_be_unmapped(struct mm_struct *mm, struct vm_area_struct *vma,
 	} else
 		mm->highest_vm_end = prev ? prev->vm_end : 0;
 	tail_vma->vm_next = NULL;
-	mm->mmap_cache = NULL;		/* Kill the cache. */
+
+	/* Kill the cache */
+	vmacache_invalidate(mm);
 }
 
 /*
@@ -2601,18 +2613,9 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 	if (error & ~PAGE_MASK)
 		return error;
 
-	/*
-	 * mlock MCL_FUTURE?
-	 */
-	if (mm->def_flags & VM_LOCKED) {
-		unsigned long locked, lock_limit;
-		locked = len >> PAGE_SHIFT;
-		locked += mm->locked_vm;
-		lock_limit = rlimit(RLIMIT_MEMLOCK);
-		lock_limit >>= PAGE_SHIFT;
-		if (locked > lock_limit && !capable(CAP_IPC_LOCK))
-			return -EAGAIN;
-	}
+	error = mlock_future_check(mm, mm->def_flags, len);
+	if (error)
+		return error;
 
 	/*
 	 * mm->mmap_sem is required to protect against another thread
@@ -2734,7 +2737,8 @@ void exit_mmap(struct mm_struct *mm)
 	}
 	vm_unacct_memory(nr_accounted);
 
-	WARN_ON(mm->nr_ptes > (FIRST_USER_ADDRESS+PMD_SIZE-1)>>PMD_SHIFT);
+	WARN_ON(atomic_long_read(&mm->nr_ptes) >
+			(FIRST_USER_ADDRESS+PMD_SIZE-1)>>PMD_SHIFT);
 }
 
 /* Insert vm structure into process list sorted by address
@@ -3149,7 +3153,7 @@ static int init_user_reserve(void)
 	sysctl_user_reserve_kbytes = min(free_kbytes / 32, 1UL << 17);
 	return 0;
 }
-module_init(init_user_reserve)
+subsys_initcall(init_user_reserve);
 
 /*
  * Initialise sysctl_admin_reserve_kbytes.
@@ -3170,7 +3174,7 @@ static int init_admin_reserve(void)
 	sysctl_admin_reserve_kbytes = min(free_kbytes / 32, 1UL << 13);
 	return 0;
 }
-module_init(init_admin_reserve)
+subsys_initcall(init_admin_reserve);
 
 /*
  * Reinititalise user and admin reserves if memory is added or removed.
@@ -3240,4 +3244,4 @@ static int __meminit init_reserve_notifier(void)
 
 	return 0;
 }
-module_init(init_reserve_notifier)
+subsys_initcall(init_reserve_notifier);

@@ -1,5 +1,3 @@
-%bcond_with emulator
-
 %ifarch %{arm}
 %define config_name arm_tizen_emul_defconfig
 %define buildarch arm
@@ -16,7 +14,7 @@
 #%undefine _missing_build_ids_terminate_build
 Name: emulator-kernel
 Summary: The Linux Emulator Kernel
-Version: 3.12.18
+Version: 3.14.25
 Release: 1
 License: GPL-2.0
 Group: System Environment/Kernel
@@ -24,11 +22,7 @@ Vendor: The Linux Community
 URL: http://www.kernel.org
 Source0:   %{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{PACKAGE_VERSION}-root
-%if %{with emulator}
-ExclusiveArch: %{ix86} x86_64
-%else
-ExclusiveArch:
-%endif
+ExclusiveArch: %{ix86}
 
 %define fullVersion %{version}
 
@@ -128,11 +122,6 @@ rm -rf %{buildroot}/boot/vmlinux*
 rm -rf %{buildroot}/System.map*
 rm -rf %{buildroot}/vmlinux*
 
-rm -rf %{buildroot}/boot/%{imageName}
-rm -rf %{buildroot}/boot/System.map*
-rm -rf %{buildroot}/boot/config*
-rm -rf %{buildroot}/lib/modules/%{fullVersion}/kernel
-
 # 7. Create symbolic links
 rm -f %{buildroot}/lib/modules/%{fullVersion}/build
 rm -f %{buildroot}/lib/modules/%{fullVersion}/source
@@ -153,10 +142,10 @@ rm -rf %{buildroot}
 /lib/modules/%{fullVersion}/modules.*
 /lib/modules/%{fullVersion}/build
 
-#%files
+%files
 #%license COPYING
 #/boot/%{imageName}
 #/boot/System.map*
-#/boot/config*
-#/lib/modules/%{fullVersion}/kernel
-#/lib/modules/%{fullVersion}/modules.*
+/boot/config*
+/lib/modules/%{fullVersion}/kernel
+/lib/modules/%{fullVersion}/modules.*

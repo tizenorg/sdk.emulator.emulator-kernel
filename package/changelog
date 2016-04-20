@@ -1,6 +1,70 @@
+* 3.14.16
+- maru-inputs: fix unexpected termination using maru-input devices
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2016-03-08
+* 3.14.15
+- smack: apply patches for socket fd passing
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2016-03-02
+* 3.14.14
+- PAT: apply PAT features for W/A
+- sensor: modify the proximity value appropriately
+== Sooyoung Ha <yoosah.ha@samsung.com> 2016-01-27
+* 3.14.13
+- VIGS: set correct DPI value
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2015-11-23
+* 3.14.12
+- YaGL: Bump version with the device and platform
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2015-11-06
+* 3.14.11
+- tablet: added input buffer to virtqueue
+- VIGS: Temporary W/A for the extension
+- tuner: separate dvb_frontend build for tv extension
+- tablet: removed unused codes
+- tablet: added maru tablet driver
+== SeokYeon Hwang <syeon.hwang@samsung.com> 2015-09-10
+* 3.14.10
+- Merge branch 'tizen_2.4_develop' into tizen_3.0_develop
+== Sooyoung Ha <yoosah.ha@samsung.com> 2015-08-19
+* 3.14.9
+- not build security partially when extension supported
+== Jinhyung Choi <jinh0.choi@samsung.com> 2015-07-21
+* 3.14.8
+- not build ac97_codec & ac97_pcm when maru_extension config is on
+== Jinhyung Choi <jinh0.choi@samsung.com> 2015-07-21
+* 3.14.7
+- Ready to build for 64bit & extensions
+- Allow smack patches
+- maru-camera: Changed the method for passing the argument to/from device
+== Jinhyung Jo <jinhyung.jo@samsung.com> 2015-07-15
+* 3.14.6
+- Apply MII
+== Munkyu Im <munkyu.im@samsung.com> 2015-05-27
+* 3.14.5
+- x86, mm/ASLR: Fix stack randomization on 64-bit systems
+- net: sctp: fix slab corruption from use after free on INIT collisions
+- vfs: read file_handle only once in handle_to_path
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-04-15
+* 3.14.4
+- initramfs: mount devtmpfs before switching root
+== Sooyoung Ha <yoosah.ha@samsung.com> 2015-03-25
+* 3.14.3
+- package: version up
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-03-20
+* 3.14.2
+- sensor: a global sensor mutex for message transfer
+== Jinhyung Choi <jinhyung2.choi@samsung.com> 2015-03-12
+* 3.14.1
+- package: version up
+== Sungmin Ha <sungmin82.ha@samsung.com> 2015-03-11
+* 2.0.8
+- Merge branch 'tizen_next_linux_3.14' into tizen_next
+== SeokYeon Hwang <syeon.hwang@samsung.com> 2014-12-22
+* 2.0.7
+- config: turn CAN on
+== Alice Liu <alice.liu@intel.com> 2014-11-19
 * 2.0.6
 - v4l2-core: Modified error code in v4l_enumstd()
-== Jinhyung Jo <jinhyung.jo@samsung.com> 2014-11-10
+- config: turn SMP on
+== Alice Liu <alice.liu@intel.com> 2014-11-10
 * 2.0.5
 - packaging: build only for emulator supported target
 - VIGS: Remove rotation definitions

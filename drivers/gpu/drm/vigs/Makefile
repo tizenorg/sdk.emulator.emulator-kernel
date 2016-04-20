@@ -2,7 +2,7 @@
 # Makefile for the drm device driver.  This driver provides support for the
 # Direct Rendering Infrastructure (DRI) in XFree86 4.1.0 and higher.
 
-ccflags-y := -Iinclude/drm -Idrivers/gpu/drm/vigs
+ccflags-y := -Iinclude/drm -Idrivers/gpu/drm/vigs -Werror
 vigs_drm-y := main.o \
               vigs_driver.o \
               vigs_gem.o \
@@ -20,6 +20,7 @@ vigs_drm-y := main.o \
               vigs_fenceman.o \
               vigs_file.o \
               vigs_plane.o \
-              vigs_dp.o
+              vigs_dp.o \
+              vigs_dmabuf.o
 
 obj-$(CONFIG_DRM_VIGS) += vigs_drm.o

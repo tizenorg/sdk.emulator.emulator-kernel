@@ -91,10 +91,10 @@ static void filelayout_reset_write(struct nfs_write_data *data)
 
 	if (!test_and_set_bit(NFS_IOHDR_REDO, &hdr->flags)) {
 		dprintk("%s Reset task %5u for i/o through MDS "
-			"(req %s/%lld, %u bytes @ offset %llu)\n", __func__,
+			"(req %s/%llu, %u bytes @ offset %llu)\n", __func__,
 			data->task.tk_pid,
 			hdr->inode->i_sb->s_id,
-			(long long)NFS_FILEID(hdr->inode),
+			(unsigned long long)NFS_FILEID(hdr->inode),
 			data->args.count,
 			(unsigned long long)data->args.offset);
 
@@ -112,10 +112,10 @@ static void filelayout_reset_read(struct nfs_read_data *data)
 
 	if (!test_and_set_bit(NFS_IOHDR_REDO, &hdr->flags)) {
 		dprintk("%s Reset task %5u for i/o through MDS "
-			"(req %s/%lld, %u bytes @ offset %llu)\n", __func__,
+			"(req %s/%llu, %u bytes @ offset %llu)\n", __func__,
 			data->task.tk_pid,
 			hdr->inode->i_sb->s_id,
-			(long long)NFS_FILEID(hdr->inode),
+			(unsigned long long)NFS_FILEID(hdr->inode),
 			data->args.count,
 			(unsigned long long)data->args.offset);
 
@@ -324,8 +324,9 @@ static void filelayout_read_prepare(struct rpc_task *task, void *data)
 			&rdata->res.seq_res,
 			task))
 		return;
-	nfs4_set_rw_stateid(&rdata->args.stateid, rdata->args.context,
-			rdata->args.lock_context, FMODE_READ);
+	if (nfs4_set_rw_stateid(&rdata->args.stateid, rdata->args.context,
+			rdata->args.lock_context, FMODE_READ) == -EIO)
+		rpc_exit(task, -EIO); /* lost lock, terminate I/O */
 }
 
 static void filelayout_read_call_done(struct rpc_task *task, void *data)
@@ -336,8 +337,7 @@ static void filelayout_read_call_done(struct rpc_task *task, void *data)
 
 	if (test_bit(NFS_IOHDR_REDO, &rdata->header->flags) &&
 	    task->tk_status == 0) {
-		if (rdata->res.seq_res.sr_slot != NULL)
-			nfs41_sequence_done(task, &rdata->res.seq_res);
+		nfs41_sequence_done(task, &rdata->res.seq_res);
 		return;
 	}
 
@@ -436,8 +436,9 @@ static void filelayout_write_prepare(struct rpc_task *task, void *data)
 			&wdata->res.seq_res,
 			task))
 		return;
-	nfs4_set_rw_stateid(&wdata->args.stateid, wdata->args.context,
-			wdata->args.lock_context, FMODE_WRITE);
+	if (nfs4_set_rw_stateid(&wdata->args.stateid, wdata->args.context,
+			wdata->args.lock_context, FMODE_WRITE) == -EIO)
+		rpc_exit(task, -EIO); /* lost lock, terminate I/O */
 }
 
 static void filelayout_write_call_done(struct rpc_task *task, void *data)
@@ -446,8 +447,7 @@ static void filelayout_write_call_done(struct rpc_task *task, void *data)
 
 	if (test_bit(NFS_IOHDR_REDO, &wdata->header->flags) &&
 	    task->tk_status == 0) {
-		if (wdata->res.seq_res.sr_slot != NULL)
-			nfs41_sequence_done(task, &wdata->res.seq_res);
+		nfs41_sequence_done(task, &wdata->res.seq_res);
 		return;
 	}
 
@@ -1330,7 +1330,7 @@ filelayout_alloc_layout_hdr(struct inode *inode, gfp_t gfp_flags)
 	struct nfs4_filelayout *flo;
 
 	flo = kzalloc(sizeof(*flo), gfp_flags);
-	return &flo->generic_hdr;
+	return flo != NULL ? &flo->generic_hdr : NULL;
 }
 
 static void

@@ -12,6 +12,8 @@
 #include "vigs_dp.h"
 #include <drm/vigs_drm.h>
 
+extern const struct dma_buf_ops vigs_dmabuf_ops;
+
 static void vigs_device_mman_vram_to_gpu(void *user_data,
                                          struct ttm_buffer_object *bo)
 {
@@ -130,7 +132,7 @@ int vigs_device_init(struct vigs_device *vigs_dev,
 
     if ((vigs_dev->io_size < sizeof(void*)) ||
         ((vigs_dev->io_size % sizeof(void*)) != 0)) {
-        DRM_ERROR("IO bar has bad size: %u bytes\n", vigs_dev->io_size);
+        DRM_ERROR("IO bar has bad size: %pa bytes\n", &vigs_dev->io_size);
         ret = -ENODEV;
         goto fail1;
     }
@@ -157,7 +159,7 @@ int vigs_device_init(struct vigs_device *vigs_dev,
     }
 
     vigs_dev->obj_dev = ttm_object_device_init(vigs_dev->mman->mem_global_ref.object,
-                                               12);
+                                               12, &vigs_dmabuf_ops);
 
     if (!vigs_dev->obj_dev) {
         DRM_ERROR("Unable to initialize obj_dev\n");

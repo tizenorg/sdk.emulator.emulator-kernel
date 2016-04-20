@@ -2936,7 +2936,6 @@ static const struct snd_pci_quirk cxt5066_cfg_tbl[] = {
 	SND_PCI_QUIRK(0x1028, 0x0401, "Dell Vostro 1014", CXT5066_DELL_VOSTRO),
 	SND_PCI_QUIRK(0x1028, 0x0408, "Dell Inspiron One 19T", CXT5066_IDEAPAD),
 	SND_PCI_QUIRK(0x1028, 0x050f, "Dell Inspiron", CXT5066_IDEAPAD),
-	SND_PCI_QUIRK(0x1028, 0x0510, "Dell Vostro", CXT5066_IDEAPAD),
 	SND_PCI_QUIRK(0x103c, 0x360b, "HP G60", CXT5066_HP_LAPTOP),
 	SND_PCI_QUIRK(0x1043, 0x13f3, "Asus A52J", CXT5066_ASUS),
 	SND_PCI_QUIRK(0x1043, 0x1643, "Asus K52JU", CXT5066_ASUS),
@@ -3208,11 +3207,17 @@ static int cx_auto_init(struct hda_codec *codec)
 	return 0;
 }
 
+static void cx_auto_free(struct hda_codec *codec)
+{
+	snd_hda_apply_fixup(codec, HDA_FIXUP_ACT_FREE);
+	snd_hda_gen_free(codec);
+}
+
 static const struct hda_codec_ops cx_auto_patch_ops = {
 	.build_controls = cx_auto_build_controls,
 	.build_pcms = snd_hda_gen_build_pcms,
 	.init = cx_auto_init,
-	.free = snd_hda_gen_free,
+	.free = cx_auto_free,
 	.unsol_event = snd_hda_jack_unsol_event,
 #ifdef CONFIG_PM
 	.check_power_status = snd_hda_gen_check_power_status,
@@ -3232,7 +3237,12 @@ enum {
 	CXT_FIXUP_HEADPHONE_MIC_PIN,
 	CXT_FIXUP_HEADPHONE_MIC,
 	CXT_FIXUP_GPIO1,
+	CXT_FIXUP_ASPIRE_DMIC,
+	CXT_FIXUP_THINKPAD_ACPI,
 };
+
+/* for hda_fixup_thinkpad_acpi() */
+#include "thinkpad_helper.c"
 
 static void cxt_fixup_stereo_dmic(struct hda_codec *codec,
 				  const struct hda_fixup *fix, int action)
@@ -3345,6 +3355,8 @@ static const struct hda_fixup cxt_fixups[] = {
 	[CXT_PINCFG_LENOVO_TP410] = {
 		.type = HDA_FIXUP_PINS,
 		.v.pins = cxt_pincfg_lenovo_tp410,
+		.chained = true,
+		.chain_id = CXT_FIXUP_THINKPAD_ACPI,
 	},
 	[CXT_PINCFG_LEMOTE_A1004] = {
 		.type = HDA_FIXUP_PINS,
@@ -3386,6 +3398,16 @@ static const struct hda_fixup cxt_fixups[] = {
 			{ }
 		},
 	},
+	[CXT_FIXUP_ASPIRE_DMIC] = {
+		.type = HDA_FIXUP_FUNC,
+		.v.func = cxt_fixup_stereo_dmic,
+		.chained = true,
+		.chain_id = CXT_FIXUP_GPIO1,
+	},
+	[CXT_FIXUP_THINKPAD_ACPI] = {
+		.type = HDA_FIXUP_FUNC,
+		.v.func = hda_fixup_thinkpad_acpi,
+	},
 };
 
 static const struct snd_pci_quirk cxt5051_fixups[] = {
@@ -3395,7 +3417,7 @@ static const struct snd_pci_quirk cxt5051_fixups[] = {
 
 static const struct snd_pci_quirk cxt5066_fixups[] = {
 	SND_PCI_QUIRK(0x1025, 0x0543, "Acer Aspire One 522", CXT_FIXUP_STEREO_DMIC),
-	SND_PCI_QUIRK(0x1025, 0x054c, "Acer Aspire 3830TG", CXT_FIXUP_GPIO1),
+	SND_PCI_QUIRK(0x1025, 0x054c, "Acer Aspire 3830TG", CXT_FIXUP_ASPIRE_DMIC),
 	SND_PCI_QUIRK(0x1043, 0x138d, "Asus", CXT_FIXUP_HEADPHONE_MIC_PIN),
 	SND_PCI_QUIRK(0x17aa, 0x20f2, "Lenovo T400", CXT_PINCFG_LENOVO_TP410),
 	SND_PCI_QUIRK(0x17aa, 0x215e, "Lenovo T410", CXT_PINCFG_LENOVO_TP410),
@@ -3407,6 +3429,7 @@ static const struct snd_pci_quirk cxt5066_fixups[] = {
 	SND_PCI_QUIRK(0x17aa, 0x3975, "Lenovo U300s", CXT_FIXUP_STEREO_DMIC),
 	SND_PCI_QUIRK(0x17aa, 0x3977, "Lenovo IdeaPad U310", CXT_FIXUP_STEREO_DMIC),
 	SND_PCI_QUIRK(0x17aa, 0x397b, "Lenovo S205", CXT_FIXUP_STEREO_DMIC),
+	SND_PCI_QUIRK_VENDOR(0x17aa, "Thinkpad", CXT_FIXUP_THINKPAD_ACPI),
 	SND_PCI_QUIRK(0x1c06, 0x2011, "Lemote A1004", CXT_PINCFG_LEMOTE_A1004),
 	SND_PCI_QUIRK(0x1c06, 0x2012, "Lemote A1205", CXT_PINCFG_LEMOTE_A1205),
 	{}
@@ -3508,7 +3531,7 @@ static int patch_conexant_auto(struct hda_codec *codec)
 	return 0;
 
  error:
-	snd_hda_gen_free(codec);
+	cx_auto_free(codec);
 	return err;
 }
 
