@@ -17,6 +17,7 @@ int vigs_fenceman_create(struct vigs_fenceman **fenceman)
     spin_lock_init(&(*fenceman)->lock);
     INIT_LIST_HEAD(&(*fenceman)->fence_list);
     (*fenceman)->seq = UINT_MAX;
+    (*fenceman)->ctx = fence_context_alloc(1);
 
     return 0;
 
@@ -51,13 +52,12 @@ void vigs_fenceman_ack(struct vigs_fenceman *fenceman,
     spin_lock_irqsave(&fenceman->lock, flags);
 
     list_for_each_entry_safe(fence, tmp, &fenceman->fence_list, list) {
-        if (vigs_fence_seq_num_after_eq(fence->seq, lower) &&
-            vigs_fence_seq_num_before_eq(fence->seq, upper)) {
+        if (vigs_fence_seq_num_after_eq(fence->base.seqno, lower) &&
+            vigs_fence_seq_num_before_eq(fence->base.seqno, upper)) {
             DRM_DEBUG_DRIVER("Fence signaled (seq = %u)\n",
-                             fence->seq);
+                             fence->base.seqno);
             list_del_init(&fence->list);
-            fence->signaled = true;
-            wake_up_all(&fence->wait);
+            fence_signal_locked(&fence->base);
         }
     }
 
