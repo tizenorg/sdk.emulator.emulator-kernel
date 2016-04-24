@@ -270,6 +270,7 @@ static int vigs_ttm_verify_access(struct ttm_buffer_object *bo,
     return 0;
 }
 
+#if 0 // FIXME
 static bool vigs_ttm_sync_obj_signaled(void *sync_obj)
 {
     return vigs_fence_signaled((struct vigs_fence*)sync_obj);
@@ -299,6 +300,7 @@ static void *vigs_ttm_sync_obj_ref(void *sync_obj)
     vigs_fence_ref((struct vigs_fence*)sync_obj);
     return sync_obj;
 }
+#endif
 
 static int vigs_ttm_fault_reserve_notify(struct ttm_buffer_object *bo)
 {
@@ -390,11 +392,13 @@ static struct ttm_bo_driver vigs_ttm_bo_driver =
     .evict_flags = &vigs_ttm_evict_flags,
     .move = &vigs_ttm_move,
     .verify_access = &vigs_ttm_verify_access,
+#if 0 // FIXME
     .sync_obj_signaled = vigs_ttm_sync_obj_signaled,
     .sync_obj_wait = vigs_ttm_sync_obj_wait,
     .sync_obj_flush = vigs_ttm_sync_obj_flush,
     .sync_obj_unref = vigs_ttm_sync_obj_unref,
     .sync_obj_ref = vigs_ttm_sync_obj_ref,
+#endif
     .fault_reserve_notify = &vigs_ttm_fault_reserve_notify,
     .io_mem_reserve = &vigs_ttm_io_mem_reserve,
     .io_mem_free = &vigs_ttm_io_mem_free,
