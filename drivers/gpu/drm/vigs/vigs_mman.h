@@ -5,6 +5,8 @@
 #include <linux/slab.h>
 #include <ttm/ttm_bo_driver.h>
 
+#include <vigs_device.h>
+
 struct vigs_mman_ops
 {
     /*
@@ -71,7 +73,7 @@ int vigs_mman_create(resource_size_t vram_base,
                      resource_size_t ram_size,
                      uint32_t vma_data_size,
                      struct vigs_mman_ops *ops,
-                     void *user_data,
+                     struct vigs_device *vigs_dev,
                      struct vigs_mman **mman);
 
 void vigs_mman_destroy(struct vigs_mman *mman);
