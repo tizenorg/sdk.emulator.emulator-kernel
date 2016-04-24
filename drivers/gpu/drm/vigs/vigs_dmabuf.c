@@ -174,12 +174,16 @@ struct dma_buf *vigs_dmabuf_prime_export(struct drm_device *dev,
 {
     struct vigs_gem_object *vigs_gem = gem_to_vigs_gem(gem_obj);
 
+    DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
+
     DRM_DEBUG_PRIME("enter");
 
-    return dma_buf_export(gem_obj,
-                          &vigs_dmabuf_ops,
-                          vigs_gem_size(vigs_gem),
-                          flags);
+    exp_info.ops = &vigs_dmabuf_ops;
+    exp_info.size = vigs_gem_size(vigs_gem);
+    exp_info.flags = flags;
+    exp_info.priv = gem_obj;
+
+    return dma_buf_export(&exp_info);
 }
 
 struct drm_gem_object *vigs_dmabuf_prime_import(struct drm_device *dev,
