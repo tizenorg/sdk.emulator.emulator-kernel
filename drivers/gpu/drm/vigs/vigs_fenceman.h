@@ -32,6 +32,8 @@ struct vigs_fenceman
      * a special value that tells GPU not to fence things.
      */
     uint32_t seq;
+
+    unsigned ctx;
 };
 
 int vigs_fenceman_create(struct vigs_fenceman **fenceman);
