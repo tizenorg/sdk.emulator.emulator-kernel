@@ -137,7 +137,7 @@ int vigs_device_init(struct vigs_device *vigs_dev,
         goto fail1;
     }
 
-    ret = drm_addmap(vigs_dev->drm_dev,
+    ret = drm_legacy_addmap(vigs_dev->drm_dev,
                      vigs_dev->io_base,
                      vigs_dev->io_size,
                      _DRM_REGISTERS,
@@ -223,7 +223,7 @@ int vigs_device_init(struct vigs_device *vigs_dev,
      */
     drm_dev->vblank_disable_allowed = 1;
 
-    ret = drm_irq_install(drm_dev);
+    ret = drm_irq_install(drm_dev, drm_dev->pdev->irq);
 
     if (ret != 0) {
         goto fail8;
@@ -253,7 +253,7 @@ fail4:
 fail3:
     vigs_mman_destroy(vigs_dev->mman);
 fail2:
-    drm_rmmap(vigs_dev->drm_dev, vigs_dev->io_map);
+    drm_legacy_rmmap(vigs_dev->drm_dev, vigs_dev->io_map);
 fail1:
     idr_destroy(&vigs_dev->surface_idr);
     mutex_destroy(&vigs_dev->surface_idr_mutex);
@@ -274,7 +274,7 @@ void vigs_device_cleanup(struct vigs_device *vigs_dev)
     vigs_fenceman_destroy(vigs_dev->fenceman);
     ttm_object_device_release(&vigs_dev->obj_dev);
     vigs_mman_destroy(vigs_dev->mman);
-    drm_rmmap(vigs_dev->drm_dev, vigs_dev->io_map);
+    drm_legacy_rmmap(vigs_dev->drm_dev, vigs_dev->io_map);
     idr_destroy(&vigs_dev->surface_idr);
     mutex_destroy(&vigs_dev->surface_idr_mutex);
 }

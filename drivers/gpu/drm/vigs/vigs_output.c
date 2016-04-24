@@ -78,7 +78,7 @@ static void vigs_connector_destroy(struct drm_connector *connector)
 
     DRM_DEBUG_KMS("enter\n");
 
-    drm_sysfs_connector_remove(connector);
+    drm_connector_unregister(connector);
     drm_connector_cleanup(connector);
 
     kfree(vigs_output);
@@ -258,7 +258,7 @@ int vigs_output_init(struct vigs_device *vigs_dev)
 
     drm_connector_helper_add(&vigs_output->connector, &vigs_connector_helper_funcs);
 
-    ret = drm_sysfs_connector_add(&vigs_output->connector);
+    ret = drm_connector_register(&vigs_output->connector);
 
     if (ret != 0) {
         return ret;
