@@ -198,4 +198,7 @@ source "drivers/hwtracing/intel_th/Kconfig"
 
 source "drivers/fpga/Kconfig"
 
+# for maru board
+source "drivers/maru/Kconfig"
+
 endmenu

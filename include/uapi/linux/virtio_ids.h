@@ -42,4 +42,21 @@
 #define VIRTIO_ID_GPU          16 /* virtio GPU */
 #define VIRTIO_ID_INPUT        18 /* virtio input */
 
+#ifdef CONFIG_MARU
+/* maru devices */
+#define VIRTIO_ID_TOUCHSCREEN	31 /* virtio touchscreen */
+#define VIRTIO_ID_KEYBOARD	32 /* virtio keyboard */
+#define VIRTIO_ID_ESM		33 /* virtio Emulator Status Monitor */
+#define VIRTIO_ID_HWKEY		34 /* virtio hwkey */
+#define VIRTIO_ID_EVDI		35 /* virtio emulator virtual device interface */
+#define VIRTIO_ID_GL		36 /* virtio glmem */
+#define VIRTIO_ID_SENSOR	37 /* virtio sensor */
+#define VIRTIO_ID_NFC		38 /* virtio nfc */
+#define VIRTIO_ID_JACK		39 /* virtio jack */
+#define VIRTIO_ID_POWER		40 /* virtio power supply */
+#define VIRTIO_ID_VMODEM	41 /* virtio VMODEM */
+#define VIRTIO_ID_ROTARY	42 /* virtio rotary */
+#define VIRTIO_ID_TABLET	43 /* virtio tablet */
+#endif
+
 #endif /* _LINUX_VIRTIO_IDS_H */

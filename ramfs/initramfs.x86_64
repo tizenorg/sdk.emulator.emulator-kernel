@@ -1,0 +1,12 @@
+# SeokYeon Hwang (syeon.hwang@samsung.com)
+
+# init script
+file /init ramfs/init 0755 0 0
+
+# busybox
+dir /bin 0755 0 0
+file /bin/busybox ramfs/busybox.x86_64 0755 0 0
+
+# for initial console
+dir /dev 0755 0 0
+nod /dev/console 0600 0 0 c 5 1

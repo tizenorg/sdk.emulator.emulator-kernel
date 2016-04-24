@@ -3004,4 +3004,11 @@
 
 #define PCI_VENDOR_ID_OCZ		0x1b85
 
+#ifdef CONFIG_MARU
+/* maru devices */
+#define PCI_VENDOR_ID_TIZEN			0xC9B5
+#define PCI_DEVICE_ID_VIRTUAL_BRIGHTNESS	0x1014
+#define PCI_DEVICE_ID_VIRTUAL_CAMERA		0x1018
+#endif
+
 #endif /* _LINUX_PCI_IDS_H */
