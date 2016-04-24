@@ -2,6 +2,8 @@
 #define _VIGS_FENCE_H_
 
 #include "drmP.h"
+#include <linux/fence.h>
+#include <ttm/ttm_object.h>
 #include <ttm/ttm_object.h>
 
 #define VIGS_FENCE_TYPE ttm_driver_type2
@@ -10,18 +12,9 @@ struct vigs_fenceman;
 
 struct vigs_fence
 {
-    struct kref kref;
-
+    struct fence base;
     struct list_head list;
-
     struct vigs_fenceman *fenceman;
-
-    uint32_t seq;
-
-    bool signaled;
-
-    wait_queue_head_t wait;
-
     void (*destroy)(struct vigs_fence *fence);
 };
 
@@ -35,14 +28,8 @@ struct vigs_fence
 struct vigs_user_fence
 {
     struct ttm_base_object base;
-
     struct vigs_fence fence;
 };
-
-static inline struct vigs_fence *kref_to_vigs_fence(struct kref *kref)
-{
-    return container_of(kref, struct vigs_fence, kref);
-}
 
 static inline struct vigs_user_fence *vigs_fence_to_vigs_user_fence(struct vigs_fence *fence)
 {
@@ -54,12 +41,12 @@ static inline struct vigs_user_fence *base_to_vigs_user_fence(struct ttm_base_ob
     return container_of(base, struct vigs_user_fence, base);
 }
 
-static inline uint32_t vigs_fence_seq_next(uint32_t seq)
+static inline uint32_t vigs_fence_seq_next(uint32_t *seq)
 {
-    if (++seq == 0) {
-        ++seq;
+    if (++(*seq) == 0) {
+        ++(*seq);
     }
-    return seq;
+    return *seq;
 }
 
 #define vigs_fence_seq_num_after(a, b) \
@@ -80,10 +67,6 @@ int vigs_user_fence_create(struct vigs_fenceman *fenceman,
                            struct drm_file *file_priv,
                            struct vigs_user_fence **user_fence,
                            uint32_t *handle);
-
-int vigs_fence_wait(struct vigs_fence *fence, bool interruptible);
-
-bool vigs_fence_signaled(struct vigs_fence *fence);
 
 /*
  * Passing NULL won't hurt, this is for convenience.

@@ -5,33 +5,31 @@
 #include "vigs_comm.h"
 #include <drm/vigs_drm.h>
 
-static void vigs_fence_cleanup(struct vigs_fence *fence)
-{
-}
-
 static void vigs_fence_destroy(struct vigs_fence *fence)
 {
-    vigs_fence_cleanup(fence);
-    kfree(fence);
+	fence_free(&fence->base);
 }
 
 static void vigs_user_fence_destroy(struct vigs_fence *fence)
 {
     struct vigs_user_fence *user_fence = vigs_fence_to_vigs_user_fence(fence);
 
-    vigs_fence_cleanup(&user_fence->fence);
     ttm_base_object_kfree(user_fence, base);
 }
 
-static void vigs_fence_release_locked(struct kref *kref)
+static void vigs_fence_release(struct fence *f)
 {
-    struct vigs_fence *fence = kref_to_vigs_fence(kref);
+    struct vigs_fence *fence =
+		container_of(f, struct vigs_fence, base);
+	unsigned long flags;
 
     DRM_DEBUG_DRIVER("Fence destroyed (seq = %u, signaled = %u)\n",
-                     fence->seq,
-                     fence->signaled);
+                     f->seqno,
+                     fence_is_signaled(f));
 
+	spin_lock_irqsave(f->lock, flags);
     list_del_init(&fence->list);
+	spin_unlock_irqrestore(f->lock, flags);
     fence->destroy(fence);
 }
 
@@ -44,29 +42,57 @@ static void vigs_user_fence_refcount_release(struct ttm_base_object **base)
     *base = NULL;
 }
 
+static const char* vigs_get_driver_name(struct fence *f)
+{
+    return "VIGS";
+}
+
+static const char *vigs_fence_get_timeline_name(struct fence *f)
+{
+    return "svga";
+}
+
+static bool vigs_fence_enable_signaling(struct fence *f)
+{
+    return true;
+}
+
+static signed long
+vigs_fence_wait(struct fence *fence, bool intr, signed long timeout)
+{
+    // use default
+    return fence_default_wait(fence, intr, timeout);
+}
+
+const struct fence_ops vigs_fence_ops = {
+    .release = vigs_fence_release,
+    .get_driver_name = vigs_get_driver_name,
+    .get_timeline_name = vigs_fence_get_timeline_name,
+    .enable_signaling = vigs_fence_enable_signaling,
+    .wait = vigs_fence_wait,
+};
+
 static void vigs_fence_init(struct vigs_fence *fence,
                             struct vigs_fenceman *fenceman,
                             void (*destroy)(struct vigs_fence*))
 {
     unsigned long flags;
+    uint32_t seqno = vigs_fence_seq_next(&fenceman->seq);
 
-    kref_init(&fence->kref);
     INIT_LIST_HEAD(&fence->list);
     fence->fenceman = fenceman;
-    fence->signaled = false;
-    init_waitqueue_head(&fence->wait);
     fence->destroy = destroy;
 
     spin_lock_irqsave(&fenceman->lock, flags);
 
-    fence->seq = vigs_fence_seq_next(fenceman->seq);
-    fenceman->seq = fence->seq;
+    fence_init(&fence->base, &vigs_fence_ops, &fenceman->lock,
+         fenceman->ctx, seqno);
 
     list_add_tail(&fence->list, &fenceman->fence_list);
 
     spin_unlock_irqrestore(&fenceman->lock, flags);
 
-    DRM_DEBUG_DRIVER("Fence created (seq = %u)\n", fence->seq);
+    DRM_DEBUG_DRIVER("Fence created (seq = %u)\n", fence->base.seqno);
 }
 
 int vigs_fence_create(struct vigs_fenceman *fenceman,
@@ -108,12 +134,12 @@ int vigs_user_fence_create(struct vigs_fenceman *fenceman,
 
     vigs_fence_init(&(*user_fence)->fence, fenceman, &vigs_user_fence_destroy);
 
+    vigs_fence_ref(&(*user_fence)->fence);
     ret = ttm_base_object_init(vigs_file->obj_file,
                                &(*user_fence)->base, false,
                                VIGS_FENCE_TYPE,
                                &vigs_user_fence_refcount_release,
                                NULL);
-
     if (ret != 0) {
         goto fail2;
     }
@@ -121,14 +147,12 @@ int vigs_user_fence_create(struct vigs_fenceman *fenceman,
     /*
      * For ttm_base_object.
      */
-    vigs_fence_ref(&(*user_fence)->fence);
 
     *handle = (*user_fence)->base.hash.key;
 
     return 0;
 
 fail2:
-    vigs_fence_cleanup(&(*user_fence)->fence);
     kfree(*user_fence);
 fail1:
     *user_fence = NULL;
@@ -136,71 +160,16 @@ fail1:
     return ret;
 }
 
-int vigs_fence_wait(struct vigs_fence *fence, bool interruptible)
-{
-    long ret = 0;
-
-    if (vigs_fence_signaled(fence)) {
-        DRM_DEBUG_DRIVER("Fence wait (seq = %u, signaled = %u)\n",
-                         fence->seq,
-                         fence->signaled);
-        return 0;
-    }
-
-    DRM_DEBUG_DRIVER("Fence wait (seq = %u)\n", fence->seq);
-
-    if (interruptible) {
-        ret = wait_event_interruptible(fence->wait, vigs_fence_signaled(fence));
-    } else {
-        wait_event(fence->wait, vigs_fence_signaled(fence));
-    }
-
-    if (ret != 0) {
-        DRM_INFO("Fence wait interrupted (seq = %u) = %ld\n", fence->seq, ret);
-    } else {
-        DRM_DEBUG_DRIVER("Fence wait done (seq = %u)\n", fence->seq);
-    }
-
-    return ret;
-}
-
-bool vigs_fence_signaled(struct vigs_fence *fence)
-{
-    unsigned long flags;
-    bool signaled;
-
-    spin_lock_irqsave(&fence->fenceman->lock, flags);
-
-    signaled = fence->signaled;
-
-    spin_unlock_irqrestore(&fence->fenceman->lock, flags);
-
-    return signaled;
-}
-
 void vigs_fence_ref(struct vigs_fence *fence)
 {
-    if (unlikely(!fence)) {
-        return;
-    }
-
-    kref_get(&fence->kref);
+    if (fence)
+        fence_get(&fence->base);
 }
 
 void vigs_fence_unref(struct vigs_fence *fence)
 {
-    struct vigs_fenceman *fenceman;
-
-    if (unlikely(!fence)) {
-        return;
-    }
-
-    fenceman = fence->fenceman;
-
-    spin_lock_irq(&fenceman->lock);
-    BUG_ON(atomic_read(&fence->kref.refcount) == 0);
-    kref_put(&fence->kref, vigs_fence_release_locked);
-    spin_unlock_irq(&fenceman->lock);
+    if (fence)
+        fence_put(&fence->base);
 }
 
 int vigs_fence_create_ioctl(struct drm_device *drm_dev,
@@ -235,7 +204,7 @@ int vigs_fence_create_ioctl(struct drm_device *drm_dev,
     }
 
     args->handle = handle;
-    args->seq = user_fence->fence.seq;
+    args->seq = user_fence->fence.base.seqno;
 
 out:
     vigs_fence_unref(&user_fence->fence);
@@ -261,7 +230,7 @@ int vigs_fence_wait_ioctl(struct drm_device *drm_dev,
 
     user_fence = base_to_vigs_user_fence(base);
 
-    ret = vigs_fence_wait(&user_fence->fence, true);
+    ret = fence_wait(&user_fence->fence.base, true);
 
     ttm_base_object_unref(&base);
 
@@ -285,7 +254,7 @@ int vigs_fence_signaled_ioctl(struct drm_device *drm_dev,
 
     user_fence = base_to_vigs_user_fence(base);
 
-    args->signaled = vigs_fence_signaled(&user_fence->fence);
+    args->signaled = fence_is_signaled(&user_fence->fence.base);
 
     ttm_base_object_unref(&base);
 
