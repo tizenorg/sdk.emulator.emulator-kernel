@@ -394,7 +394,7 @@ void vigs_execbuffer_fence(struct vigs_execbuffer *execbuffer,
 {
     struct vigsp_cmd_batch_header *batch_header = execbuffer->gem.kptr;
 
-    batch_header->fence_seq = fence->seq;
+    batch_header->fence_seq = fence->base.seqno;
 }
 
 void vigs_execbuffer_clear_validations(struct vigs_execbuffer *execbuffer,
@@ -530,10 +530,10 @@ int vigs_execbuffer_exec_ioctl(struct drm_device *drm_dev,
 
         vigs_comm_exec(vigs_dev->comm, execbuffer);
 
-        ttm_eu_fence_buffer_objects(&ticket, &list, (void *)fence);
+        ttm_eu_fence_buffer_objects(&ticket, &list, &fence->base);
 
         if (sync) {
-            vigs_fence_wait(fence, false);
+            fence_wait(&fence->base, false);
         }
 
         vigs_fence_unref(fence);
