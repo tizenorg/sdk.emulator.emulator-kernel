@@ -43,7 +43,6 @@
 
 #define MARUBL_DRIVER_NAME			"maru_backlight"
 
-#define MIN_BRIGHTNESS	0
 #define MAX_BRIGHTNESS	100
 
 static struct pci_device_id marubl_pci_table[] = {
@@ -74,7 +73,6 @@ struct marubl {
 static struct marubl *marubl_device;
 /* ========================================================================== */
 
-static int min_brightness = MIN_BRIGHTNESS;
 static int max_brightness = MAX_BRIGHTNESS;
 
 static int marubl_get_intensity(struct backlight_device *bd)
@@ -262,7 +260,6 @@ static int marubl_probe(struct pci_dev *pci_dev,
 	 * register backlight device
 	 */
 	memset(&props, 0, sizeof(struct backlight_properties));
-	props.min_brightness = min_brightness;
 	props.max_brightness = max_brightness;
 	props.type = BACKLIGHT_PLATFORM;
 	bd = backlight_device_register("emulator",
