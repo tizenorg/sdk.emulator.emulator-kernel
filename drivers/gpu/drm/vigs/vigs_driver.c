@@ -148,8 +148,6 @@ static int vigs_drm_open(struct drm_device *dev, struct drm_file *file_priv)
 
     file_priv->driver_priv = vigs_file;
 
-    vigs_dev->mman->bo_dev.dev_mapping = dev->dev_mapping;
-
     return 0;
 }
 
