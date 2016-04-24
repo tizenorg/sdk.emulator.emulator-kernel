@@ -203,15 +203,17 @@ static int vigs_ttm_init_mem_type(struct ttm_bo_device *bo_dev,
     return 0;
 }
 
-static const u32 evict_placements[1] =
+static const struct ttm_place evict_placements[] =
 {
-    TTM_PL_FLAG_CACHED | TTM_PL_FLAG_TT | TTM_PL_FLAG_NO_EVICT
+    {
+        .fpfn = 0,
+        .lpfn = 0,
+        .flags = TTM_PL_FLAG_CACHED | TTM_PL_FLAG_TT | TTM_PL_FLAG_NO_EVICT
+    },
 };
 
 static const struct ttm_placement evict_placement =
 {
-    .fpfn = 0,
-    .lpfn = 0,
     .num_placement = ARRAY_SIZE(evict_placements),
     .placement = evict_placements,
     .num_busy_placement = ARRAY_SIZE(evict_placements),
@@ -300,7 +302,7 @@ static void *vigs_ttm_sync_obj_ref(void *sync_obj)
 
 static int vigs_ttm_fault_reserve_notify(struct ttm_buffer_object *bo)
 {
-    u32 placements[1];
+    struct ttm_place placements[1];
     struct ttm_placement placement;
     int ret;
 
@@ -316,7 +318,7 @@ static int vigs_ttm_fault_reserve_notify(struct ttm_buffer_object *bo)
      * It's GPU memory page fault. Move this buffer into VRAM.
      */
 
-    placements[0] = TTM_PL_FLAG_WC | TTM_PL_FLAG_VRAM;
+    placements[0].flags = TTM_PL_FLAG_WC | TTM_PL_FLAG_VRAM;
 
     memset(&placement, 0, sizeof(placement));
 
@@ -448,7 +450,7 @@ int vigs_mman_create(resource_size_t vram_base,
                      resource_size_t ram_size,
                      uint32_t vma_data_size,
                      struct vigs_mman_ops *ops,
-                     void *user_data,
+                     struct vigs_device *vigs_dev,
                      struct vigs_mman **mman)
 {
     int ret = 0;
@@ -487,11 +489,12 @@ int vigs_mman_create(resource_size_t vram_base,
     (*mman)->vram_base = vram_base;
     (*mman)->ram_base = ram_base;
     (*mman)->ops = ops;
-    (*mman)->user_data = user_data;
+    (*mman)->user_data = vigs_dev;
 
     ret = ttm_bo_device_init(&(*mman)->bo_dev,
                              (*mman)->bo_global_ref.ref.object,
                              &vigs_ttm_bo_driver,
+                             vigs_dev->drm_dev->anon_inode->i_mapping,
                              DRM_FILE_PAGE_OFFSET,
                              0);
     if (ret != 0) {

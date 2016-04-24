@@ -511,7 +511,7 @@ int vigs_execbuffer_exec_ioctl(struct drm_device *drm_dev,
     if (list_empty(&list)) {
         vigs_comm_exec(vigs_dev->comm, execbuffer);
     } else {
-        ret = ttm_eu_reserve_buffers(&ticket, &list);
+        ret = ttm_eu_reserve_buffers(&ticket, &list, true, NULL);
 
         if (ret != 0) {
             goto out3;
@@ -530,7 +530,7 @@ int vigs_execbuffer_exec_ioctl(struct drm_device *drm_dev,
 
         vigs_comm_exec(vigs_dev->comm, execbuffer);
 
-        ttm_eu_fence_buffer_objects(&ticket, &list, fence);
+        ttm_eu_fence_buffer_objects(&ticket, &list, (void *)fence);
 
         if (sync) {
             vigs_fence_wait(fence, false);
