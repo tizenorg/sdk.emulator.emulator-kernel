@@ -270,36 +270,6 @@ static int vigs_ttm_verify_access(struct ttm_buffer_object *bo,
     return 0;
 }
 
-static bool vigs_ttm_sync_obj_signaled(void *sync_obj)
-{
-    return vigs_fence_signaled((struct vigs_fence*)sync_obj);
-}
-
-static int vigs_ttm_sync_obj_wait(void *sync_obj,
-                                  bool lazy,
-                                  bool interruptible)
-{
-    return vigs_fence_wait((struct vigs_fence*)sync_obj, interruptible);
-}
-
-static int vigs_ttm_sync_obj_flush(void *sync_obj)
-{
-    return 0;
-}
-
-static void vigs_ttm_sync_obj_unref(void **sync_obj)
-{
-    struct vigs_fence* fence = *sync_obj;
-    vigs_fence_unref(fence);
-    *sync_obj = NULL;
-}
-
-static void *vigs_ttm_sync_obj_ref(void *sync_obj)
-{
-    vigs_fence_ref((struct vigs_fence*)sync_obj);
-    return sync_obj;
-}
-
 static int vigs_ttm_fault_reserve_notify(struct ttm_buffer_object *bo)
 {
     struct ttm_place placements[1];
@@ -391,11 +361,6 @@ static struct ttm_bo_driver vigs_ttm_bo_driver =
     .evict_flags = &vigs_ttm_evict_flags,
     .move = &vigs_ttm_move,
     .verify_access = &vigs_ttm_verify_access,
-    .sync_obj_signaled = vigs_ttm_sync_obj_signaled,
-    .sync_obj_wait = vigs_ttm_sync_obj_wait,
-    .sync_obj_flush = vigs_ttm_sync_obj_flush,
-    .sync_obj_unref = vigs_ttm_sync_obj_unref,
-    .sync_obj_ref = vigs_ttm_sync_obj_ref,
     .fault_reserve_notify = &vigs_ttm_fault_reserve_notify,
     .io_mem_reserve = &vigs_ttm_io_mem_reserve,
     .io_mem_free = &vigs_ttm_io_mem_free,
