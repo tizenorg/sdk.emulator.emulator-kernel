@@ -5,6 +5,7 @@
 #include "vigs_comm.h"
 #include "vigs_fbdev.h"
 #include "drm_crtc_helper.h"
+#include "drm_plane_helper.h"
 #include <linux/console.h>
 
 static int vigs_crtc_update(struct drm_crtc *crtc,
@@ -20,8 +21,8 @@ static int vigs_crtc_update(struct drm_crtc *crtc,
      * root surface has been updated.
      */
 
-    if (!crtc->fb) {
-        DRM_ERROR("crtc->fb is NULL\n");
+    if (!crtc->primary->fb) {
+        DRM_ERROR("crtc->primary->fb is NULL\n");
         return -EINVAL;
     }
 
@@ -29,7 +30,7 @@ static int vigs_crtc_update(struct drm_crtc *crtc,
         vigs_old_fb = fb_to_vigs_fb(old_fb);
     }
 
-    vigs_fb = fb_to_vigs_fb(crtc->fb);
+    vigs_fb = fb_to_vigs_fb(crtc->primary->fb);
 
     if (vigs_fb->surfaces[0]->scanout) {
 retry:
@@ -247,7 +248,7 @@ static int vigs_crtc_page_flip(struct drm_crtc *crtc,
 {
     unsigned long flags;
     struct vigs_device *vigs_dev = crtc->dev->dev_private;
-    struct drm_framebuffer *old_fb = crtc->fb;
+    struct drm_framebuffer *old_fb = crtc->primary->fb;
     int ret = -EINVAL;
 
     mutex_lock(&vigs_dev->drm_dev->struct_mutex);
@@ -267,10 +268,10 @@ static int vigs_crtc_page_flip(struct drm_crtc *crtc,
                       &vigs_dev->pageflip_event_list);
         spin_unlock_irqrestore(&vigs_dev->drm_dev->event_lock, flags);
 
-        crtc->fb = fb;
+        crtc->primary->fb = fb;
         ret = vigs_crtc_update(crtc, old_fb);
         if (ret != 0) {
-            crtc->fb = old_fb;
+            crtc->primary->fb = old_fb;
             spin_lock_irqsave(&vigs_dev->drm_dev->event_lock, flags);
             if (atomic_read(&vigs_dev->drm_dev->vblank[0].refcount) > 0) {
                 /*
@@ -302,7 +303,7 @@ static void vigs_crtc_disable(struct drm_crtc *crtc)
 
     DRM_DEBUG_KMS("enter\n");
 
-    if (!crtc->fb) {
+    if (!crtc->primary->fb) {
         /*
          * No current framebuffer, no need to notify the host.
          */
@@ -310,7 +311,7 @@ static void vigs_crtc_disable(struct drm_crtc *crtc)
         return;
     }
 
-    vigs_fb = fb_to_vigs_fb(crtc->fb);
+    vigs_fb = fb_to_vigs_fb(crtc->primary->fb);
 
     vigs_comm_set_root_surface(vigs_dev->comm, 0, 0, 0);
 

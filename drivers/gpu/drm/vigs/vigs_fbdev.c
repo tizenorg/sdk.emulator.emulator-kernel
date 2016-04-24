@@ -19,11 +19,11 @@ static bool vigs_fbdev_helper_is_bound(struct drm_fb_helper *fb_helper)
     int bound = 0, crtcs_bound = 0;
 
     list_for_each_entry(crtc, &dev->mode_config.crtc_list, head) {
-        if (crtc->fb) {
+        if (crtc->primary->fb) {
             crtcs_bound++;
         }
 
-        if (crtc->fb == fb_helper->fb) {
+        if (crtc->primary->fb == fb_helper->fb) {
             bound++;
         }
     }
@@ -500,6 +500,9 @@ int vigs_fbdev_create(struct vigs_device *vigs_dev,
 
     (*vigs_fbdev)->base.funcs = &vigs_fbdev_funcs;
 
+    drm_fb_helper_prepare(vigs_dev->drm_dev, &(*vigs_fbdev)->base,
+            &vigs_fbdev_funcs);
+
     ret = drm_fb_helper_init(vigs_dev->drm_dev,
                              &(*vigs_fbdev)->base,
                              1, 1);
@@ -560,7 +563,5 @@ void vigs_fbdev_restore_mode(struct vigs_fbdev *vigs_fbdev)
 {
     DRM_DEBUG_KMS("enter\n");
 
-    drm_modeset_lock_all(vigs_fbdev->base.dev);
-    drm_fb_helper_restore_fbdev_mode(&vigs_fbdev->base);
-    drm_modeset_unlock_all(vigs_fbdev->base.dev);
+    drm_fb_helper_restore_fbdev_mode_unlocked(&vigs_fbdev->base);
 }
