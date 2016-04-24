@@ -245,11 +245,7 @@ int vigs_gem_wait(struct vigs_gem_object *vigs_gem)
 {
     int ret;
 
-    spin_lock(&vigs_gem->bo.bdev->fence_lock);
-
     ret = ttm_bo_wait(&vigs_gem->bo, true, false, false);
-
-    spin_unlock(&vigs_gem->bo.bdev->fence_lock);
 
     return ret;
 }
