@@ -1,0 +1,71 @@
+menuconfig MARU
+	tristate "MARU virtual device drivers for emulator"
+	default n
+
+config MARU_VIRTIO_TOUCHSCREEN
+	tristate "MARU Virtio Touchscreen Driver"
+	depends on MARU != n
+
+config MARU_CAMERA
+	tristate "MARU Camera Driver"
+	depends on MARU != n && VIDEO_DEV && VIDEO_V4L2
+	select VIDEOBUF_VMALLOC
+
+config MARU_BACKLIGHT
+	tristate "MARU Backlight Driver"
+	depends on MARU && BACKLIGHT_CLASS_DEVICE
+	default y
+	help
+		Say Y to enable the backlight driver of MARU.
+
+config MARU_JACK
+	tristate "MARU Jack Driver"
+	depends on MARU != n
+
+config MARU_POWER_SUPPLY
+	tristate "MARU Power supply Driver"
+	depends on MARU != n && !POWER_SUPPLY
+
+config MARU_VIRTIO_HWKEY
+	tristate "MARU Virtio HW Key Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_TABLET
+	tristate "MARU Virtio Tablet Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_KEYBOARD
+	tristate "MARU Virtio Keyboard Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_EVDI
+	tristate "MARU VirtIO Emulator Virtual Device Interface Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_SENSOR
+	tristate "MARU VirtIO Virtual Sensor Device Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_NFC
+	tristate "MARU VirtIO Virtual NFC Device Driver"
+	depends on MARU != n
+
+config MARU_BRILLCODEC
+	tristate "MARU brillcodec driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_VMODEM
+	tristate "MARU VirtIO Virtual Modem Device Driver"
+	depends on MARU != n
+
+config MARU_VIRTIO_ROTARY
+	tristate "MARU VirtIO Virtual Rotary Device Driver"
+	depends on MARU != n
+
+config MARU_EXTENSION_SOURCE
+	tristate "MARU Extension source"
+	depends on MARU != n
+
+config MARU_EXTENSION_SOURCE_PATH
+	string "MARU Extension source path"
+	depends on MARU != n && MARU_EXTENSION_SOURCE != n

@@ -75,3 +75,5 @@ obj-y			+= i2c/
 obj-y			+= panel/
 obj-y			+= bridge/
 obj-$(CONFIG_DRM_FSL_DCU) += fsl-dcu/
+# for maru board
+obj-$(CONFIG_DRM_VIGS)	+= vigs/
