@@ -2,6 +2,7 @@
 #define _VIGS_GEM_H_
 
 #include "drmP.h"
+#include "drm_gem.h"
 #include <ttm/ttm_bo_driver.h>
 #include <ttm/ttm_object.h>
 
