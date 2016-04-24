@@ -92,7 +92,7 @@ static int vigs_connector_get_modes(struct drm_connector *connector)
 
     DRM_DEBUG_KMS("enter\n");
 
-    if (fb_get_options(drm_get_connector_name(connector), &option) == 0) {
+    if (fb_get_options(connector->name, &option) == 0) {
         struct drm_cmdline_mode cmdline_mode;
 
         if (drm_mode_parse_command_line_for_connector(option,
