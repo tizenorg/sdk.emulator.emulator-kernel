@@ -3,9 +3,9 @@
 
 #include "drmP.h"
 
-int vigs_enable_vblank(struct drm_device *drm_dev, int crtc);
+int vigs_enable_vblank(struct drm_device *drm_dev, unsigned int pipe);
 
-void vigs_disable_vblank(struct drm_device *drm_dev, int crtc);
+void vigs_disable_vblank(struct drm_device *drm_dev, unsigned int pipe);
 
 irqreturn_t vigs_irq_handler(int irq, void *arg);
 

@@ -43,15 +43,15 @@ static void vigs_finish_pageflips(struct vigs_device *vigs_dev)
     spin_unlock_irqrestore(&vigs_dev->drm_dev->event_lock, flags);
 }
 
-int vigs_enable_vblank(struct drm_device *drm_dev, int crtc)
+int vigs_enable_vblank(struct drm_device *drm_dev, unsigned int pipe)
 {
     struct vigs_device *vigs_dev = drm_dev->dev_private;
     u32 value;
 
-    DRM_DEBUG_KMS("enter: crtc = %d\n", crtc);
+    DRM_DEBUG_KMS("enter: pipe = %u\n", pipe);
 
-    if (crtc != 0) {
-        DRM_ERROR("bad crtc = %d", crtc);
+    if (pipe != 0) {
+        DRM_ERROR("bad pipe = %u", pipe);
         return -EINVAL;
     }
 
@@ -62,15 +62,15 @@ int vigs_enable_vblank(struct drm_device *drm_dev, int crtc)
     return 0;
 }
 
-void vigs_disable_vblank(struct drm_device *drm_dev, int crtc)
+void vigs_disable_vblank(struct drm_device *drm_dev, unsigned int pipe)
 {
     struct vigs_device *vigs_dev = drm_dev->dev_private;
     u32 value;
 
-    DRM_DEBUG_KMS("enter: crtc = %d\n", crtc);
+    DRM_DEBUG_KMS("enter: pipe = %u\n", pipe);
 
-    if (crtc != 0) {
-        DRM_ERROR("bad crtc = %d", crtc);
+    if (pipe != 0) {
+        DRM_ERROR("bad pipe = %u", pipe);
     }
 
     value = 0;
