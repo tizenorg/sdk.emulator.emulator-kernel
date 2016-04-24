@@ -318,7 +318,7 @@ int vigs_comm_set_root_surface(struct vigs_comm *comm,
     mutex_unlock(&comm->mutex);
 
     if ((ret == 0) && fence) {
-        vigs_fence_wait(fence, false);
+        fence_wait(&fence->base, false);
     }
 
     vigs_fence_unref(fence);
@@ -361,7 +361,7 @@ int vigs_comm_update_vram(struct vigs_comm *comm,
     mutex_unlock(&comm->mutex);
 
     if (ret == 0) {
-        vigs_fence_wait(fence, false);
+        fence_wait(&fence->base, false);
     }
 
     vigs_fence_unref(fence);
@@ -411,7 +411,7 @@ int vigs_comm_update_gpu(struct vigs_comm *comm,
     mutex_unlock(&comm->mutex);
 
     if (ret == 0) {
-        vigs_fence_wait(fence, false);
+        fence_wait(&fence->base, false);
     }
 
     vigs_fence_unref(fence);
@@ -485,7 +485,7 @@ int vigs_comm_fence(struct vigs_comm *comm, struct vigs_fence *fence)
     struct vigsp_cmd_batch_header *batch_header;
     int ret;
 
-    DRM_DEBUG_DRIVER("seq = %u\n", fence->seq);
+    DRM_DEBUG_DRIVER("seq = %u\n", fence->base.seqno);
 
     mutex_lock(&comm->mutex);
 
