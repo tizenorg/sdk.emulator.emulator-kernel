@@ -25,30 +25,31 @@ int vigs_gem_init(struct vigs_gem_object *vigs_gem,
                   bool kernel,
                   vigs_gem_destroy_func destroy)
 {
-    u32 placements[1];
+    struct ttm_place placements[1];
     struct ttm_placement placement;
     enum ttm_bo_type bo_type;
     int ret = 0;
 
     size = roundup(size, PAGE_SIZE);
-
     if (size == 0) {
         kfree(vigs_gem);
         return -EINVAL;
     }
 
+    memset(placements, 0, sizeof(*placements));
+    memset(&placement, 0, sizeof(placement));
+
     if (type == VIGS_GEM_TYPE_SURFACE) {
-        placements[0] =
+        placements[0].flags =
             TTM_PL_FLAG_CACHED | TTM_PL_FLAG_TT | TTM_PL_FLAG_NO_EVICT;
     } else if (type == VIGS_GEM_TYPE_EXECBUFFER) {
-        placements[0] =
+        placements[0].flags =
             TTM_PL_FLAG_WC | TTM_PL_FLAG_PRIV0 | TTM_PL_FLAG_NO_EVICT;
     } else {
         kfree(vigs_gem);
         return -EINVAL;
     }
 
-    memset(&placement, 0, sizeof(placement));
 
     placement.placement = placements;
     placement.busy_placement = placements;
@@ -61,10 +62,6 @@ int vigs_gem_init(struct vigs_gem_object *vigs_gem,
         bo_type = ttm_bo_type_device;
     }
 
-    if (unlikely(vigs_dev->mman->bo_dev.dev_mapping == NULL)) {
-        vigs_dev->mman->bo_dev.dev_mapping = vigs_dev->drm_dev->dev_mapping;
-    }
-
     ret = drm_gem_object_init(vigs_dev->drm_dev, &vigs_gem->base, size);
 
     if (ret != 0) {
@@ -74,7 +71,7 @@ int vigs_gem_init(struct vigs_gem_object *vigs_gem,
 
     ret = ttm_bo_init(&vigs_dev->mman->bo_dev, &vigs_gem->bo, size, bo_type,
                       &placement, 0,
-                      false, NULL, 0, NULL,
+                      false, NULL, 0, NULL, NULL,
                       &vigs_gem_bo_destroy);
 
     if (ret != 0) {
@@ -102,7 +99,7 @@ void vigs_gem_cleanup(struct vigs_gem_object *vigs_gem)
 
 int vigs_gem_pin(struct vigs_gem_object *vigs_gem)
 {
-    u32 placements[1];
+    struct ttm_place placements[1];
     struct ttm_placement placement;
     int ret;
 
@@ -117,10 +114,11 @@ int vigs_gem_pin(struct vigs_gem_object *vigs_gem)
         return 0;
     }
 
-    placements[0] =
-        TTM_PL_FLAG_WC | TTM_PL_FLAG_VRAM | TTM_PL_FLAG_NO_EVICT;
-
+    memset(placements, 0, sizeof(*placements));
     memset(&placement, 0, sizeof(placement));
+
+    placements[0].flags =
+        TTM_PL_FLAG_WC | TTM_PL_FLAG_VRAM | TTM_PL_FLAG_NO_EVICT;
 
     placement.placement = placements;
     placement.busy_placement = placements;
@@ -149,7 +147,7 @@ int vigs_gem_pin(struct vigs_gem_object *vigs_gem)
 
 void vigs_gem_unpin(struct vigs_gem_object *vigs_gem)
 {
-    u32 placements[2];
+    struct ttm_place placements[2];
     struct ttm_placement placement;
     int ret;
 
@@ -165,12 +163,14 @@ void vigs_gem_unpin(struct vigs_gem_object *vigs_gem)
 
     vigs_gem_kunmap(vigs_gem);
 
-    placements[0] =
+    memset(placements, 0, sizeof(*placements) * 2);
+    memset(&placement, 0, sizeof(placement));
+
+    placements[0].flags =
         TTM_PL_FLAG_WC | TTM_PL_FLAG_VRAM;
-    placements[1] =
+    placements[1].flags =
         TTM_PL_FLAG_CACHED | TTM_PL_FLAG_TT | TTM_PL_FLAG_NO_EVICT;
 
-    memset(&placement, 0, sizeof(placement));
 
     placement.placement = placements;
     placement.busy_placement = placements;
