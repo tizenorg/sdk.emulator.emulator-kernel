@@ -635,7 +635,7 @@ int vigs_mman_mmap(struct vigs_mman *mman,
     struct ttm_buffer_object *bo;
 
     if (unlikely(vma->vm_pgoff < DRM_FILE_PAGE_OFFSET)) {
-        return drm_mmap(filp, vma);
+        return drm_legacy_mmap(filp, vma);
     }
 
     vigs_vma = kmem_cache_alloc(mman->vma_cache, GFP_KERNEL);

@@ -120,7 +120,7 @@ static int vigs_fbdev_setcmap(struct fb_cmap *cmap, struct fb_info *fbi)
 {
     struct drm_fb_helper *fb_helper = fbi->par;
     struct drm_device *dev = fb_helper->dev;
-    struct drm_crtc_helper_funcs *crtc_funcs;
+    const struct drm_crtc_helper_funcs *crtc_funcs;
     u16 *red, *green, *blue, *transp;
     struct drm_crtc *crtc;
     int i, j, ret = 0;
