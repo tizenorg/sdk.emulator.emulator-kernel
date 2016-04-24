@@ -1210,7 +1210,7 @@ static const struct v4l2_file_operations marucam_fops = {
 	.release	= marucam_close,
 	.poll		= marucam_poll,
 	.mmap		= marucam_mmap,
-	.ioctl		= video_ioctl2,
+	.unlocked_ioctl		= video_ioctl2,
 };
 
 static struct video_device marucam_video_dev = {
@@ -1231,25 +1231,6 @@ static const struct pci_device_id marucam_pci_id_tbl[] = {
 };
 
 MODULE_DEVICE_TABLE(pci, marucam_pci_id_tbl);
-
-/* The following function already exist in the latest linux stable kernel.
- * https://git.kernel.org/cgit/linux/kernel/git/stable/linux-stable.git/
- * commit/?id=c43996f4001de629af4a4d6713782e883677e5b9
- * This should be removed if emulator-kernel is upgraded.
- */
-static void __iomem *pci_ioremap_wc_bar(struct pci_dev *pdev, int bar)
-{
-	/*
-	* Make sure the BAR is actually a memory resource, not an IO resource
-	*/
-	if (!(pci_resource_flags(pdev, bar) & IORESOURCE_MEM)) {
-		WARN_ON(1);
-		return NULL;
-	}
-
-	return ioremap_wc(pci_resource_start(pdev, bar),
-			pci_resource_len(pdev, bar));
-}
 
 static int marucam_pci_initdev(struct pci_dev *pdev,
 				const struct pci_device_id *id)
