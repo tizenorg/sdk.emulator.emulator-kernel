@@ -2,6 +2,7 @@
 #define _VIGS_DEVICE_H_
 
 #include "drmP.h"
+#include "drm_legacy.h"
 #include "vigs_protocol.h"
 
 struct vigs_mman;
