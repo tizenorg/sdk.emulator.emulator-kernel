@@ -2597,6 +2597,7 @@ CONFIG_DRM_KMS_HELPER=y
 CONFIG_DRM_KMS_FB_HELPER=y
 CONFIG_DRM_FBDEV_EMULATION=y
 # CONFIG_DRM_LOAD_EDID_FIRMWARE is not set
+CONFIG_DRM_TTM=y
 
 #
 # I2C encoder or helper chips
@@ -2636,9 +2637,10 @@ CONFIG_DRM_BRIDGE=y
 #
 # Display Interface Bridges
 #
-# CONFIG_DRM_VIGS is not set
+CONFIG_DRM_VIGS=y
+# CONFIG_DRM_VIGS_DEBUG is not set
 CONFIG_YAGL=y
-CONFIG_YAGL_DEBUG=y
+# CONFIG_YAGL_DEBUG is not set
 
 #
 # Frame buffer Devices
