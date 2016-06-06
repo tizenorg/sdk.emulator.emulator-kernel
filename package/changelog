@@ -1,3 +1,6 @@
+* 3.14.18
+- apply missing smack patch
+== SeokYeon Hwang <syeon.hwang@samsung.com> 2016-06-06
 * 3.14.17
 - apply smack patches
 == Sooyoung Ha <yoosah.ha@samsung.com> 2016-05-24
