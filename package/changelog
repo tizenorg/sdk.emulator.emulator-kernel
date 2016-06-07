@@ -1,3 +1,6 @@
+* 4.4.0
+- Apply upstream kernel 4.4
+== SeokYeon Hwang <syeon.hwang@samsung.com> 2016-06-07
 * 3.14.16
 - maru-inputs: fix unexpected termination using maru-input devices
 == Jinhyung Jo <jinhyung.jo@samsung.com> 2016-03-08
