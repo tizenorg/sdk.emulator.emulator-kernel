@@ -79,13 +79,13 @@ make %{config_name}
 make modules %{?_smp_mflags}
 
 # 4. Create tar repo for build directory
-tar cpSf linux-kernel-build-%{fullVersion}.tar .
+tar cpSf kernel-devel-tizen_emulator.tar .
 
 %install
 QA_SKIP_BUILD_ROOT="DO_NOT_WANT"; export QA_SKIP_BUILD_ROOT
 
 # 1. Destynation directories
-mkdir -p %{buildroot}/usr/src/linux-kernel-build-%{fullVersion}
+mkdir -p %{buildroot}/usr/src/kernel-devel-tizen_emulator
 mkdir -p %{buildroot}/lib/modules/%{fullVersion}
 mkdir -p %{buildroot}/boot/
 
@@ -101,25 +101,25 @@ make INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=%{buildroot} modules_install
 make INSTALL_PATH=%{buildroot} INSTALL_MOD_PATH=%{buildroot} INSTALL_HDR_PATH=%{buildroot}/usr headers_install
 
 # 5. Restore source and build irectory
-tar -xf linux-kernel-build-%{fullVersion}.tar -C %{buildroot}/usr/src/linux-kernel-build-%{fullVersion}
-mv %{buildroot}/usr/src/linux-kernel-build-%{fullVersion}/arch/%{buildarch} .
-mv %{buildroot}/usr/src/linux-kernel-build-%{fullVersion}/arch/Kconfig .
-rm -rf %{buildroot}/usr/src/linux-kernel-build-%{fullVersion}/arch/*
-mv %{buildarch} %{buildroot}/usr/src/linux-kernel-build-%{fullVersion}/arch/
-mv Kconfig      %{buildroot}/usr/src/linux-kernel-build-%{fullVersion}/arch/
+tar -xf kernel-devel-tizen_emulator.tar -C %{buildroot}/usr/src/kernel-devel-tizen_emulator
+mv %{buildroot}/usr/src/kernel-devel-tizen_emulator/arch/%{buildarch} .
+mv %{buildroot}/usr/src/kernel-devel-tizen_emulator/arch/Kconfig .
+rm -rf %{buildroot}/usr/src/kernel-devel-tizen_emulator/arch/*
+mv %{buildarch} %{buildroot}/usr/src/kernel-devel-tizen_emulator/arch/
+mv Kconfig      %{buildroot}/usr/src/kernel-devel-tizen_emulator/arch/
 
 # 6. Remove files
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name ".tmp_vmlinux*" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "\.*dtb*tmp" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*\.*tmp" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "vmlinux" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "bzImage" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "zImage" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*.cmd" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*\.ko" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*\.o" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*\.S" -exec rm -f {} \;
-find %{buildroot}/usr/src/linux-kernel-build-%{fullVersion} -name "*\.c" -not -path "%{buildroot}/usr/src/linux-kernel-build-%{fullVersion}/scripts/*" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name ".tmp_vmlinux*" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name "\.*dtb*tmp" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name "*\.*tmp" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name "vmlinux" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name "bzImage" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name "zImage" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name "*.cmd" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name "*\.ko" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name "*\.o" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name "*\.S" -exec rm -f {} \;
+find %{buildroot}/usr/src/kernel-devel-tizen_emulator -name "*\.c" -not -path "%{buildroot}/usr/src/kernel-devel-tizen_emulator/scripts/*" -exec rm -f {} \;
 find %{buildroot}/usr/include -name "\.\.install.cmd"  -exec rm -f {} \;
 find %{buildroot}/usr/include -name "\.install"  -exec rm -f {} \;
 find %{buildroot}/usr -name "..install.cmd" -exec rm -f {} \;
@@ -131,7 +131,7 @@ rm -rf %{buildroot}/vmlinux*
 # 7. Create symbolic links
 rm -f %{buildroot}/lib/modules/%{fullVersion}/build
 rm -f %{buildroot}/lib/modules/%{fullVersion}/source
-ln -sf /usr/src/linux-kernel-build-%{fullVersion} %{buildroot}/lib/modules/%{fullVersion}/build
+ln -sf /usr/src/kernel-devel-tizen_emulator %{buildroot}/lib/modules/%{fullVersion}/build
 
 find %{buildroot}/lib/modules/ -name "*.ko" -type f -exec chmod 755 {} \;
 
@@ -144,7 +144,7 @@ rm -rf %{buildroot}
 
 %files devel
 %defattr (-, root, root)
-/usr/src/linux-kernel-build-%{fullVersion}
+/usr/src/kernel-devel-tizen_emulator
 /lib/modules/%{fullVersion}/modules.*
 /lib/modules/%{fullVersion}/build
 
