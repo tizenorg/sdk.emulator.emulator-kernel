@@ -1,3 +1,6 @@
+* 4.4.1
+- enable Android logger and alarm-dev again
+== Sooyoung Ha <yoosah.ha@samsung.com> 2016-06-09
 * 4.4.0
 - Apply upstream kernel 4.4
 == SeokYeon Hwang <syeon.hwang@samsung.com> 2016-06-07
