@@ -1,3 +1,6 @@
+* 4.4.2
+- enable MARU_POWER_SUPPLY configuration
+== Jinhyung Choi <jinh0.choi@samsung.com> 2016-06-13
 * 4.4.1
 - enable Android logger and alarm-dev again
 == Sooyoung Ha <yoosah.ha@samsung.com> 2016-06-09
