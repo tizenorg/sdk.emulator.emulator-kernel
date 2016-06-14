@@ -1,3 +1,6 @@
+* 4.4.3
+- enable vdpram driver for vmodem
+== Sooyoung Ha <yoosah.ha@samsung.com> 2016-06-14
 * 4.4.2
 - enable MARU_POWER_SUPPLY configuration
 == Jinhyung Choi <jinh0.choi@samsung.com> 2016-06-13
