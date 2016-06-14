@@ -603,5 +603,10 @@ config TILE_SROM
 
 source "drivers/char/xillybus/Kconfig"
 
+config VDPRAM
+	tristate "vdpram kernel driver for VMODEM"
+	help
+	  vdpram is a telephony driver works with the Emulator Control Panel.
+
 endmenu
 
