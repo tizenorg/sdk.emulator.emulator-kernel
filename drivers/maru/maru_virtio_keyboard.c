@@ -4,9 +4,8 @@
  * Copyright (c) 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
  * Contact:
- *  Kitae Kim <kitae.kim@samsung.com>
+ *  GiWoong Kim <giwoong.kim@samsung.com>
  *  SeokYeon Hwang <syeon.hwang@samsung.com>
- *  YeongKyoon Lee <yeongkyoon.lee@samsung.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -39,16 +38,20 @@
 #include <linux/virtio_ids.h>
 #include <linux/virtio_config.h>
 
+
 MODULE_LICENSE("GPL2");
-MODULE_AUTHOR("Kitae Kim <kt920.kim@samsung.com>");
-MODULE_DESCRIPTION("Emulator Virtio Keyboard Driver");
+MODULE_AUTHOR("SeokYeon Hwangm <syeon.hwang@samsung.com>");
+MODULE_DESCRIPTION("Emulator virtio keyboard driver");
+
 
 #define DRIVER_NAME "virtio-keyboard"
+
 #define VKBD_LOG(log_level, fmt, ...) \
 	printk(log_level "%s: " fmt, DRIVER_NAME, ##__VA_ARGS__)
 
-#define KBD_BUF_SIZE 100
-static int vqidx = 0;
+#define MAX_BUF_COUNT 100
+
+//#define DEBUG
 
 struct EmulKbdEvent
 {
@@ -62,13 +65,11 @@ struct virtio_keyboard
 	struct virtqueue *vq;
 	struct input_dev *idev;
 
-	struct EmulKbdEvent kbdevt[KBD_BUF_SIZE];
-	struct scatterlist sg[KBD_BUF_SIZE];
+	struct scatterlist sg[1];
+	struct EmulKbdEvent evtbuf[MAX_BUF_COUNT];
 
-	struct mutex event_mutex;
+	spinlock_t lock;
 };
-
-struct virtio_keyboard *vkbd;
 
 static struct virtio_device_id id_table[] = {
 	{ VIRTIO_ID_KEYBOARD, VIRTIO_DEV_ANY_ID },
@@ -77,42 +78,36 @@ static struct virtio_device_id id_table[] = {
 
 static void vq_keyboard_handle(struct virtqueue *vq)
 {
-	int err = 0, len = 0;
-	void *data;
-	struct EmulKbdEvent kbdevent;
+	unsigned int len; /* not used */
+	struct virtio_keyboard *vkbd = vq->vdev->priv;
+	struct EmulKbdEvent *event;
 
-	VKBD_LOG(KERN_DEBUG, "virtqueue callback.\n");
-	data = virtqueue_get_buf(vq, &len);
-	if (!data) {
-		VKBD_LOG(KERN_ERR, "there is no available buffer.\n");
-		return;
-	}
+	unsigned long flags;
+	int err;
 
-	VKBD_LOG(KERN_DEBUG, "vqidx: %d\n", vqidx);
-	while (1) {
-		memcpy(&kbdevent, &vkbd->kbdevt[vqidx], sizeof(kbdevent));
-#if 1
-		if (kbdevent.code == 0) {
-			break;
-		}
+	spin_lock_irqsave(&vkbd->lock, flags);
+	while ((event = virtqueue_get_buf(vkbd->vq, &len)) != NULL) {
+		spin_unlock_irqrestore(&vkbd->lock, flags);
+#ifdef DEBUG
+        printk(KERN_ERR "keyboard code = %d, value = %d\n", event->code,
+                event->value);
 #endif
-		/* how to get keycode and value. */
-		input_event(vkbd->idev, EV_KEY, kbdevent.code, kbdevent.value);
+		input_event(vkbd->idev, EV_KEY, event->code, event->value);
 		input_sync(vkbd->idev);
-		printk(KERN_ERR "input_event code = %d, value = %d\n", kbdevent.code, kbdevent.value);
-		memset(&vkbd->kbdevt[vqidx], 0x00, sizeof(kbdevent));
-		vqidx++;
-		if (vqidx == KBD_BUF_SIZE) {
-			vqidx = 0;
+
+		// add new buffer
+		spin_lock_irqsave(&vkbd->lock, flags);
+		sg_init_one(vkbd->sg, event, sizeof(*event));
+		err = virtqueue_add_inbuf(vkbd->vq, vkbd->sg,
+				1, event, GFP_ATOMIC);
+
+		if (err < 0) {
+			printk(KERN_ERR "failed to add buffer!\n");
 		}
-	}
-	err = virtqueue_add_inbuf(vq, vkbd->sg, KBD_BUF_SIZE, (void *)vkbd->kbdevt, GFP_ATOMIC);
-	if (err < 0) {
-		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
-		return;
 	}
 
 	virtqueue_kick(vkbd->vq);
+	spin_unlock_irqrestore(&vkbd->lock, flags);
 }
 
 static int input_keyboard_open(struct input_dev *dev)
@@ -126,60 +121,26 @@ static void input_keyboard_close(struct input_dev *dev)
 	VKBD_LOG(KERN_DEBUG, "input_keyboard_close\n");
 }
 
-#if 0
-static int virtio_keyboard_open(struct inode *inode, struct file *file)
-{
-	VKBD_LOG(KERN_DEBUG, "opened.\n");
-	return 0;
-}
-
-static int virtio_keyboard_release(struct inode *inode, struct file *file)
-{
-	VKBD_LOG(KERN_DEBUG, "closed\n");
-	return 0;
-}
-
-struct file_operations virtio_keyboard_fops = {
-	.owner   = THIS_MODULE,
-	.open	= virtio_keyboard_open,
-	.release = virtio_keyboard_release,
-};
-#endif
-
 static int virtio_keyboard_probe(struct virtio_device *vdev)
 {
 	int ret = 0;
 	int index = 0;
+	int err = 0;
+	unsigned long flags;
+	struct virtio_keyboard *vkbd;
 
 	VKBD_LOG(KERN_INFO, "driver is probed\n");
-	vqidx = 0;
 
-	vdev->priv = vkbd = kmalloc(sizeof(struct virtio_keyboard), GFP_KERNEL);
+	vdev->priv = vkbd = kzalloc(sizeof(struct virtio_keyboard), GFP_KERNEL);
 	if (!vkbd) {
 		return -ENOMEM;
 	}
-	memset(&vkbd->kbdevt, 0x00, sizeof(vkbd->kbdevt));
 
 	vkbd->vdev = vdev;
-	mutex_init(&vkbd->event_mutex);
 
 	vkbd->vq = virtio_find_single_vq(vkbd->vdev, vq_keyboard_handle, "virtio-keyboard-vq");
 	if (IS_ERR(vkbd->vq)) {
 		ret = PTR_ERR(vkbd->vq);
-		kfree(vkbd);
-		vdev->priv = NULL;
-		return ret;
-	}
-
-	for (; index < KBD_BUF_SIZE; index++) {
-		sg_set_buf(&vkbd->sg[index],
-				&vkbd->kbdevt[index],
-				sizeof(struct EmulKbdEvent));
-	}
-
-	ret = virtqueue_add_inbuf(vkbd->vq, vkbd->sg, KBD_BUF_SIZE, (void *)vkbd->kbdevt, GFP_ATOMIC);
-	if (ret < 0) {
-		VKBD_LOG(KERN_ERR, "failed to add buffer to virtqueue.\n");
 		kfree(vkbd);
 		vdev->priv = NULL;
 		return ret;
@@ -229,11 +190,22 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 		return ret;
 	}
 
-	for (; index < KBD_BUF_SIZE; index++) {
-		sg_set_buf(&vkbd->sg[index],
-				&vkbd->kbdevt[index],
-				sizeof(struct EmulKbdEvent));
+	spin_lock_irqsave(&vkbd->lock, flags);
+	for (index = 0; index < MAX_BUF_COUNT; index++) {
+		sg_init_one(vkbd->sg, &vkbd->evtbuf[index], sizeof(&vkbd->evtbuf[index]));
+
+		err = virtqueue_add_inbuf(vkbd->vq, vkbd->sg,
+				1, &vkbd->evtbuf[index], GFP_ATOMIC);
+
+		if (err < 0) {
+			printk(KERN_ERR "failed to add buffer\n");
+
+			kfree(vkbd);
+			vdev->priv = NULL;
+			return err;
+		}
 	}
+	spin_unlock_irqrestore(&vkbd->lock, flags);
 
 	virtqueue_kick(vkbd->vq);
 
@@ -242,6 +214,8 @@ static int virtio_keyboard_probe(struct virtio_device *vdev)
 
 static void virtio_keyboard_remove(struct virtio_device *vdev)
 {
+	struct virtio_keyboard *vkbd = vdev->priv;
+
 	VKBD_LOG(KERN_INFO, "driver is removed.\n");
 	if (!vkbd) {
 		VKBD_LOG(KERN_ERR, "vkbd is NULL.\n");

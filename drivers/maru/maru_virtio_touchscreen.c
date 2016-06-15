@@ -40,9 +40,10 @@
 #include <linux/virtio_config.h>
 #include <linux/kthread.h>
 
+
 MODULE_LICENSE("GPL2");
-MODULE_AUTHOR("GiWoong Kim <giwoong.kim@samsung.com>");
-MODULE_DESCRIPTION("Emulator Virtio Touchscreen driver");
+MODULE_AUTHOR("SeokYeon Hwangm <syeon.hwang@samsung.com>");
+MODULE_DESCRIPTION("Emulator virtio touchscreen driver");
 
 
 #define DEVICE_NAME "virtio-touchscreen"
@@ -52,7 +53,7 @@ MODULE_DESCRIPTION("Emulator Virtio Touchscreen driver");
 
 #define MAX_BUF_COUNT MAX_TRKID
 
-//#define DEBUG_TS
+//#define DEBUG
 
 /* This structure must match the qemu definitions */
 struct touch_event
@@ -92,18 +93,13 @@ static void vq_touchscreen_callback(struct virtqueue *vq)
 	unsigned long flags;
 	int err;
 
-#ifdef DEBUG_TS
-	printk(KERN_INFO "vq touchscreen callback\n");
-#endif
-
 	spin_lock_irqsave(&vt->lock, flags);
 	while ((event = virtqueue_get_buf(vt->vq, &len)) != NULL) {
 		spin_unlock_irqrestore(&vt->lock, flags);
-#ifdef DEBUG_TS
-		printk(KERN_INFO "touch x=%d, y=%d, z=%d, state=%d, len=%d\n",
+#ifdef DEBUG
+		printk(KERN_INFO "touchscreen x=%d, y=%d, z=%d, state=%d, len=%d\n",
 				event->x, event->y, event->z, event->state, len);
 #endif
-
 		finger_id = event->z;
 
 		if (finger_id < MAX_TRKID) {
@@ -137,21 +133,10 @@ static void vq_touchscreen_callback(struct virtqueue *vq)
 		if (err < 0) {
 			printk(KERN_ERR "failed to add buffer!\n");
 		}
-	};
+	}
+
 	virtqueue_kick(vt->vq);
 	spin_unlock_irqrestore(&vt->lock, flags);
-}
-
-static int virtio_touchscreen_open(struct inode *inode, struct file *file)
-{
-	printk(KERN_INFO "virtio touchscreen device is opened\n");
-	return 0;
-}
-
-static int virtio_touchscreen_release(struct inode *inode, struct file *file)
-{
-	printk(KERN_INFO "virtio touchscreen device is closed\n");
-	return 0;
 }
 
 static int input_touchscreen_open(struct input_dev *dev)
@@ -165,13 +150,8 @@ static void input_touchscreen_close(struct input_dev *dev)
 	printk(KERN_INFO "input touchscreen device is closed\n");
 }
 
-struct file_operations virtio_touchscreen_fops = {
-	.owner   = THIS_MODULE,
-	.open    = virtio_touchscreen_open,
-	.release = virtio_touchscreen_release,
-};
-
 extern char *saved_command_line;
+
 #define VM_RESOLUTION_KEY "vm_resolution="
 
 static int virtio_touchscreen_probe(struct virtio_device *vdev)
@@ -309,7 +289,6 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
 	spin_unlock_irqrestore(&vt->lock, flags);
 
 	virtqueue_kick(vt->vq);
-	index = 0;
 
 	return 0;
 }
