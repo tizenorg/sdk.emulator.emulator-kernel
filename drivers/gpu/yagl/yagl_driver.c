@@ -28,6 +28,8 @@
 #define PCI_VENDOR_ID_YAGL 0x19B1
 #define PCI_DEVICE_ID_YAGL 0x1010
 
+static uint32_t protocol_version = 0;
+
 static struct pci_device_id yagl_pci_table[] =
 {
     {
@@ -259,6 +261,7 @@ static int yagl_misc_open(struct inode *inode, struct file *file)
 
     yfile->render_type = yagl_marshal_get_uint32_t(&buff);
     yfile->gl_version = yagl_marshal_get_uint32_t(&buff);
+    protocol_version = yagl_marshal_get_uint32_t(&buff);
 
     kunmap(yfile->pages[0]);
 
@@ -268,7 +271,7 @@ static int yagl_misc_open(struct inode *inode, struct file *file)
 
     mutex_unlock(&device->mutex);
 
-    print_info("%d opened\n", yfile->index);
+    print_info("(protocol %u) %d opened\n", protocol_version, yfile->index);
 
     return nonseekable_open(inode, file);
 
@@ -660,7 +663,7 @@ static long yagl_misc_ioctl(struct file* file, unsigned int cmd, unsigned long a
 
     switch (cmd) {
     case YAGL_IOC_GET_VERSION:
-        value.uint = YAGL_VERSION;
+        value.uint = protocol_version;
         ret = put_user(value.uint, (unsigned int __user*)arg);
         break;
     case YAGL_IOC_GET_USER_INFO:
