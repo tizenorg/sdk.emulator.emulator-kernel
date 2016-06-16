@@ -1,3 +1,7 @@
+* 4.4.4
+- rewrite virtio touchscreen / keyboard device
+- introduce yagl protocol version
+== Sooyoung Ha <yoosah.ha@samsung.com> 2016-06-16
 * 4.4.3
 - enable vdpram driver for vmodem
 == Sooyoung Ha <yoosah.ha@samsung.com> 2016-06-14
