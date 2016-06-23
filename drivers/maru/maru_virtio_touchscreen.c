@@ -190,7 +190,6 @@ static int virtio_touchscreen_probe(struct virtio_device *vdev)
 	unsigned long width = 0;
 	unsigned long height = 0;
 	int ret = 0;
-
 	struct virtio_touchscreen *vt;
 
 	/* init virtio */
