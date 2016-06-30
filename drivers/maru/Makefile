@@ -15,4 +15,6 @@ obj-$(CONFIG_MARU_BRILLCODEC) += maru_brillcodec.o
 obj-$(CONFIG_MARU_VIRTIO_VMODEM) += maru_virtio_vmodem.o
 obj-$(CONFIG_MARU_VIRTIO_ROTARY) += maru_virtio_rotary.o
 obj-$(CONFIG_MARU_VIRTIO_TABLET) += maru_virtio_tablet.o
+obj-$(CONFIG_MARU_EEPROM) += maru_eeprom.o
+obj-$(CONFIG_MARU_DUMMY) += tztv-dummy/
 obj-$(CONFIG_MARU_EXTENSION_SOURCE) += $(CONFIG_MARU_EXTENSION_SOURCE_PATH)/

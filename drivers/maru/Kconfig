@@ -69,3 +69,34 @@ config MARU_EXTENSION_SOURCE
 config MARU_EXTENSION_SOURCE_PATH
 	string "MARU Extension source path"
 	depends on MARU != n && MARU_EXTENSION_SOURCE != n
+
+config MARU_MICOM_MSG
+	tristate "Micom Auto Remocon driver support for WT61P807"
+
+config MARU_MICOM_ISP
+	tristate "Micom ISP data support for WT61P807"
+
+config MARU_DUMMY
+	tristate "MARU Dummy Driver"
+	depends on MARU != n
+
+config MARU_SECURITY
+	tristate "MARU Security Driver"
+	depends on MARU != n
+
+config MARU_SDP_MEM
+	tristate "MARU SDP Memory Driver"
+	depends on MARU != n
+
+config MARU_GPIO
+	tristate "MARU Dummy GPIO Driver"
+	depends on MARU != n && GPIOLIB != n
+
+config MARU_I2C_SDP
+	tristate "Maru Dummy I2C SDP Driver"
+	depends on MARU != n && I2C != n
+
+config MARU_EEPROM
+	tristate "MARU VirtIO Virtual EEPROM Device Driver"
+	depends on MARU != n
+	depends on SYSFS
