@@ -1,3 +1,7 @@
+* 4.4.6
+- Add dummy driver for TV Emulator
+- Disable smack netfilter option
+== Sooyoung Ha <yoosah.ha@samsung.com> 2016-07-05
 * 4.4.5
 - introduce maru_virtio_device
 == SeokYeon Hwang <syeon.hwang@samsung.com> 2016-06-28
